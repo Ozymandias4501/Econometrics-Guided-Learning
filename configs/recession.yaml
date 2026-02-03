@@ -1,0 +1,36 @@
+fred:
+  start_date: "1980-01-01"
+  end_date: null
+  gdp_series: "GDPC1"  # real GDP (quarterly)
+  series:
+    - "UNRATE"     # unemployment rate (monthly)
+    - "FEDFUNDS"   # fed funds rate (monthly)
+    - "CPIAUCSL"   # CPI (monthly)
+    - "INDPRO"     # industrial production (monthly)
+    - "RSAFS"      # retail sales (monthly)
+    - "T10Y2Y"     # 10y-2y spread (daily)
+
+macro:
+  gdp_growth:
+    kind: "qoq"           # qoq | qoq_annualized | yoy
+  recession_label:
+    definition: "technical"  # 2 consecutive negative qoq quarters
+  target:
+    horizon_quarters: 1
+
+features:
+  monthly_to_quarterly:
+    method: "mean"  # mean | last (exercise: compare)
+  lags_quarters: [1, 2, 4]
+
+split:
+  test_size: 0.2
+  walk_forward:
+    enabled: true
+    initial_train_size: 80
+    test_size: 8
+    step_size: 4
+
+model:
+  kind: "logistic_regression"  # logistic_regression | random_forest
+  threshold: 0.5
