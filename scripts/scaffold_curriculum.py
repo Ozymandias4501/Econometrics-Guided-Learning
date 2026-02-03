@@ -10,6 +10,7 @@ It is safe to re-run; it will overwrite files.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -21,6 +22,45 @@ class NotebookSpec:
     title: str
     summary: str
     sections: List[str]
+
+
+TEMPLATES_ROOT = Path(__file__).resolve().parent / "templates"
+
+
+def load_template(rel_path: str) -> str:
+    """Load a template file from scripts/templates/.
+
+    We keep long-form educational content in template files so this generator remains maintainable.
+    """
+
+    path = TEMPLATES_ROOT / rel_path
+    return path.read_text()
+
+
+def render_template(text: str, mapping: dict[str, str]) -> str:
+    """Render a template with {{TOKEN}} placeholders.
+
+    Notes:
+    - We intentionally avoid Python's .format() to prevent conflicts with LaTeX braces.
+    - This is simple string substitution; keep tokens unique and uppercase.
+    """
+
+    out = text
+    for k, v in mapping.items():
+        out = out.replace(f"{{{{{k}}}}}", v)
+    return out
+
+
+def concept(name: str) -> str:
+    """Load a guide concept block from scripts/templates/guides/concepts/."""
+
+    return load_template(f"guides/concepts/{name}.md").rstrip()
+
+
+def primer(name: str) -> str:
+    """Load a notebook primer block from scripts/templates/notebooks/primers/."""
+
+    return load_template(f"notebooks/primers/{name}.md").rstrip()
 
 
 def md(text: str) -> dict:
@@ -47,6 +87,15 @@ def nb(cells: List[dict]) -> dict:
         "nbformat": 4,
         "nbformat_minor": 5,
     }
+
+
+def slugify(text: str) -> str:
+    """Create a stable anchor slug for markdown links."""
+
+    s = text.strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s or "section"
 
 
 BOOTSTRAP = """from __future__ import annotations
@@ -1109,6 +1158,7 @@ def solutions_markdown(stem: str, sections: list[str]) -> str:
         )
 
     return (
+        "<a id=\"solutions-reference\"></a>\n"
         "## Solutions (Reference)\n\n"
         "Try the TODOs first. Use these only to unblock yourself or to compare approaches.\n\n"
         + "\n\n".join(blocks)
@@ -1125,7 +1175,11 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
     out_path = root / spec.path
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    toc_lines = ["## Table of Contents", *[f"- {s}" for s in spec.sections]]
+    toc_lines = ["## Table of Contents"]
+    for s in spec.sections:
+        toc_lines.append(f"- [{s}](#{slugify(s)})")
+    toc_lines.append("- [Checkpoint (Self-Check)](#checkpoint-self-check)")
+    toc_lines.append("- [Solutions (Reference)](#solutions-reference)")
 
     cells: List[dict] = [
         md(f"# {spec.title}\n\n{spec.summary}"),
@@ -1138,25 +1192,109 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             f"- Use the matching guide (`{guide_path}`) for deep explanations and alternative examples.\n"
             "- Write short interpretation notes as you go (what changed, why it matters).\n"
         ),
-        md("## Environment Bootstrap\nRun this cell first. It makes the repo importable and defines common directories."),
+        md(
+            "<a id=\"environment-bootstrap\"></a>\n"
+            "## Environment Bootstrap\n"
+            "Run this cell first. It makes the repo importable and defines common directories.\n"
+        ),
         code(BOOTSTRAP),
     ]
 
     # Add notebook-specific scaffold blocks.
-    # Keep these short; the detailed explanations live in docs/guides/.
+    #
+    # NOTE: These notebooks are intentionally markdown-heavy and TODO-driven.
+    # The matching guide goes deeper on math/interpretation; the notebook should be standalone.
     if spec.path.endswith("00_setup.ipynb"):
         cells += [
-            md("## Your Turn: Verify Keys\nSet env vars in your shell, then confirm they are visible here."),
-            code(
-                "import os\n\n# TODO: Print whether FRED_API_KEY is set\n# TODO: Print whether CENSUS_API_KEY is set\n\n..."
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Verify API keys')}\"></a>\n"
+                "## Verify API keys\n\n"
+                "In this project you will use two APIs:\n"
+                "- **FRED** (macro time series)\n"
+                "- **US Census ACS** (micro cross-sectional data)\n\n"
+                "We read API keys from environment variables:\n"
+                "- `FRED_API_KEY`\n"
+                "- `CENSUS_API_KEY` (optional; many endpoints work without it)\n\n"
+                "Your task: confirm your notebook process can see these variables.\n"
             ),
-            md("## Your Turn: Explore Sample Data\nLoad a sample dataset so you can work offline."),
+            md("### Your Turn (1): Read env vars safely"),
             code(
-                "import pandas as pd\n\n# TODO: Load data/sample/macro_quarterly_sample.csv\n# Hint: use index_col=0, parse_dates=True\n\ndf = ...\ndf.head()"
+                "import os\n\n"
+                "# TODO: Read env vars with os.getenv\n"
+                "fred_key = os.getenv('FRED_API_KEY')\n"
+                "census_key = os.getenv('CENSUS_API_KEY')\n"
+                "\n"
+                "# TODO: Print whether each key is set (do NOT print the full key)\n"
+                "# Hint: show the first 4 chars only if present\n"
+                "...\n"
             ),
-            md("## Checkpoint"),
+            md("### Your Turn (2): Confirm your data folders exist"),
             code(
-                "# TODO: Assert the index is sorted and the dataset has a target column\n..."
+                "# TODO: Print the important directories defined by the bootstrap cell.\n"
+                "# Confirm they exist (or create them where appropriate).\n"
+                "print('PROJECT_ROOT:', PROJECT_ROOT)\n"
+                "print('DATA_DIR:', DATA_DIR)\n"
+                "print('RAW_DIR:', RAW_DIR)\n"
+                "print('PROCESSED_DIR:', PROCESSED_DIR)\n"
+                "print('SAMPLE_DIR:', SAMPLE_DIR)\n"
+                "\n"
+                "# TODO: Create RAW_DIR and PROCESSED_DIR if they don't exist\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Load sample data')}\"></a>\n"
+                "## Load sample data\n\n"
+                "This repo includes small sample datasets under `data/sample/` so you can work offline.\n"
+                "In most notebooks you'll:\n"
+                "1) try to load a real dataset from `data/processed/`\n"
+                "2) if it doesn't exist yet, load a sample from `data/sample/`\n\n"
+                "Your task: load the macro quarterly sample and inspect the schema.\n"
+            ),
+            md("### Your Turn (1): Load a sample dataset"),
+            code(
+                "import pandas as pd\n\n"
+                "# TODO: Load data/sample/macro_quarterly_sample.csv\n"
+                "# Hint: use index_col=0 and parse_dates=True\n"
+                "df = ...\n"
+                "\n"
+                "# TODO: Inspect the data\n"
+                "# - df.shape\n"
+                "# - df.columns\n"
+                "# - df.dtypes\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Quick plot"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Pick 1-2 columns to plot over time (e.g., GDP growth + recession label)\n"
+                "# Hint: df[['col1','col2']].plot(subplots=True)\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Checkpoints')}\"></a>\n"
+                "## Checkpoints\n\n"
+                "These are the kinds of checks you will repeat in every notebook.\n"
+                "If you build this habit early, debugging becomes dramatically easier.\n"
+            ),
+            md("### Checkpoint (data sanity)"),
+            code(
+                "# TODO: Replace column names below with real ones from df\n"
+                "# Example expected columns in macro_quarterly: gdp_growth_qoq, recession, target_recession_next_q\n"
+                "\n"
+                "# 1) Index checks\n"
+                "assert df.index.is_monotonic_increasing\n"
+                "assert df.index.inferred_type in {'datetime64', 'datetime64tz'}\n"
+                "\n"
+                "# 2) Shape checks\n"
+                "assert df.shape[0] > 20\n"
+                "assert df.shape[1] >= 3\n"
+                "\n"
+                "# 3) Missingness checks (you may allow some NaNs early due to lags)\n"
+                "print(df.isna().sum().sort_values(ascending=False).head(10))\n"
+                "\n"
+                "# TODO: Write 2 sentences: what does each check protect you from?\n"
+                "...\n"
             ),
         ]
 
@@ -1561,6 +1699,7 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
     # A lightweight, TODO-driven checkpoint so learners can self-validate before moving on.
     cells += [
         md(
+            "<a id=\"checkpoint-self-check\"></a>\n"
             "## Checkpoint (Self-Check)\n"
             "Run a few asserts and write 2-3 sentences summarizing what you verified.\n"
         ),
@@ -1585,1016 +1724,163 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
     cells.append(md(solutions_markdown(stem, spec.sections)))
 
     out_path.write_text(json.dumps(nb(cells), indent=2))
-
-
-GUIDE_TEMPLATE = """# Guide: {stem}
-
-## Table of Contents
-- [Intro of Concept Explained](#intro)
-- [Step-by-Step and Alternative Examples](#step-by-step)
-- [Technical Explanations (Code + Math + Interpretation)](#technical)
-- [Summary + Suggested Readings](#summary)
-
-<a id="intro"></a>
-## Intro of Concept Explained
-
-{intro}
-
-<a id="step-by-step"></a>
-## Step-by-Step and Alternative Examples
-
-### What You Should Implement (Checklist)
-{checklist}
-
-### Alternative Example (Not the Notebook Solution)
-{alt_example}
-
-<a id="technical"></a>
-## Technical Explanations (Code + Math + Interpretation)
-
-{technical}
-
-### Common Mistakes
-{mistakes}
-
-<a id="summary"></a>
-## Summary + Suggested Readings
-
-{summary}
-
-Suggested readings:
-{readings}
-"""
-
+ 
+ 
+# Guide templates and deep-dive content live under scripts/templates/.
 
 def concept_leakage_deep_dive() -> str:
-    return (
-        "### Deep Dive: Leakage (What It Is, How It Happens, How To Detect It)\n"
-        "\n"
-        "**Leakage** means your model (or your features) accidentally uses information that would not be available at prediction time.\n"
-        "In time series, leakage is especially easy because the index *looks* like just another column, but it encodes causality constraints.\n"
-        "\n"
-        "**Common leakage types**\n"
-        "- **Target leakage**: a feature is derived from the target (directly or indirectly).\n"
-        "- **Temporal leakage**: a feature uses future values (wrong shift direction, centered rolling windows, etc.).\n"
-        "- **Split leakage**: random splits mix future and past, letting the model learn patterns it wouldn't have in production.\n"
-        "- **Preprocessing leakage**: scaling/imputation fitted on all data (train + test) instead of train only.\n"
-        "\n"
-        "**How to spot leakage (symptoms)**\n"
-        "- Test metrics that look \"too good to be true\" for the problem.\n"
-        "- A single feature dominates and seems to predict perfectly.\n"
-        "- Performance collapses when you switch from random split to time split.\n"
-        "\n"
-        "**Debug checklist (time-series)**\n"
-        "1. For each feature, ask: *would I know this value at time t when making a prediction for t+1?*\n"
-        "2. Verify every shift direction: `shift(+k)` uses the past; `shift(-k)` leaks future.\n"
-        "3. Verify rolling window alignment: `rolling(..., center=True)` leaks future.\n"
-        "4. Ensure preprocessing (scalers, imputers) are fitted on training data only.\n"
-        "\n"
-        "**Python demo: the classic `shift(-1)` leak**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "from sklearn.linear_model import LinearRegression\n"
-        "from sklearn.metrics import r2_score\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "idx = pd.date_range('2020-01-01', periods=200, freq='D')\n"
-        "y = pd.Series(np.cumsum(rng.normal(size=len(idx))), index=idx)\n"
-        "\n"
-        "# Predict tomorrow (t+1)\n"
-        "target = y.shift(-1)\n"
-        "\n"
-        "# Legit feature: yesterday (t-1)\n"
-        "x_lag1 = y.shift(1)\n"
-        "\n"
-        "# LEAK feature: tomorrow (t+1)\n"
-        "x_leak = y.shift(-1)\n"
-        "\n"
-        "df = pd.DataFrame({'target': target, 'x_lag1': x_lag1, 'x_leak': x_leak}).dropna()\n"
-        "\n"
-        "X_ok = df[['x_lag1']].to_numpy()\n"
-        "X_leak = df[['x_leak']].to_numpy()\n"
-        "y_arr = df['target'].to_numpy()\n"
-        "\n"
-        "# Time split\n"
-        "split = int(len(df) * 0.8)\n"
-        "X_ok_tr, X_ok_te = X_ok[:split], X_ok[split:]\n"
-        "X_leak_tr, X_leak_te = X_leak[:split], X_leak[split:]\n"
-        "y_tr, y_te = y_arr[:split], y_arr[split:]\n"
-        "\n"
-        "m_ok = LinearRegression().fit(X_ok_tr, y_tr)\n"
-        "m_leak = LinearRegression().fit(X_leak_tr, y_tr)\n"
-        "\n"
-        "print('R2 legit:', r2_score(y_te, m_ok.predict(X_ok_te)))\n"
-        "print('R2 leak :', r2_score(y_te, m_leak.predict(X_leak_te)))\n"
-        "```\n"
-        "\n"
-        "**Python demo: rolling-window leakage (centered windows)**\n"
-        "```python\n"
-        "import pandas as pd\n"
-        "\n"
-        "# This uses future values because the window is centered.\n"
-        "feature_leaky = y.rolling(window=7, center=True).mean()\n"
-        "```\n"
-        "\n"
-        "**Practical interpretation (economics)**\n"
-        "- A recession model with leakage will appear to \"predict\" recessions, but it is usually just reading signals from the future.\n"
-        "- The real goal is to predict with only information available *at the time*.\n"
-    )
+    return concept("leakage")
+
+
 def concept_time_split_deep_dive() -> str:
-    return (
-        "### Deep Dive: Train/Test Splits for Time Series\n"
-        "\n"
-        "**Train/test split** means you fit your model on one subset (train) and evaluate on a later, untouched subset (test).\n"
-        "In time series, the split must respect chronology.\n"
-        "\n"
-        "**Random split vs time split**\n"
-        "- Random split: mixes past and future in both train and test.\n"
-        "- Time split: train is earlier, test is later.\n"
-        "\n"
-        "**Why time split matters**\n"
-        "- The future can look statistically different (regimes).\n"
-        "- The model must operate in real time: train on the past, predict the future.\n"
-        "\n"
-        "**Python demo: random vs time split**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "from sklearn.model_selection import train_test_split\n"
-        "from sklearn.metrics import mean_squared_error\n"
-        "from sklearn.linear_model import LinearRegression\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "idx = pd.date_range('2010-01-01', periods=400, freq='D')\n"
-        "\n"
-        "# A simple AR(1)-like process\n"
-        "y = np.zeros(len(idx))\n"
-        "for t in range(1, len(y)):\n"
-        "    y[t] = 0.9*y[t-1] + rng.normal(scale=1.0)\n"
-        "s = pd.Series(y, index=idx)\n"
-        "\n"
-        "df = pd.DataFrame({'y': s, 'y_lag1': s.shift(1)}).dropna()\n"
-        "X = df[['y_lag1']].to_numpy()\n"
-        "y_arr = df['y'].to_numpy()\n"
-        "\n"
-        "# Random split\n"
-        "X_tr, X_te, y_tr, y_te = train_test_split(X, y_arr, test_size=0.2, shuffle=True, random_state=0)\n"
-        "m = LinearRegression().fit(X_tr, y_tr)\n"
-        "rmse_rand = mean_squared_error(y_te, m.predict(X_te), squared=False)\n"
-        "\n"
-        "# Time split\n"
-        "split = int(len(df) * 0.8)\n"
-        "X_tr2, X_te2 = X[:split], X[split:]\n"
-        "y_tr2, y_te2 = y_arr[:split], y_arr[split:]\n"
-        "m2 = LinearRegression().fit(X_tr2, y_tr2)\n"
-        "rmse_time = mean_squared_error(y_te2, m2.predict(X_te2), squared=False)\n"
-        "\n"
-        "print('RMSE random:', rmse_rand)\n"
-        "print('RMSE time  :', rmse_time)\n"
-        "```\n"
-        "\n"
-        "**Walk-forward validation (preview)**\n"
-        "- Instead of one split, you evaluate across multiple chronological folds.\n"
-        "- This reveals stability: the model can look good in one era and fail in another.\n"
-    )
+    return concept("time_split")
+
+
 def concept_multicollinearity_vif_deep_dive() -> str:
-    return (
-        "### Deep Dive: Multicollinearity (Why Coefficients Become Unstable)\n"
-        "\n"
-        "**Multicollinearity** means two or more predictors contain overlapping information (they are highly correlated).\n"
-        "\n"
-        "**What multicollinearity does (and does not do)**\n"
-        "- It often does **not** hurt prediction much.\n"
-        "- It **does** make individual coefficients unstable and their standard errors large.\n"
-        "- It makes p-values fragile: you can flip signs or lose significance by adding/removing correlated features.\n"
-        "\n"
-        "**Variance Inflation Factor (VIF)**\n"
-        "- VIF for feature j: how much the variance of β_j is inflated because x_j is correlated with other features.\n"
-        "- Rule of thumb: VIF > 5 (or 10) suggests serious multicollinearity.\n"
-        "\n"
-        "**Python demo: correlated predictors -> unstable coefficients**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "from src.econometrics import vif_table\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 500\n"
-        "x1 = rng.normal(size=n)\n"
-        "x2 = x1 * 0.95 + rng.normal(scale=0.2, size=n)  # highly correlated with x1\n"
-        "y = 1.0 + 2.0*x1 + rng.normal(scale=1.0, size=n)\n"
-        "\n"
-        "df = pd.DataFrame({'y': y, 'x1': x1, 'x2': x2})\n"
-        "print(vif_table(df, ['x1', 'x2']))\n"
-        "\n"
-        "X = sm.add_constant(df[['x1', 'x2']])\n"
-        "res = sm.OLS(df['y'], X).fit()\n"
-        "print(res.params)\n"
-        "print(res.bse)\n"
-        "```\n"
-        "\n"
-        "**Mitigations (practical)**\n"
-        "- Drop one of the correlated variables (choose based on interpretability).\n"
-        "- Combine them (PCA/factors, or domain-driven composite indices).\n"
-        "- Use regularization (ridge tends to stabilize coefficients).\n"
-        "\n"
-        "**Economic interpretation warning**\n"
-        "- Macro indicators often move together.\n"
-        "- If two indicators are highly correlated, \"holding one fixed\" is not an economically realistic counterfactual.\n"
-        "- Treat coefficients as conditional correlations, not causal effects.\n"
-    )
+    return concept("multicollinearity_vif")
+
+
 def concept_hac_newey_west_deep_dive() -> str:
-    return (
-        "### Deep Dive: HAC / Newey-West Standard Errors (Time-Series Inference)\n"
-        "\n"
-        "**Autocorrelation** means errors are correlated over time.\n"
-        "**Heteroskedasticity** means the error variance changes over time.\n"
-        "\n"
-        "In time series, both are common. If you ignore them, your coefficient estimates can still be unbiased in some settings,\n"
-        "but your **standard errors** (and therefore p-values/CI) can be wrong.\n"
-        "\n"
-        "**What HAC/Newey-West does**\n"
-        "- Keeps the same OLS coefficients.\n"
-        "- Adjusts the covariance estimate to be robust to autocorrelation and heteroskedasticity.\n"
-        "\n"
-        "**Python demo: AR(1) errors break naive SE**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 200\n"
-        "x = rng.normal(size=n)\n"
-        "\n"
-        "# AR(1) errors\n"
-        "eps = np.zeros(n)\n"
-        "for t in range(1, n):\n"
-        "    eps[t] = 0.8*eps[t-1] + rng.normal(scale=1.0)\n"
-        "\n"
-        "y = 1.0 + 0.5*x + eps\n"
-        "\n"
-        "X = sm.add_constant(pd.DataFrame({'x': x}))\n"
-        "res = sm.OLS(y, X).fit()\n"
-        "res_hac = res.get_robustcov_results(cov_type='HAC', cov_kwds={'maxlags': 4})\n"
-        "\n"
-        "print('naive SE:', res.bse)\n"
-        "print('HAC SE  :', res_hac.bse)\n"
-        "```\n"
-        "\n"
-        "**Choosing `maxlags`**\n"
-        "- There is no perfect choice.\n"
-        "- Try a small set (1, 2, 4 for quarterly) and see if inference is stable.\n"
-        "- If your inference flips sign/significance with small changes, that is a warning sign.\n"
-        "\n"
-        "**What p-values mean (and don't)**\n"
-        "- A small p-value is evidence against a zero effect *under the model assumptions*.\n"
-        "- It is not proof of causality.\n"
-        "- In macro time series, structural breaks and regime shifts can invalidate assumptions.\n"
-    )
+    return concept("hac_newey_west")
+
+
 def concept_logistic_regression_odds_deep_dive() -> str:
-    return (
-        "### Deep Dive: Logistic Regression, Odds, and Interpreting Coefficients\n"
-        "\n"
-        "Logistic regression models:\n"
-        "- score: `z = β0 + β1 x1 + ...`\n"
-        "- probability: `p = 1 / (1 + exp(-z))`\n"
-        "\n"
-        "**Odds and log-odds**\n"
-        "- odds = `p / (1-p)`\n"
-        "- log-odds = `log(p/(1-p))`\n"
-        "- Logistic regression is linear in log-odds.\n"
-        "\n"
-        "**Coefficient interpretation (key idea)**\n"
-        "- A +1 increase in feature x_j adds β_j to log-odds.\n"
-        "- `exp(β_j)` is the odds multiplier (holding other features fixed).\n"
-        "\n"
-        "**Python demo: odds multipliers**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "beta = 0.7\n"
-        "print('odds multiplier:', np.exp(beta))\n"
-        "```\n"
-        "\n"
-        "**Scaling matters**\n"
-        "- If x is in large units, β will be small; if x is standardized, β is per 1 std dev.\n"
-        "- For interpretation, standardize or be explicit about units.\n"
-    )
+    return concept("logistic_odds")
+
+
 def concept_calibration_brier_deep_dive() -> str:
-    return (
-        "### Deep Dive: Calibration and Brier Score (Probabilities You Can Trust)\n"
-        "\n"
-        "**Calibration** asks: when the model says 0.70, does the event happen ~70% of the time?\n"
-        "\n"
-        "**Brier score** is mean squared error of probabilities:\n"
-        "- `mean((p - y)^2)` where y is 0/1.\n"
-        "- Lower is better.\n"
-        "\n"
-        "**Python demo: calibration curve**\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.calibration import calibration_curve\n"
-        "\n"
-        "# y_true: 0/1, y_prob: predicted probabilities\n"
-        "# prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)\n"
-        "```\n"
-        "\n"
-        "**Why this matters for recession prediction**\n"
-        "- A probability model is only useful if you can make decisions from it.\n"
-        "- Poor calibration means your 30% and 70% signals are not comparable.\n"
-    )
+    return concept("calibration_brier")
+
+
 def concept_walk_forward_validation_deep_dive() -> str:
-    return (
-        "### Deep Dive: Walk-Forward Validation (Stability Over Time)\n"
-        "\n"
-        "**Walk-forward validation** repeatedly trains on the past and tests on the next time block.\n"
-        "It answers: \"does my model work across multiple eras, or only in one?\"\n"
-        "\n"
-        "**Why it's important in economics**\n"
-        "- Relationships change (structural breaks).\n"
-        "- Policy regimes shift.\n"
-        "- A single split can hide fragility.\n"
-        "\n"
-        "**Pseudo-code**\n"
-        "```python\n"
-        "# for each fold:\n"
-        "#   train = data[:t]\n"
-        "#   test  = data[t:t+h]\n"
-        "#   fit model\n"
-        "#   compute metrics\n"
-        "```\n"
-        "\n"
-        "**Interpretation**\n"
-        "- If metrics vary widely across folds, your model is regime-sensitive.\n"
-        "- This can be a reason to retrain more frequently or include regime features.\n"
-    )
+    return concept("walk_forward_validation")
+
+
 def concept_pca_loadings_deep_dive() -> str:
-    return (
-        "### Deep Dive: PCA and Loadings (Turning Many Indicators Into Factors)\n"
-        "\n"
-        "**PCA** finds orthogonal directions that explain maximum variance.\n"
-        "\n"
-        "**Loadings** tell you which original variables contribute to a component.\n"
-        "A component can often be interpreted as a macro \"factor\" (e.g., growth, inflation, rates).\n"
-        "\n"
-        "**Critical step: standardization**\n"
-        "- Without standardization, PCA mostly learns the biggest-unit variable.\n"
-        "\n"
-        "**Python demo**\n"
-        "```python\n"
-        "from sklearn.decomposition import PCA\n"
-        "from sklearn.preprocessing import StandardScaler\n"
-        "\n"
-        "# X_scaled = StandardScaler().fit_transform(X)\n"
-        "# pca = PCA(n_components=3).fit(X_scaled)\n"
-        "# loadings = pca.components_  # rows are components\n"
-        "```\n"
-        "\n"
-        "**Interpretation playbook**\n"
-        "- Look at the largest positive/negative loadings.\n"
-        "- Give the factor a name.\n"
-        "- Check if that factor spikes during known historical episodes.\n"
-    )
+    return concept("pca_loadings")
 
 
 def concept_api_and_caching_deep_dive() -> str:
-    return (
-        "### Deep Dive: APIs + Caching (How Real-World Data Ingestion Works)\n"
-        "\n"
-        "This project intentionally makes you interact with real APIs because data ingestion is where many ML projects fail.\n"
-        "In practice, you need to understand *protocols*, *schemas*, and *reproducibility*.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **API (Application Programming Interface)**: a contract for requesting and receiving structured data.\n"
-        "- **HTTP**: the protocol used for requests/responses (what `requests.get(...)` uses under the hood).\n"
-        "- **Endpoint**: a specific API path (e.g., `series/observations`).\n"
-        "- **Query parameters**: key/value inputs in the URL (e.g., `series_id=UNRATE`).\n"
-        "- **Status code**: tells you whether a request succeeded (200) or failed (4xx/5xx).\n"
-        "- **Timeout**: how long you wait before giving up (prevents hanging forever).\n"
-        "- **Retry/backoff**: re-attempting requests after transient failures.\n"
-        "- **Schema**: expected structure of the JSON payload.\n"
-        "- **Cache**: stored copy of responses used to avoid repeated calls and make runs reproducible.\n"
-        "\n"
-        "#### Why caching matters for learning (and for production)\n"
-        "- **Speed**: you can iterate without waiting on the network.\n"
-        "- **Reproducibility**: your results do not change because an endpoint changed or the data was revised.\n"
-        "- **Debuggability**: you can inspect raw payloads when parsing fails.\n"
-        "\n"
-        "#### Raw vs processed data\n"
-        "- `data/raw/`: the API's response (JSON) with minimal transformation.\n"
-        "- `data/processed/`: tables you created (CSV) after cleaning and aligning time.\n"
-        "\n"
-        "#### Python demo: minimal caching pattern\n"
-        "```python\n"
-        "from __future__ import annotations\n"
-        "\n"
-        "import json\n"
-        "from pathlib import Path\n"
-        "import requests\n"
-        "\n"
-        "def load_or_fetch_json(path: Path, fetch_fn):\n"
-        "    if path.exists():\n"
-        "        return json.loads(path.read_text())\n"
-        "    payload = fetch_fn()\n"
-        "    path.parent.mkdir(parents=True, exist_ok=True)\n"
-        "    path.write_text(json.dumps(payload))\n"
-        "    return payload\n"
-        "\n"
-        "def fetch_example(url: str, params: dict):\n"
-        "    r = requests.get(url, params=params, timeout=30)\n"
-        "    r.raise_for_status()  # raises on 4xx/5xx\n"
-        "    return r.json()\n"
-        "```\n"
-        "\n"
-        "#### Debug playbook: when your API code fails\n"
-        "1. Print the full URL + params (so you can reproduce outside Python).\n"
-        "2. Inspect the status code and response body.\n"
-        "3. Cache the raw payload and re-run parsing offline.\n"
-        "4. Validate schema assumptions (`payload.keys()`, sample rows).\n"
-        "5. Add defensive parsing (type conversion, missing markers, etc.).\n"
-        "\n"
-        "#### Economics caveat: revisions and vintages\n"
-        "- Some macro series are revised after initial release (GDP is a classic example).\n"
-        "- If you re-fetch later, historical values can change; caching avoids silent drift.\n"
-    )
+    return concept("api_caching")
 
 
 def concept_resampling_and_alignment_deep_dive() -> str:
-    return (
-        "### Deep Dive: Frequency Alignment (Daily/Monthly/Quarterly)\n"
-        "\n"
-        "Economic indicators arrive at different frequencies:\n"
-        "- GDP is quarterly.\n"
-        "- CPI/unemployment are monthly.\n"
-        "- Yield curve spreads can be daily.\n"
-        "\n"
-        "To build a single modeling table, you must choose a *timeline* and convert everything onto it.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Resampling**: converting a time series to a new frequency (e.g., daily -> monthly).\n"
-        "- **Aggregation**: combining many observations into one (mean/last/sum).\n"
-        "- **Forward-fill (ffill)**: carrying the last known value forward until updated.\n"
-        "- **As-of merge**: joining on the most recent available observation (common in finance).\n"
-        "\n"
-        "#### Why month-end is a pragmatic choice\n"
-        "- Many macro series are monthly.\n"
-        "- Daily series can be summarized to month-end (`last`) or month-average (`mean`).\n"
-        "- Month-end timestamps make quarterly aggregation easier.\n"
-        "\n"
-        "#### Python demo: daily -> month-end (last vs mean)\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "\n"
-        "idx = pd.date_range('2020-01-01', periods=120, freq='D')\n"
-        "x_daily = pd.Series(np.random.default_rng(0).normal(size=len(idx)).cumsum(), index=idx)\n"
-        "\n"
-        "x_me_last = x_daily.resample('ME').last()\n"
-        "x_me_mean = x_daily.resample('ME').mean()\n"
-        "```\n"
-        "\n"
-        "#### Missing data and forward-fill (what it assumes)\n"
-        "- Forward-fill assumes the last published value remains \"true\" until updated.\n"
-        "- This is often reasonable for policy rates between meetings, but can be questionable for volatile indicators.\n"
-        "- Always inspect long gaps: forward-filling across multi-month gaps can create fake stability.\n"
-        "\n"
-        "#### Debug checks\n"
-        "- Are timestamps sorted and unique?\n"
-        "- After resampling, do you have the expected frequency (`ME` rows, `QE` rows)?\n"
-        "- Do joins create NaNs? If so, which series and why?\n"
-    )
+    return concept("resampling_alignment")
 
 
 def concept_gdp_growth_and_recession_label_deep_dive() -> str:
-    return (
-        "### Deep Dive: GDP Growth Math + Technical Recession Labels\n"
-        "\n"
-        "GDP is a *level* series (a quantity). A recession label requires turning levels into *growth rates*.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Level**: the raw value of a series (e.g., real GDP in chained dollars).\n"
-        "- **Growth rate**: percent change of a level over a period.\n"
-        "- **QoQ (quarter-over-quarter)**: compares GDP_t to GDP_{t-1}.\n"
-        "- **YoY (year-over-year)**: compares GDP_t to GDP_{t-4}.\n"
-        "- **Annualized growth**: converting a quarterly growth rate into an annual pace.\n"
-        "- **Technical recession (proxy)**: two consecutive negative quarters of QoQ GDP growth.\n"
-        "\n"
-        "#### Growth formulas (and what they mean)\n"
-        "- QoQ percent growth:\n"
-        "  - `g_qoq[t] = 100 * (GDP[t]/GDP[t-1] - 1)`\n"
-        "- QoQ annualized percent growth:\n"
-        "  - `g_ann[t] = 100 * ((GDP[t]/GDP[t-1])**4 - 1)`\n"
-        "- YoY percent growth:\n"
-        "  - `g_yoy[t] = 100 * (GDP[t]/GDP[t-4] - 1)`\n"
-        "\n"
-        "Why multiple growth measures?\n"
-        "- QoQ is more \"responsive\" but noisier.\n"
-        "- YoY is smoother but reacts later.\n"
-        "\n"
-        "#### Label construction (this project)\n"
-        "- Recession at quarter t:\n"
-        "  - `recession[t] = 1 if (g_qoq[t] < 0 and g_qoq[t-1] < 0) else 0`\n"
-        "- Next-quarter target:\n"
-        "  - `target_recession_next_q[t] = recession[t+1]`\n"
-        "\n"
-        "#### Critical limitation (interpretation)\n"
-        "- This is a clean teaching label, but it is **not** an official recession dating rule.\n"
-        "- Official recession dating uses multiple indicators and can disagree with the 2-quarter rule.\n"
-        "\n"
-        "#### Python demo: label edge cases\n"
-        "```python\n"
-        "import pandas as pd\n"
-        "\n"
-        "growth = pd.Series([1.0, -0.1, -0.2, 0.3, -0.1, -0.1])\n"
-        "recession = ((growth < 0) & (growth.shift(1) < 0)).astype(int)\n"
-        "target_next = recession.shift(-1)\n"
-        "pd.DataFrame({'growth': growth, 'recession': recession, 'target_next': target_next})\n"
-        "```\n"
-        "\n"
-        "#### Macro caveat: revisions\n"
-        "- GDP is revised. If you re-fetch later, the computed label can change.\n"
-        "- That is one reason we emphasize caching raw data.\n"
-    )
+    return concept("gdp_growth_recession_label")
 
 
 def concept_quarterly_feature_engineering_deep_dive() -> str:
-    return (
-        "### Deep Dive: Monthly -> Quarterly Features (No-Leakage Engineering)\n"
-        "\n"
-        "Your target is quarterly (GDP growth / recession label), but many predictors are monthly/daily.\n"
-        "You must transform predictors into quarterly features that were available at the time.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Aggregation window**: the period you summarize (e.g., quarter).\n"
-        "- **Quarter-average**: average monthly values within the quarter.\n"
-        "- **Quarter-end**: last available value in the quarter.\n"
-        "- **Lag**: a past value used as a feature (e.g., x_{t-1}).\n"
-        "- **Horizon**: how far ahead you are predicting (here: next quarter).\n"
-        "\n"
-        "#### Two defensible quarterly feature definitions\n"
-        "- Quarter-average features (mean): captures typical conditions during the quarter.\n"
-        "- Quarter-end features (last): captures conditions at the end of the quarter.\n"
-        "\n"
-        "#### Leakage risk: using information from inside the target quarter\n"
-        "Be explicit about what your prediction timestamp means.\n"
-        "- If you predict recession_{t+1} using quarter t features, ensure features only use information up to end of quarter t.\n"
-        "- If you predict *during* quarter t, you would need partial-quarter features (nowcasting).\n"
-        "\n"
-        "#### Python demo: quarterly aggregation + lags\n"
-        "```python\n"
-        "import pandas as pd\n"
-        "\n"
-        "panel_monthly = pd.read_csv('data/sample/panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
-        "\n"
-        "q_mean = panel_monthly.resample('QE').mean()\n"
-        "q_last = panel_monthly.resample('QE').last()\n"
-        "\n"
-        "# Example lag features\n"
-        "q = q_mean.add_prefix('mean_')\n"
-        "q['mean_UNRATE_lag1'] = q['mean_UNRATE'].shift(1)\n"
-        "q = q.dropna()\n"
-        "```\n"
-        "\n"
-        "#### Debug checks for leakage\n"
-        "1. Are all lags non-negative (shift(+k))?\n"
-        "2. Does `target_recession_next_q` shift the correct direction?\n"
-        "3. Does the feature table end at the same quarter as the target (after dropna)?\n"
-        "4. If you recompute with a different aggregation (mean vs last), do conclusions change?\n"
-    )
+    return concept("quarterly_feature_engineering")
 
 
 def concept_micro_regression_log_log_deep_dive() -> str:
-    return (
-        "### Deep Dive: Log-Log Regression (Elasticity-Style Interpretation)\n"
-        "\n"
-        "In microeconomic cross-sectional data, log transforms are common because:\n"
-        "- relationships are often multiplicative (percent changes matter), and\n"
-        "- log transforms compress heavy tails (income, population, housing values).\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Cross-sectional data**: many units (counties) observed at one time.\n"
-        "- **Log transform**: `log(x)`; turns multiplicative relationships into additive ones.\n"
-        "- **Elasticity (informal here)**: in a log-log model, the slope approximates a percent-percent relationship.\n"
-        "\n"
-        "#### Model and interpretation\n"
-        "- Log-log model: `log(y) = a + b*log(x) + e`\n"
-        "- Interpretation of b (rule of thumb): a 1% increase in x is associated with ~b% increase in y.\n"
-        "\n"
-        "#### Pitfall: zeros and missing values\n"
-        "- `log(0)` is undefined.\n"
-        "- You must filter out non-positive values or use transformations like `log1p` (context-dependent).\n"
-        "\n"
-        "#### Python demo: interpreting b\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 800\n"
-        "x = np.exp(rng.normal(size=n))\n"
-        "y = 2.0 * (x ** 0.3) * np.exp(rng.normal(scale=0.2, size=n))\n"
-        "\n"
-        "df = pd.DataFrame({'x': x, 'y': y})\n"
-        "df['lx'] = np.log(df['x'])\n"
-        "df['ly'] = np.log(df['y'])\n"
-        "\n"
-        "X = sm.add_constant(df[['lx']])\n"
-        "res = sm.OLS(df['ly'], X).fit()\n"
-        "print(res.params)  # slope ~ 0.3\n"
-        "```\n"
-    )
+    return concept("micro_log_log")
 
 
 def concept_robust_se_hc3_deep_dive() -> str:
-    return (
-        "### Deep Dive: Robust Standard Errors (HC3) for Cross-Sectional Data\n"
-        "\n"
-        "In cross-sectional economics, heteroskedasticity is common: richer counties often have different variance in outcomes.\n"
-        "Naive OLS standard errors assume constant variance; HC3 relaxes that.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Heteroskedasticity**: error variance changes with x.\n"
-        "- **Robust SE**: covariance estimates that remain valid under certain violations.\n"
-        "- **HC3**: a popular heteroskedasticity-robust SE variant (often conservative).\n"
-        "\n"
-        "#### What changes when you use HC3?\n"
-        "- Coefficients (beta) do not change.\n"
-        "- Standard errors / p-values / confidence intervals change.\n"
-        "\n"
-        "#### Python demo: heteroskedastic errors and robust SE\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 400\n"
-        "x = rng.normal(size=n)\n"
-        "\n"
-        "# Error variance increases with |x|\n"
-        "eps = rng.normal(scale=1 + 2*np.abs(x), size=n)\n"
-        "y = 1.0 + 0.5*x + eps\n"
-        "\n"
-        "X = sm.add_constant(pd.DataFrame({'x': x}))\n"
-        "res = sm.OLS(y, X).fit()\n"
-        "res_hc3 = res.get_robustcov_results(cov_type='HC3')\n"
-        "\n"
-        "print('naive SE:', res.bse)\n"
-        "print('HC3 SE  :', res_hc3.bse)\n"
-        "```\n"
-        "\n"
-        "#### Interpretation warning\n"
-        "- A small p-value is not a causal certificate.\n"
-        "- Robust SE helps with *uncertainty* under heteroskedasticity, not with confounding.\n"
-    )
+    return concept("robust_se_hc3")
 
 
 def concept_omitted_variable_bias_deep_dive() -> str:
-    return (
-        "### Deep Dive: Omitted Variable Bias (Why Adding Controls Changes Coefficients)\n"
-        "\n"
-        "**Omitted variable bias (OVB)** happens when:\n"
-        "1) you omit a variable Z that affects Y, and\n"
-        "2) Z is correlated with an included regressor X.\n"
-        "\n"
-        "Then the coefficient on X partly absorbs Z's effect.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Confounder**: a variable related to both X and Y.\n"
-        "- **Control variable**: a variable included to reduce confounding.\n"
-        "- **Specification**: the set of variables you include in a regression.\n"
-        "\n"
-        "#### Python demo: a confounder makes X look important\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 2000\n"
-        "\n"
-        "# Z affects Y, and Z also affects X.\n"
-        "z = rng.normal(size=n)\n"
-        "x = 0.8*z + rng.normal(scale=1.0, size=n)\n"
-        "y = 2.0*z + rng.normal(scale=1.0, size=n)\n"
-        "\n"
-        "df = pd.DataFrame({'y': y, 'x': x, 'z': z})\n"
-        "\n"
-        "# Omitted Z: biased coefficient on x\n"
-        "res_omit = sm.OLS(df['y'], sm.add_constant(df[['x']])).fit()\n"
-        "\n"
-        "# Include Z: coefficient on x shrinks toward 0\n"
-        "res_full = sm.OLS(df['y'], sm.add_constant(df[['x', 'z']])).fit()\n"
-        "\n"
-        "print('omit z:', res_omit.params)\n"
-        "print('full  :', res_full.params)\n"
-        "```\n"
-        "\n"
-        "#### Practical rule\n"
-        "- If your coefficient flips sign or changes drastically when adding plausible controls,\n"
-        "  your original interpretation was likely fragile.\n"
-    )
+    return concept("omitted_variable_bias")
 
 
 def concept_regularization_ridge_lasso_deep_dive() -> str:
-    return (
-        "### Deep Dive: Regularization (Ridge vs Lasso)\n"
-        "\n"
-        "Regularization adds a penalty to the loss function to reduce overfitting and stabilize coefficients.\n"
-        "In macro data with correlated indicators, it is often essential.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Regularization**: adding a penalty term to discourage large coefficients.\n"
-        "- **L2 penalty (ridge)**: penalizes squared coefficients.\n"
-        "- **L1 penalty (lasso)**: penalizes absolute coefficients; can drive some to exactly 0.\n"
-        "- **Alpha (lambda)**: strength of the penalty (hyperparameter).\n"
-        "- **Coefficient path**: coefficients as a function of alpha.\n"
-        "\n"
-        "#### Objectives (math)\n"
-        "- OLS: minimize `||y - Xβ||^2`\n"
-        "- Ridge: minimize `||y - Xβ||^2 + α * ||β||_2^2`\n"
-        "- Lasso: minimize `||y - Xβ||^2 + α * ||β||_1`\n"
-        "\n"
-        "#### Why standardization matters\n"
-        "- Penalties depend on coefficient magnitudes.\n"
-        "- If features are on different scales (percent vs index points), the penalty is uneven.\n"
-        "- Standardize (`StandardScaler`) before ridge/lasso.\n"
-        "\n"
-        "#### Ridge vs lasso when predictors are correlated\n"
-        "- Ridge tends to shrink correlated predictors together (grouping effect).\n"
-        "- Lasso often picks one feature from a correlated group (can be unstable across samples).\n"
-        "\n"
-        "#### Python demo: coefficient instability vs stabilization\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.linear_model import LinearRegression, Ridge, Lasso\n"
-        "from sklearn.preprocessing import StandardScaler\n"
-        "from sklearn.pipeline import Pipeline\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 300\n"
-        "x1 = rng.normal(size=n)\n"
-        "x2 = x1 * 0.98 + rng.normal(scale=0.2, size=n)  # highly correlated\n"
-        "y = 1.0 + 2.0*x1 + rng.normal(scale=1.0, size=n)\n"
-        "X = np.column_stack([x1, x2])\n"
-        "\n"
-        "ols = LinearRegression().fit(X, y)\n"
-        "ridge = Pipeline([('sc', StandardScaler()), ('m', Ridge(alpha=5.0))]).fit(X, y)\n"
-        "lasso = Pipeline([('sc', StandardScaler()), ('m', Lasso(alpha=0.1, max_iter=10000))]).fit(X, y)\n"
-        "\n"
-        "print('ols  coef:', ols.coef_)\n"
-        "print('ridge coef:', ridge.named_steps['m'].coef_)\n"
-        "print('lasso coef:', lasso.named_steps['m'].coef_)\n"
-        "```\n"
-        "\n"
-        "#### Interpretation warning\n"
-        "- Regularized coefficients are biased by design.\n"
-        "- They can be excellent for prediction, but do not treat them as classical OLS inference objects.\n"
-        "- Prefer out-of-sample evaluation and stability checks.\n"
-    )
+    return concept("regularization_ridge_lasso")
 
 
 def concept_rolling_regression_stability_deep_dive() -> str:
-    return (
-        "### Deep Dive: Rolling Regressions (Stability and Structural Breaks)\n"
-        "\n"
-        "A rolling regression repeatedly re-fits a model on a moving window of past data.\n"
-        "This is a practical way to detect coefficient drift and regime sensitivity.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Rolling window**: a fixed-size window that moves forward through time.\n"
-        "- **Expanding window**: a window that grows over time (always includes all past).\n"
-        "- **Structural break**: the relationship between X and Y changes.\n"
-        "- **Regime**: an era where relationships are relatively stable.\n"
-        "\n"
-        "#### Why this matters in macro\n"
-        "- Policy regimes change.\n"
-        "- Financial structure changes.\n"
-        "- Data definitions change.\n"
-        "A single \"global\" coefficient can hide these shifts.\n"
-        "\n"
-        "#### Python demo: relationship changes mid-sample\n"
-        "```python\n"
-        "import numpy as np\n"
-        "import pandas as pd\n"
-        "import statsmodels.api as sm\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 200\n"
-        "x = rng.normal(size=n)\n"
-        "\n"
-        "# Coefficient changes halfway\n"
-        "beta = np.r_[np.repeat(0.2, n//2), np.repeat(-0.2, n - n//2)]\n"
-        "y = 1.0 + beta*x + rng.normal(scale=1.0, size=n)\n"
-        "\n"
-        "idx = pd.date_range('1970-03-31', periods=n, freq='QE')\n"
-        "df = pd.DataFrame({'y': y, 'x': x}, index=idx)\n"
-        "\n"
-        "window = 60\n"
-        "betas = []\n"
-        "dates = []\n"
-        "for end in range(window, len(df)+1):\n"
-        "    sub = df.iloc[end-window:end]\n"
-        "    res = sm.OLS(sub['y'], sm.add_constant(sub[['x']])).fit()\n"
-        "    betas.append(res.params['x'])\n"
-        "    dates.append(sub.index[-1])\n"
-        "\n"
-        "out = pd.Series(betas, index=dates)\n"
-        "out.head()\n"
-        "```\n"
-        "\n"
-        "#### Interpretation\n"
-        "- If coefficients drift, your model is not describing a single stable mechanism.\n"
-        "- For prediction, you may prefer recent windows.\n"
-        "- For inference, you must be careful about claiming a single \"effect\" across eras.\n"
-    )
+    return concept("rolling_regression")
 
 
 def concept_class_imbalance_and_metrics_deep_dive() -> str:
-    return (
-        "### Deep Dive: Class Imbalance and Why Accuracy Lies\n"
-        "\n"
-        "Recessions are rare. That means classification is an imbalanced problem.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Base rate**: prevalence of the positive class (fraction of recession quarters).\n"
-        "- **Imbalanced data**: one class is much rarer than the other.\n"
-        "- **Precision**: among predicted positives, how many were true positives?\n"
-        "- **Recall**: among true positives, how many did we catch?\n"
-        "- **ROC-AUC**: ranking quality across thresholds (can look good even if precision is poor).\n"
-        "- **PR-AUC**: focuses on positive-class retrieval (often more honest for rare events).\n"
-        "- **Proper scoring rule**: rewards calibrated probabilities (log loss, Brier score).\n"
-        "\n"
-        "#### The accuracy trap\n"
-        "- If recessions happen 10% of the time, a model that always predicts \"no recession\" has 90% accuracy.\n"
-        "- But it is useless.\n"
-        "\n"
-        "#### Baselines you should always compute\n"
-        "- Majority class (always 0)\n"
-        "- Persistence (predict next = current)\n"
-        "- Simple heuristic (e.g., yield curve inversion rule)\n"
-        "\n"
-        "#### Python demo: why PR matters\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.metrics import roc_auc_score, average_precision_score\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 500\n"
-        "y = rng.binomial(1, 0.1, size=n)  # 10% positives\n"
-        "\n"
-        "# A weak signal score\n"
-        "score = 0.2*y + rng.normal(scale=1.0, size=n)\n"
-        "\n"
-        "print('ROC-AUC:', roc_auc_score(y, score))\n"
-        "print('PR-AUC :', average_precision_score(y, score))\n"
-        "```\n"
-        "\n"
-        "#### Decision framing\n"
-        "- Choose thresholds based on *costs* (false positives vs false negatives), not vibes.\n"
-        "- Calibration matters if you want probabilities you can act on.\n"
-    )
+    return concept("class_imbalance_metrics")
 
 
 def concept_tree_models_and_importance_deep_dive() -> str:
-    return (
-        "### Deep Dive: Tree Models + Feature Importance (What To Trust)\n"
-        "\n"
-        "Tree models can capture non-linear relationships and interactions that linear models miss.\n"
-        "But they are easier to overfit and harder to interpret.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Decision tree**: splits data by thresholds on features.\n"
-        "- **Random forest**: averages many trees trained on bootstrapped samples.\n"
-        "- **Gradient boosting**: sequentially adds trees to correct errors.\n"
-        "- **Overfitting**: learning noise; appears as high train performance, low test performance.\n"
-        "- **Gini importance**: impurity-based importance from trees (can be biased).\n"
-        "- **Permutation importance**: importance from shuffling a feature and measuring performance drop.\n"
-        "\n"
-        "#### Why tree feature importances can mislead\n"
-        "- Impurity-based importance can favor:\n"
-        "  - high-cardinality features,\n"
-        "  - noisy continuous features,\n"
-        "  - correlated features (importance can be split or concentrated unpredictably).\n"
-        "\n"
-        "#### Python demo: impurity vs permutation importance\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.ensemble import RandomForestClassifier\n"
-        "from sklearn.inspection import permutation_importance\n"
-        "from sklearn.model_selection import train_test_split\n"
-        "from sklearn.metrics import roc_auc_score\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "n = 800\n"
-        "\n"
-        "# Two correlated features + one noise feature\n"
-        "x1 = rng.normal(size=n)\n"
-        "x2 = x1 * 0.9 + rng.normal(scale=0.5, size=n)\n"
-        "x3 = rng.normal(size=n)\n"
-        "X = np.column_stack([x1, x2, x3])\n"
-        "p = 1 / (1 + np.exp(-(0.5 + 1.0*x1)))\n"
-        "y = rng.binomial(1, p)\n"
-        "\n"
-        "X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0, shuffle=True)\n"
-        "rf = RandomForestClassifier(n_estimators=300, random_state=0).fit(X_tr, y_tr)\n"
-        "print('AUC:', roc_auc_score(y_te, rf.predict_proba(X_te)[:,1]))\n"
-        "print('gini importances:', rf.feature_importances_)\n"
-        "\n"
-        "pi = permutation_importance(rf, X_te, y_te, n_repeats=20, random_state=0, scoring='roc_auc')\n"
-        "print('perm importances:', pi.importances_mean)\n"
-        "```\n"
-        "\n"
-        "#### Practical interpretation\n"
-        "- Treat importance as \"usefulness for prediction\", not causal influence.\n"
-        "- Compare importances across eras (walk-forward) to see if drivers change.\n"
-    )
+    return concept("tree_importance")
 
 
 def concept_clustering_regimes_deep_dive() -> str:
-    return (
-        "### Deep Dive: Clustering as Regime Discovery\n"
-        "\n"
-        "Clustering groups time periods with similar indicator patterns.\n"
-        "You can treat clusters as candidate \"macro regimes\" and then compare them to recessions.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **k-means**: clustering method that minimizes within-cluster squared distances to centroids.\n"
-        "- **Inertia**: k-means objective value (lower is better, always decreases with k).\n"
-        "- **Silhouette score**: measures separation between clusters (higher is better).\n"
-        "- **Standardization**: required because distance depends on scale.\n"
-        "\n"
-        "#### Choosing k\n"
-        "- There is no single \"correct\" k.\n"
-        "- Use elbow plots (inertia), silhouette scores, and interpretability.\n"
-        "\n"
-        "#### Python demo: k-means + silhouette\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.cluster import KMeans\n"
-        "from sklearn.metrics import silhouette_score\n"
-        "from sklearn.preprocessing import StandardScaler\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "X = rng.normal(size=(200, 4))\n"
-        "X = StandardScaler().fit_transform(X)\n"
-        "\n"
-        "for k in [2, 3, 4, 5]:\n"
-        "    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)\n"
-        "    sil = silhouette_score(X, km.labels_)\n"
-        "    print(k, 'inertia', km.inertia_, 'sil', sil)\n"
-        "```\n"
-        "\n"
-        "#### Interpretation playbook\n"
-        "1. Compute cluster centroids in original units (undo scaling) for interpretability.\n"
-        "2. Name clusters in economic language (\"high inflation/high rates\", etc.).\n"
-        "3. Check whether certain clusters are recession-heavy.\n"
-    )
+    return concept("clustering_regimes")
 
 
 def concept_anomaly_detection_deep_dive() -> str:
-    return (
-        "### Deep Dive: Anomaly Detection (Crisis Periods)\n"
-        "\n"
-        "Anomaly detection flags observations that look unusual relative to the bulk of the data.\n"
-        "In macro, anomalies often correspond to crises (e.g., 2008, 2020), but not always.\n"
-        "\n"
-        "#### Key Terms (defined)\n"
-        "- **Outlier**: an observation far from typical behavior.\n"
-        "- **Anomaly score**: a numeric measure of \"unusualness\".\n"
-        "- **Isolation Forest**: detects anomalies by how easily points are isolated by random splits.\n"
-        "- **Contamination**: expected fraction of anomalies (hyperparameter).\n"
-        "\n"
-        "#### Python demo: Isolation Forest intuition\n"
-        "```python\n"
-        "import numpy as np\n"
-        "from sklearn.ensemble import IsolationForest\n"
-        "from sklearn.preprocessing import StandardScaler\n"
-        "\n"
-        "rng = np.random.default_rng(0)\n"
-        "X_normal = rng.normal(size=(300, 3))\n"
-        "X_anom = rng.normal(loc=6.0, scale=1.0, size=(10, 3))\n"
-        "X = np.vstack([X_normal, X_anom])\n"
-        "X = StandardScaler().fit_transform(X)\n"
-        "\n"
-        "iso = IsolationForest(contamination=0.05, random_state=0).fit(X)\n"
-        "scores = -iso.score_samples(X)  # higher = more anomalous\n"
-        "scores[-10:].round(3)\n"
-        "```\n"
-        "\n"
-        "#### Interpreting anomalies\n"
-        "- An anomaly is not automatically \"bad\" or \"recession\".\n"
-        "- It means the pattern of indicators is rare.\n"
-        "- Compare anomaly flags to your recession label to see overlaps and differences.\n"
-        "\n"
-        "#### Debug tips\n"
-        "- Always standardize before distance/forest methods.\n"
-        "- Sensitivity-check the contamination parameter.\n"
-        "- Inspect which features contribute (e.g., via z-scores) for flagged periods.\n"
-    )
+    return concept("anomaly_detection")
+
+
+def guide_code_map(category: str, stem: str) -> list[str]:
+    """Return a short list of project code references relevant to this guide."""
+
+    common = [
+        "`src/data.py`: caching helpers and JSON load/save utilities",
+        "`src/features.py`: feature engineering helpers (lags, pct changes, rolling features)",
+    ]
+
+    if category == "00_foundations":
+        return [
+            "`scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)",
+            "`src/evaluation.py`: time splits and metrics used later",
+            *common,
+        ]
+
+    if category == "01_data":
+        out = [
+            "`src/fred_api.py`: FRED client (metadata + observations)",
+            "`src/census_api.py`: Census/ACS client",
+            "`src/macro.py`: GDP growth and technical recession label helpers",
+            "`scripts/build_datasets.py`: end-to-end dataset builder",
+            *common,
+        ]
+        if stem == "00_fred_api_and_caching":
+            out.insert(0, "`scripts/fetch_fred.py`: CLI fetch for FRED")
+        if stem == "04_census_api_microdata_fetch":
+            out.insert(0, "`scripts/fetch_census.py`: CLI fetch for Census/ACS")
+        return out
+
+    if category == "02_regression":
+        out = [
+            "`src/econometrics.py`: OLS + robust SE (HC3/HAC) + VIF",
+            "`src/macro.py`: GDP growth + label utilities (macro notebooks)",
+            "`src/evaluation.py`: regression metrics helpers",
+            *common,
+        ]
+        return out
+
+    if category == "03_classification":
+        return [
+            "`src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier)",
+            "`scripts/train_recession.py`: training script that writes artifacts",
+            "`scripts/predict_recession.py`: prediction script that loads artifacts",
+            *common,
+        ]
+
+    if category == "04_unsupervised":
+        return [
+            "`src/features.py`: feature engineering helpers (standardization happens in notebooks)",
+            "`data/sample/panel_monthly_sample.csv`: offline dataset for experimentation",
+            *common,
+        ]
+
+    if category == "05_model_ops":
+        return [
+            "`configs/recession.yaml`: example config for recession training",
+            "`scripts/build_datasets.py`: dataset builder (writes to data/processed/)",
+            "`scripts/train_recession.py`: training script (writes to outputs/<run_id>/)",
+            "`scripts/predict_recession.py`: prediction script (writes predictions.csv)",
+        ]
+
+    if category == "06_capstone":
+        return [
+            "`apps/streamlit_app.py`: dashboard that reads artifacts",
+            "`reports/capstone_report.md`: report template/output",
+            "`outputs/`: artifact bundles from training runs (models/metrics/preds/plots)",
+        ]
+
+    return common
 
 
 def write_guide(spec: NotebookSpec, root: Path) -> None:
@@ -2645,19 +1931,7 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### Why Time Ordering Changes Everything\n"
-            "- Random splits destroy chronology. In forecasting tasks, your model must only use information available at prediction time.\n"
-            "\n"
-            "### Correlation vs Causation\n"
-            "- **Correlation**: variables move together.\n"
-            "- **Causation**: changing X changes Y (a stronger claim that needs design/assumptions).\n"
-            "- In macro/micro data, you will see many correlated variables. Treat coefficients as *associational* unless you have a causal identification strategy.\n"
-            "\n"
-            "### Multicollinearity and VIF\n"
-            "- **VIF (Variance Inflation Factor)**: how much a coefficient's variance is inflated due to collinearity.\n"
-            "- High VIF implies unstable coefficients and wide confidence intervals, even if predictions are okay.\n"
-        )
+        technical = concept("core_foundations")
 
         # Stem-specific deep dives (first introduction gets the deepest treatment).
         if stem == "01_time_series_basics":
@@ -2665,28 +1939,31 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
                 "This notebook introduces the two most important ideas for economic ML:\n"
                 "1) time-aware evaluation, and\n"
                 "2) leakage prevention.\n\n"
+                + concept("core_foundations")
+                + "\n\n"
                 + concept_time_split_deep_dive()
                 + "\n\n"
                 + concept_leakage_deep_dive()
             )
         elif stem == "02_stats_basics_for_ml":
             technical = (
-                "This notebook is about the statistical failure modes that make models look smart when they are not.\n\n"
-                "### Deep Dive: Correlation vs Causation (Practical)\n"
-                "- **Correlation** answers: do X and Y move together?\n"
-                "- **Causation** answers: if we intervene on X, does Y change?\n"
-                "- Most observational economic datasets support correlation claims by default, not causal claims.\n\n"
-                "### Deep Dive: Overfitting (What It Looks Like)\n"
-                "- Overfitting is when a model learns noise specific to the training sample.\n"
-                "- Symptom: training performance improves while test performance stagnates or worsens.\n"
-                "- Fixes: simpler models, more data, regularization, better features, better splits.\n\n"
+                "This notebook introduces the core statistical vocabulary used throughout the project.\n\n"
+                + concept("core_foundations")
+                + "\n\n"
+                + concept("correlation_causation")
+                + "\n\n"
+                + concept("bias_variance_overfitting")
+                + "\n\n"
                 + concept_multicollinearity_vif_deep_dive()
+                + "\n\n"
+                + concept("hypothesis_testing")
             )
 
         mistakes_items = [
             "Using `train_test_split(shuffle=True)` on time-indexed data.",
             "Looking at the test set repeatedly while tuning (\"test leakage\").",
             "Assuming a significant p-value implies causation.",
+            "Running many tests/specs and treating a small p-value as proof (multiple testing / p-hacking).",
         ]
 
         summary = (
@@ -2733,32 +2010,19 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### GDP Growth Formulas\n"
-            "- QoQ growth (percent): `100 * (GDP_t / GDP_{t-1} - 1)`\n"
-            "- Annualized QoQ (percent): `100 * ((GDP_t / GDP_{t-1})^4 - 1)`\n"
-            "- YoY growth (percent): `100 * (GDP_t / GDP_{t-4} - 1)`\n"
-            "\n"
-            "### Technical Recession Label (Proxy)\n"
-            "- We define a recession quarter as: two consecutive quarters of negative QoQ GDP growth.\n"
-            "- This is *not* an official recession dating rule, but a clear, computable proxy for teaching.\n"
-            "\n"
-            "### Frequency Alignment and Aggregation Choices\n"
-            "- Monthly predictors aggregated to quarterly can use:\n"
-            "  - **quarter-average**: captures typical conditions across the quarter.\n"
-            "  - **quarter-end**: captures end-of-quarter conditions.\n"
-            "- Both can be defensible; the point is to choose intentionally and document the choice.\n"
-        )
+        technical = concept("core_data")
 
         # Stem-specific deep dives.
         if stem == "00_fred_api_and_caching":
-            technical = concept_api_and_caching_deep_dive()
+            technical = concept("core_data") + "\n\n" + concept_api_and_caching_deep_dive()
         elif stem == "01_build_macro_monthly_panel":
-            technical = concept_resampling_and_alignment_deep_dive()
+            technical = concept("core_data") + "\n\n" + concept_resampling_and_alignment_deep_dive()
         elif stem == "02_gdp_growth_and_recession_label":
-            technical = concept_gdp_growth_and_recession_label_deep_dive()
+            technical = concept("core_data") + "\n\n" + concept_gdp_growth_and_recession_label_deep_dive()
         elif stem == "03_build_macro_quarterly_features":
-            technical = concept_quarterly_feature_engineering_deep_dive()
+            technical = concept("core_data") + "\n\n" + concept_quarterly_feature_engineering_deep_dive()
+        elif stem == "04_census_api_microdata_fetch":
+            technical = concept("core_data") + "\n\n" + concept_api_and_caching_deep_dive()
 
         mistakes_items = [
             "Merging quarterly GDP with monthly predictors without explicit aggregation (silent misalignment).",
@@ -2815,48 +2079,52 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### OLS Objective\n"
-            "- Model: `y = Xβ + ε`\n"
-            "- OLS chooses `β` to minimize `Σ (y_i - ŷ_i)^2`.\n"
-            "\n"
-            "### Interpreting Coefficients\n"
-            "- In a simple regression with one feature, the slope is the expected change in `y` for a +1 change in `x`.\n"
-            "- In a multi-factor regression, the slope is the expected change in `y` for a +1 change in `x_j` *holding other X fixed*.\n"
-            "- If features are correlated (multicollinearity), \"holding others fixed\" can be a fragile, unrealistic counterfactual.\n"
-            "\n"
-            "### Inference vs Prediction\n"
-            "- Inference: emphasize coefficient uncertainty and assumptions.\n"
-            "- Prediction: emphasize out-of-sample performance.\n"
-            "- You can have strong prediction with weak/unstable coefficients.\n"
-            "\n"
-            "### Robust Standard Errors\n"
-            "- **HC3** addresses heteroskedasticity (common for cross-sectional county data).\n"
-            "- **HAC/Newey-West** addresses autocorrelation + heteroskedasticity (common for quarterly macro time series).\n"
-        )
+        technical = concept("core_regression")
 
         if stem == "04_inference_time_series_hac":
-            technical = technical + "\n\n" + concept_hac_newey_west_deep_dive()
+            technical = (
+                concept("core_regression")
+                + "\n\n"
+                + concept("hypothesis_testing")
+                + "\n\n"
+                + concept_hac_newey_west_deep_dive()
+            )
         elif stem == "00_single_factor_regression_micro":
             technical = (
-                concept_micro_regression_log_log_deep_dive()
+                concept("core_regression")
+                + "\n\n"
+                + concept_micro_regression_log_log_deep_dive()
                 + "\n\n"
                 + concept_robust_se_hc3_deep_dive()
                 + "\n\n"
-                + technical
+                + concept("hypothesis_testing")
+                + "\n\n"
+                + concept("multicollinearity_vif")
             )
         elif stem == "01_multifactor_regression_micro_controls":
             technical = (
+                concept("core_regression")
+                + "\n\n"
                 concept_omitted_variable_bias_deep_dive()
                 + "\n\n"
                 + concept_robust_se_hc3_deep_dive()
                 + "\n\n"
-                + technical
+                + concept("hypothesis_testing")
             )
+        elif stem == "02_single_factor_regression_macro":
+            technical = (
+                concept("core_regression")
+                + "\n\n"
+                + concept_hac_newey_west_deep_dive()
+                + "\n\n"
+                + concept("hypothesis_testing")
+            )
+        elif stem == "03_multifactor_regression_macro":
+            technical = concept("core_regression") + "\n\n" + concept_multicollinearity_vif_deep_dive()
         elif stem == "05_regularization_ridge_lasso":
-            technical = concept_regularization_ridge_lasso_deep_dive() + "\n\n" + technical
+            technical = concept("core_regression") + "\n\n" + concept_regularization_ridge_lasso_deep_dive()
         elif stem == "06_rolling_regressions_stability":
-            technical = concept_rolling_regression_stability_deep_dive() + "\n\n" + technical
+            technical = concept("core_regression") + "\n\n" + concept_rolling_regression_stability_deep_dive()
 
         mistakes_items = [
             "Interpreting a coefficient as causal without a causal design.",
@@ -2916,32 +2184,18 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### Logistic Regression Mechanics\n"
-            "- Score: `z = β0 + β1 x1 + ...`\n"
-            "- Probability: `p = 1 / (1 + exp(-z))`\n"
-            "- Training minimizes **log loss** (cross-entropy), not squared error.\n"
-            "\n"
-            "### Metrics: When to Use Which\n"
-            "- ROC-AUC: good for ranking; can be optimistic with heavy class imbalance.\n"
-            "- PR-AUC: focuses on the positive class; often more informative for rare recessions.\n"
-            "- Brier score: penalizes miscalibrated probabilities.\n"
-            "\n"
-            "### Thresholds and Decision Costs\n"
-            "- If false positives are expensive (crying wolf), raise threshold.\n"
-            "- If missing a recession is expensive, lower threshold.\n"
-        )
+        technical = concept("core_classification")
 
         if stem == "01_logistic_recession_classifier":
-            technical = technical + "\n\n" + concept_logistic_regression_odds_deep_dive()
+            technical = concept("core_classification") + "\n\n" + concept_logistic_regression_odds_deep_dive()
         elif stem == "00_recession_classifier_baselines":
-            technical = technical + "\n\n" + concept_class_imbalance_and_metrics_deep_dive()
+            technical = concept("core_classification") + "\n\n" + concept_class_imbalance_and_metrics_deep_dive()
         elif stem == "02_calibration_and_costs":
-            technical = technical + "\n\n" + concept_calibration_brier_deep_dive()
+            technical = concept("core_classification") + "\n\n" + concept_calibration_brier_deep_dive()
         elif stem == "03_tree_models_and_importance":
-            technical = technical + "\n\n" + concept_tree_models_and_importance_deep_dive()
+            technical = concept("core_classification") + "\n\n" + concept_tree_models_and_importance_deep_dive()
         elif stem == "04_walk_forward_validation":
-            technical = technical + "\n\n" + concept_walk_forward_validation_deep_dive()
+            technical = concept("core_classification") + "\n\n" + concept_walk_forward_validation_deep_dive()
 
         mistakes_items = [
             "Reporting only accuracy (can be misleading if recessions are rare).",
@@ -2994,23 +2248,14 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### PCA Intuition\n"
-            "- PCA finds directions that explain maximum variance.\n"
-            "- Components are orthogonal (uncorrelated by construction).\n"
-            "- Loadings help you interpret what each factor represents.\n"
-            "\n"
-            "### Clustering Intuition\n"
-            "- k-means finds k centroids and assigns each point to the closest.\n"
-            "- Choosing k is a modeling decision; use elbow plots and interpretability.\n"
-        )
+        technical = concept("core_unsupervised")
 
         if stem == "01_pca_macro_factors":
-            technical = technical + "\n\n" + concept_pca_loadings_deep_dive()
+            technical = concept("core_unsupervised") + "\n\n" + concept_pca_loadings_deep_dive()
         elif stem == "02_clustering_macro_regimes":
-            technical = technical + "\n\n" + concept_clustering_regimes_deep_dive()
+            technical = concept("core_unsupervised") + "\n\n" + concept_clustering_regimes_deep_dive()
         elif stem == "03_anomaly_detection":
-            technical = technical + "\n\n" + concept_anomaly_detection_deep_dive()
+            technical = concept("core_unsupervised") + "\n\n" + concept_anomaly_detection_deep_dive()
 
         mistakes_items = [
             "Forgetting to standardize (PCA will just pick the biggest-unit variable).",
@@ -3056,14 +2301,7 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### Why configs matter\n"
-            "- They turn hidden notebook state into explicit, reviewable decisions.\n"
-            "\n"
-            "### Dataset hashing\n"
-            "- Hashes help you confirm which dataset a model was trained on.\n"
-            "- In production you would also track schema versions and feature code versions.\n"
-        )
+        technical = concept("core_model_ops")
 
         mistakes_items = [
             "Overwriting outputs without run IDs (losing provenance).",
@@ -3108,13 +2346,7 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "```\n"
         )
 
-        technical = (
-            "### What a strong capstone includes\n"
-            "- A clear target definition and a defensible label.\n"
-            "- Time-aware evaluation (no leakage).\n"
-            "- Interpretation: drivers, failure cases, and limitations.\n"
-            "- Reproducible artifacts and documentation.\n"
-        )
+        technical = concept("core_capstone")
 
         mistakes_items = [
             "Changing feature engineering after looking at test results without re-running from scratch.",
@@ -3143,18 +2375,25 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
     checklist = "\n".join([f"- {x}" for x in checklist_items])
     mistakes = "\n".join([f"- {x}" for x in mistakes_items])
     readings = "\n".join([f"- {x}" for x in readings_items])
+    code_map = "\n".join([f"- {x}" for x in guide_code_map(category, stem)])
 
+    base = load_template("guides/base.md.tmpl")
     out_path.write_text(
-        GUIDE_TEMPLATE.format(
-            stem=stem,
-            intro=intro,
-            checklist=checklist,
-            alt_example=alt_example,
-            technical=technical,
-            mistakes=mistakes,
-            summary=summary,
-            readings=readings,
-        )
+        render_template(
+            base,
+            {
+                "STEM": stem,
+                "INTRO": intro,
+                "CHECKLIST": checklist,
+                "ALT_EXAMPLE": alt_example,
+                "TECHNICAL": technical,
+                "CODE_MAP": code_map,
+                "MISTAKES": mistakes,
+                "SUMMARY": summary,
+                "READINGS": readings,
+            },
+        ).rstrip()
+        + "\n"
     )
 
 
@@ -3178,6 +2417,8 @@ def write_guides_index(specs: list[NotebookSpec], root: Path) -> None:
     for category in sorted(by_category.keys()):
         lines.append(f"## {category}")
         lines.append("")
+        lines.append(f"- [Part overview]({category}/index.md)")
+        lines.append("")
         for spec in sorted(by_category[category], key=lambda s: s.path):
             stem = Path(spec.path).stem
             lines.append(f"- [{stem}]({category}/{stem}.md)")
@@ -3186,6 +2427,34 @@ def write_guides_index(specs: list[NotebookSpec], root: Path) -> None:
     out_path = root / "docs" / "guides" / "index.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines).rstrip() + "\n")
+
+
+def write_guide_part_indexes(specs: list[NotebookSpec], root: Path) -> None:
+    """Write docs/guides/<category>/index.md for each part."""
+
+    by_category: dict[str, list[NotebookSpec]] = {}
+    for spec in specs:
+        nb_path = Path(spec.path)
+        category = nb_path.parts[1] if len(nb_path.parts) > 1 else "misc"
+        by_category.setdefault(category, []).append(spec)
+
+    for category, items in by_category.items():
+        tmpl_rel = f"guides/parts/{category}_index.md.tmpl"
+        tmpl_path = TEMPLATES_ROOT / tmpl_rel
+        if not tmpl_path.exists():
+            # Skip unknown categories (should not happen in this curriculum).
+            continue
+
+        chapter_lines: list[str] = []
+        for spec in sorted(items, key=lambda s: s.path):
+            stem = Path(spec.path).stem
+            nb_rel = f"../../../{spec.path}"
+            chapter_lines.append(f"- [{stem}]({stem}.md) (Notebook: {nb_rel})")
+
+        rendered = render_template(load_template(tmpl_rel), {"CHAPTERS": "\n".join(chapter_lines)})
+        out_path = root / "docs" / "guides" / category / "index.md"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered.rstrip() + "\n")
 
 
 def write_docs_index(specs: list[NotebookSpec], root: Path) -> None:
@@ -3291,6 +2560,7 @@ def main() -> None:
                 "Correlation vs causation",
                 "Multicollinearity (VIF)",
                 "Bias/variance",
+                "Hypothesis testing",
             ],
         ),
         NotebookSpec(
@@ -3558,6 +2828,7 @@ def main() -> None:
         write_notebook(spec, root)
         write_guide(spec, root)
 
+    write_guide_part_indexes(specs, root)
     write_guides_index(specs, root)
     write_docs_index(specs, root)
 
