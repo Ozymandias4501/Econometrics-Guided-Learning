@@ -44,12 +44,21 @@ This is the capstone: you will synthesize macro concepts, statistical inference,
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### What a strong capstone includes
-- A clear target definition and a defensible label.
-- Time-aware evaluation (no leakage).
-- Interpretation: drivers, failure cases, and limitations.
-- Reproducible artifacts and documentation.
+### Core Capstone: How To Produce a High-Quality Final Project
 
+A strong capstone is not just a model. It is a full argument:
+- what is the task?
+- what is the label and why is it defensible?
+- what data is available when?
+- how did you evaluate without leakage?
+- what do results mean and what are limitations?
+
+Write like a reviewer is reading.
+
+### Project Code Map
+- `apps/streamlit_app.py`: dashboard that reads artifacts
+- `reports/capstone_report.md`: report template/output
+- `outputs/`: artifact bundles from training runs (models/metrics/preds/plots)
 
 ### Common Mistakes
 - Changing feature engineering after looking at test results without re-running from scratch.

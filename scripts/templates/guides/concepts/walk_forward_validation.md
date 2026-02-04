@@ -33,6 +33,19 @@ Typical expanding-window walk-forward:
 #   advance train_end
 ```
 
+#### Project touchpoints (where walk-forward is implemented)
+- `src/evaluation.py` implements `walk_forward_splits` for fold generation.
+- The walk-forward notebook uses this helper and asks you to plot metrics by era.
+
+```python
+from src.evaluation import walk_forward_splits
+
+# Example: quarterly data with ~120 points
+n = 120
+splits = list(walk_forward_splits(n, initial_train_size=40, test_size=8))
+splits[:3]
+```
+
 #### What to interpret
 - If metrics vary widely across folds, the model is regime-sensitive.
 - If performance collapses in certain periods, analyze what changed:

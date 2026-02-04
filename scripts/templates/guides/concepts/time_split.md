@@ -78,11 +78,28 @@ Typical pattern:
 - test on next block
 - move forward and repeat
 
+**Python demo: walk-forward split indices (project-adjacent)**
+```python
+from src.evaluation import walk_forward_splits
+
+# n = number of time points (quarters or months)
+n = 120
+
+splits = list(walk_forward_splits(n, initial_train_size=60, test_size=12))
+print('num folds:', len(splits))
+print('first split:', splits[0])
+print('last split :', splits[-1])
+```
+
 #### Debug checklist
 1. Confirm your index is sorted and unique.
 2. Confirm no feature uses future information (see leakage guide section).
 3. Confirm your test period is strictly after your training period.
 4. If tuning hyperparameters, do not tune on the final test period (use a validation scheme).
+
+#### Project touchpoints (where this shows up in code)
+- In notebooks: you should split time series chronologically before fitting any model.
+- In code: `src/evaluation.py` includes `time_train_test_split_index` and `walk_forward_splits`.
 
 #### Economics interpretation
 A time split is not just a technical detail. It is the difference between:

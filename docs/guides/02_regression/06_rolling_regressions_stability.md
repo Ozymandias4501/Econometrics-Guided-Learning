@@ -54,36 +54,82 @@ res_hc3 = res.get_robustcov_results(cov_type='HC3')
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
+### Core Regression: Mechanics, Interpretation, and Uncertainty
+
+Regression is used for both prediction and inference.
+
+#### The model
+We write a linear regression as:
+
+$$
+\mathbf{y} = \mathbf{X}\beta + \varepsilon
+$$
+
+- $\mathbf{y}$: outcomes
+- $\mathbf{X}$: predictors (features)
+- $\beta$: coefficients
+- $\varepsilon$: error term (everything not modeled)
+
+OLS estimates:
+
+$$
+\hat\beta = (X'X)^{-1}X'y
+$$
+
+#### Coefficient interpretation
+> **Definition:** A **coefficient** $\beta_j$ is the expected change in $y$ for a one-unit change in $x_j$, holding other features fixed (within the model).
+
+Key interpretation cautions:
+- "Holding others fixed" can be unrealistic when predictors are correlated.
+- A coefficient is not automatically causal.
+
+#### Standard errors and confidence intervals
+> **Definition:** A **standard error** measures uncertainty in an estimated coefficient.
+
+A 95% confidence interval is roughly:
+
+$$
+\hat\beta_j \pm 1.96 \cdot \widehat{SE}(\hat\beta_j)
+$$
+
+(Exact multipliers depend on the t distribution and sample size.)
+
+#### Robust standard errors
+Robust SE do not change coefficients, but they change uncertainty estimates.
+- HC3: common for cross-section (heteroskedasticity)
+- HAC/Newey-West: common for time series (autocorrelation + heteroskedasticity)
+
+#### Prediction vs inference
+- For prediction, use time-aware evaluation and report out-of-sample metrics.
+- For inference, report uncertainty and diagnose assumptions.
+
 ### Deep Dive: Rolling Regressions (Stability and Structural Breaks)
 
-A rolling regression repeatedly re-fits a model on a moving window of past data.
-This is a practical way to detect coefficient drift and regime sensitivity.
+A rolling regression re-fits a model on a moving window of past data.
 
-#### Key Terms (defined)
-- **Rolling window**: a fixed-size window that moves forward through time.
-- **Expanding window**: a window that grows over time (always includes all past).
-- **Structural break**: the relationship between X and Y changes.
-- **Regime**: an era where relationships are relatively stable.
+#### Key terms (defined)
+> **Definition:** A **rolling window** is a fixed-size window that moves forward through time.
 
-#### Why this matters in macro
-- Policy regimes change.
-- Financial structure changes.
-- Data definitions change.
-A single "global" coefficient can hide these shifts.
+> **Definition:** A **structural break** is when the relationship between X and Y changes.
 
-#### Python demo: relationship changes mid-sample
+#### Why rolling regressions matter in macro
+Relationships can change across eras.
+A single coefficient can hide that instability.
+
+#### Python demo: coefficient changes over time (commented)
 ```python
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 rng = np.random.default_rng(0)
+
 n = 200
 x = rng.normal(size=n)
 
 # Coefficient changes halfway
 beta = np.r_[np.repeat(0.2, n//2), np.repeat(-0.2, n - n//2)]
-y = 1.0 + beta*x + rng.normal(scale=1.0, size=n)
+y = 1.0 + beta * x + rng.normal(scale=1.0, size=n)
 
 idx = pd.date_range('1970-03-31', periods=n, freq='QE')
 df = pd.DataFrame({'y': y, 'x': x}, index=idx)
@@ -91,40 +137,30 @@ df = pd.DataFrame({'y': y, 'x': x}, index=idx)
 window = 60
 betas = []
 dates = []
+
 for end in range(window, len(df)+1):
     sub = df.iloc[end-window:end]
     res = sm.OLS(sub['y'], sm.add_constant(sub[['x']])).fit()
     betas.append(res.params['x'])
     dates.append(sub.index[-1])
 
-out = pd.Series(betas, index=dates)
-out.head()
+beta_series = pd.Series(betas, index=dates)
+print(beta_series.head())
 ```
 
 #### Interpretation
-- If coefficients drift, your model is not describing a single stable mechanism.
-- For prediction, you may prefer recent windows.
-- For inference, you must be careful about claiming a single "effect" across eras.
+If coefficients drift:
+- the model is not describing a single stable mechanism
+- for prediction, you may want to weight recent history more
+- for inference, be cautious about a single "effect" claim
 
-
-### OLS Objective
-- Model: `y = Xβ + ε`
-- OLS chooses `β` to minimize `Σ (y_i - ŷ_i)^2`.
-
-### Interpreting Coefficients
-- In a simple regression with one feature, the slope is the expected change in `y` for a +1 change in `x`.
-- In a multi-factor regression, the slope is the expected change in `y` for a +1 change in `x_j` *holding other X fixed*.
-- If features are correlated (multicollinearity), "holding others fixed" can be a fragile, unrealistic counterfactual.
-
-### Inference vs Prediction
-- Inference: emphasize coefficient uncertainty and assumptions.
-- Prediction: emphasize out-of-sample performance.
-- You can have strong prediction with weak/unstable coefficients.
-
-### Robust Standard Errors
-- **HC3** addresses heteroskedasticity (common for cross-sectional county data).
-- **HAC/Newey-West** addresses autocorrelation + heteroskedasticity (common for quarterly macro time series).
-
+### Project Code Map
+- `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
+- `src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)
+- `src/evaluation.py`: regression metrics helpers
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Interpreting a coefficient as causal without a causal design.

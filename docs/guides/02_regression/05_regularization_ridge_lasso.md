@@ -54,79 +54,153 @@ res_hc3 = res.get_robustcov_results(cov_type='HC3')
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
+### Core Regression: Mechanics, Interpretation, and Uncertainty
+
+Regression is used for both prediction and inference.
+
+#### The model
+We write a linear regression as:
+
+$$
+\mathbf{y} = \mathbf{X}\beta + \varepsilon
+$$
+
+- $\mathbf{y}$: outcomes
+- $\mathbf{X}$: predictors (features)
+- $\beta$: coefficients
+- $\varepsilon$: error term (everything not modeled)
+
+OLS estimates:
+
+$$
+\hat\beta = (X'X)^{-1}X'y
+$$
+
+#### Coefficient interpretation
+> **Definition:** A **coefficient** $\beta_j$ is the expected change in $y$ for a one-unit change in $x_j$, holding other features fixed (within the model).
+
+Key interpretation cautions:
+- "Holding others fixed" can be unrealistic when predictors are correlated.
+- A coefficient is not automatically causal.
+
+#### Standard errors and confidence intervals
+> **Definition:** A **standard error** measures uncertainty in an estimated coefficient.
+
+A 95% confidence interval is roughly:
+
+$$
+\hat\beta_j \pm 1.96 \cdot \widehat{SE}(\hat\beta_j)
+$$
+
+(Exact multipliers depend on the t distribution and sample size.)
+
+#### Robust standard errors
+Robust SE do not change coefficients, but they change uncertainty estimates.
+- HC3: common for cross-section (heteroskedasticity)
+- HAC/Newey-West: common for time series (autocorrelation + heteroskedasticity)
+
+#### Prediction vs inference
+- For prediction, use time-aware evaluation and report out-of-sample metrics.
+- For inference, report uncertainty and diagnose assumptions.
+
 ### Deep Dive: Regularization (Ridge vs Lasso)
 
-Regularization adds a penalty to the loss function to reduce overfitting and stabilize coefficients.
-In macro data with correlated indicators, it is often essential.
+Regularization adds a penalty to reduce overfitting and stabilize coefficients.
 
-#### Key Terms (defined)
-- **Regularization**: adding a penalty term to discourage large coefficients.
-- **L2 penalty (ridge)**: penalizes squared coefficients.
-- **L1 penalty (lasso)**: penalizes absolute coefficients; can drive some to exactly 0.
-- **Alpha (lambda)**: strength of the penalty (hyperparameter).
-- **Coefficient path**: coefficients as a function of alpha.
+> **Definition:** **Regularization** modifies the training objective to discourage overly complex models (often large coefficients).
+
+#### The bias/variance tradeoff (why regularization can help)
+- OLS can have low bias but high variance (coefficients jump around across samples), especially with correlated predictors.
+- Regularization intentionally introduces some bias to reduce variance.
 
 #### Objectives (math)
-- OLS: minimize `||y - Xβ||^2`
-- Ridge: minimize `||y - Xβ||^2 + α * ||β||_2^2`
-- Lasso: minimize `||y - Xβ||^2 + α * ||β||_1`
+Let $y$ be your target and $X$ your feature matrix.
+
+OLS minimizes:
+
+$$
+\min_{\beta} \; ||y - X\beta||_2^2
+$$
+
+Ridge (L2) minimizes:
+
+$$
+\min_{\beta} \; ||y - X\beta||_2^2 + \alpha ||\beta||_2^2
+$$
+
+Lasso (L1) minimizes:
+
+$$
+\min_{\beta} \; ||y - X\beta||_2^2 + \alpha ||\beta||_1
+$$
+
+- $||\beta||_2^2 = \sum_j \beta_j^2$
+- $||\beta||_1 = \sum_j |\beta_j|$
+
+#### What changes and what does not
+- As $\alpha$ increases, coefficients shrink.
+- Ridge typically shrinks all coefficients toward 0.
+- Lasso can drive some coefficients exactly to 0 (feature selection).
 
 #### Why standardization matters
-- Penalties depend on coefficient magnitudes.
-- If features are on different scales (percent vs index points), the penalty is uneven.
-- Standardize (`StandardScaler`) before ridge/lasso.
+> **Definition:** **Standardization** rescales features to mean 0 and standard deviation 1.
 
-#### Ridge vs lasso when predictors are correlated
-- Ridge tends to shrink correlated predictors together (grouping effect).
-- Lasso often picks one feature from a correlated group (can be unstable across samples).
+Regularization penalties depend on coefficient size. If features are on different scales, the penalty is applied unevenly.
+Always use `StandardScaler` before ridge/lasso.
 
-#### Python demo: coefficient instability vs stabilization
+#### Python demo: ridge vs lasso (commented)
 ```python
 import numpy as np
+
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
 rng = np.random.default_rng(0)
+
+# Create correlated predictors
 n = 300
 x1 = rng.normal(size=n)
-x2 = x1 * 0.98 + rng.normal(scale=0.2, size=n)  # highly correlated
-y = 1.0 + 2.0*x1 + rng.normal(scale=1.0, size=n)
+x2 = 0.98 * x1 + rng.normal(scale=0.2, size=n)
 X = np.column_stack([x1, x2])
 
+# Target depends on x1
+
+y = 1.0 + 2.0 * x1 + rng.normal(scale=1.0, size=n)
+
+# OLS (no penalty)
 ols = LinearRegression().fit(X, y)
-ridge = Pipeline([('sc', StandardScaler()), ('m', Ridge(alpha=5.0))]).fit(X, y)
-lasso = Pipeline([('sc', StandardScaler()), ('m', Lasso(alpha=0.1, max_iter=10000))]).fit(X, y)
+
+# Ridge + scaling
+ridge = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', Ridge(alpha=5.0)),
+]).fit(X, y)
+
+# Lasso + scaling
+lasso = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', Lasso(alpha=0.1, max_iter=10000)),
+]).fit(X, y)
 
 print('ols  coef:', ols.coef_)
-print('ridge coef:', ridge.named_steps['m'].coef_)
-print('lasso coef:', lasso.named_steps['m'].coef_)
+print('ridge coef:', ridge.named_steps['model'].coef_)
+print('lasso coef:', lasso.named_steps['model'].coef_)
 ```
 
-#### Interpretation warning
+#### Interpretation cautions
 - Regularized coefficients are biased by design.
-- They can be excellent for prediction, but do not treat them as classical OLS inference objects.
-- Prefer out-of-sample evaluation and stability checks.
+- They can be excellent for prediction and stability.
+- Do not interpret lasso-selected features as "the true causes".
+- In correlated macro data, lasso may pick one variable from a group and ignore equally good substitutes.
 
-
-### OLS Objective
-- Model: `y = Xβ + ε`
-- OLS chooses `β` to minimize `Σ (y_i - ŷ_i)^2`.
-
-### Interpreting Coefficients
-- In a simple regression with one feature, the slope is the expected change in `y` for a +1 change in `x`.
-- In a multi-factor regression, the slope is the expected change in `y` for a +1 change in `x_j` *holding other X fixed*.
-- If features are correlated (multicollinearity), "holding others fixed" can be a fragile, unrealistic counterfactual.
-
-### Inference vs Prediction
-- Inference: emphasize coefficient uncertainty and assumptions.
-- Prediction: emphasize out-of-sample performance.
-- You can have strong prediction with weak/unstable coefficients.
-
-### Robust Standard Errors
-- **HC3** addresses heteroskedasticity (common for cross-sectional county data).
-- **HAC/Newey-West** addresses autocorrelation + heteroskedasticity (common for quarterly macro time series).
-
+### Project Code Map
+- `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
+- `src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)
+- `src/evaluation.py`: regression metrics helpers
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Interpreting a coefficient as causal without a causal design.

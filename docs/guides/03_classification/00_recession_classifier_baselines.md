@@ -55,63 +55,97 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Logistic Regression Mechanics
-- Score: `z = β0 + β1 x1 + ...`
-- Probability: `p = 1 / (1 + exp(-z))`
-- Training minimizes **log loss** (cross-entropy), not squared error.
+### Core Classification: Probabilities, Metrics, and Thresholds
 
-### Metrics: When to Use Which
-- ROC-AUC: good for ranking; can be optimistic with heavy class imbalance.
-- PR-AUC: focuses on the positive class; often more informative for rare recessions.
-- Brier score: penalizes miscalibrated probabilities.
+In this project, classification is about predicting recession risk as a probability.
 
-### Thresholds and Decision Costs
-- If false positives are expensive (crying wolf), raise threshold.
-- If missing a recession is expensive, lower threshold.
+#### Logistic regression mechanics
+Logistic regression models probabilities via log-odds:
 
+$$
+\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
+
+Then:
+
+$$
+ p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+$$
+
+#### Metrics you should treat as standard
+- ROC-AUC: ranking quality across thresholds
+- PR-AUC: often more informative when positives are rare
+- Brier score (or log loss): probability quality
+
+#### Thresholding is a decision rule
+> **Definition:** A **threshold** converts probabilities into labels.
+
+Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
+Pick thresholds based on:
+- decision costs
+- desired recall/precision tradeoff
+- calibration quality
 
 ### Deep Dive: Class Imbalance and Why Accuracy Lies
 
-Recessions are rare. That means classification is an imbalanced problem.
+Recessions are rare. That makes recession prediction an imbalanced classification problem.
 
-#### Key Terms (defined)
-- **Base rate**: prevalence of the positive class (fraction of recession quarters).
-- **Imbalanced data**: one class is much rarer than the other.
-- **Precision**: among predicted positives, how many were true positives?
-- **Recall**: among true positives, how many did we catch?
-- **ROC-AUC**: ranking quality across thresholds (can look good even if precision is poor).
-- **PR-AUC**: focuses on positive-class retrieval (often more honest for rare events).
-- **Proper scoring rule**: rewards calibrated probabilities (log loss, Brier score).
+#### Key terms (defined)
+> **Definition:** The **base rate** is the prevalence of the positive class (fraction of recession quarters).
+
+> **Definition:** **Imbalanced data** means one class is much rarer than the other.
+
+> **Definition:** **Accuracy** is $(TP + TN) / (TP + TN + FP + FN)$.
+
+> **Definition:** **Precision** is $TP / (TP + FP)$.
+
+> **Definition:** **Recall** is $TP / (TP + FN)$.
+
+Where $TP, TN, FP, FN$ are the confusion-matrix counts.
 
 #### The accuracy trap
-- If recessions happen 10% of the time, a model that always predicts "no recession" has 90% accuracy.
-- But it is useless.
+If recessions happen 10% of the time, predicting "no recession" always gives 90% accuracy.
+That model is useless.
 
-#### Baselines you should always compute
-- Majority class (always 0)
-- Persistence (predict next = current)
-- Simple heuristic (e.g., yield curve inversion rule)
+#### Metrics you should always report
+- PR-AUC (rare-event focus)
+- ROC-AUC (ranking)
+- Brier score or log loss (probability quality)
 
-#### Python demo: why PR matters
+#### Python demo: why PR-AUC can be more honest than ROC-AUC
 ```python
 import numpy as np
 from sklearn.metrics import roc_auc_score, average_precision_score
 
 rng = np.random.default_rng(0)
+
+# 10% positives
 n = 500
-y = rng.binomial(1, 0.1, size=n)  # 10% positives
+y = rng.binomial(1, 0.1, size=n)
 
 # A weak signal score
-score = 0.2*y + rng.normal(scale=1.0, size=n)
+score = 0.2 * y + rng.normal(scale=1.0, size=n)
 
 print('ROC-AUC:', roc_auc_score(y, score))
 print('PR-AUC :', average_precision_score(y, score))
 ```
 
-#### Decision framing
-- Choose thresholds based on *costs* (false positives vs false negatives), not vibes.
-- Calibration matters if you want probabilities you can act on.
+#### Baselines you should compute
+- Majority class baseline
+- Persistence baseline (predict next = current)
+- Simple heuristic baseline (economic rule-of-thumb)
 
+#### Decision framing
+Ultimately you will pick a threshold and make decisions.
+Define costs for false positives vs false negatives.
+
+### Project Code Map
+- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
+- `scripts/train_recession.py`: training script that writes artifacts
+- `scripts/predict_recession.py`: prediction script that loads artifacts
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Reporting only accuracy (can be misleading if recessions are rare).

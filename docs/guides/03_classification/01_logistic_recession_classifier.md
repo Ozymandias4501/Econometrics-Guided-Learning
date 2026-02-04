@@ -56,47 +56,98 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Logistic Regression Mechanics
-- Score: `z = β0 + β1 x1 + ...`
-- Probability: `p = 1 / (1 + exp(-z))`
-- Training minimizes **log loss** (cross-entropy), not squared error.
+### Core Classification: Probabilities, Metrics, and Thresholds
 
-### Metrics: When to Use Which
-- ROC-AUC: good for ranking; can be optimistic with heavy class imbalance.
-- PR-AUC: focuses on the positive class; often more informative for rare recessions.
-- Brier score: penalizes miscalibrated probabilities.
+In this project, classification is about predicting recession risk as a probability.
 
-### Thresholds and Decision Costs
-- If false positives are expensive (crying wolf), raise threshold.
-- If missing a recession is expensive, lower threshold.
+#### Logistic regression mechanics
+Logistic regression models probabilities via log-odds:
 
+$$
+\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
 
-### Deep Dive: Logistic Regression, Odds, and Interpreting Coefficients
+Then:
 
-Logistic regression models:
-- score: `z = β0 + β1 x1 + ...`
-- probability: `p = 1 / (1 + exp(-z))`
+$$
+ p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+$$
 
-**Odds and log-odds**
-- odds = `p / (1-p)`
-- log-odds = `log(p/(1-p))`
-- Logistic regression is linear in log-odds.
+#### Metrics you should treat as standard
+- ROC-AUC: ranking quality across thresholds
+- PR-AUC: often more informative when positives are rare
+- Brier score (or log loss): probability quality
 
-**Coefficient interpretation (key idea)**
-- A +1 increase in feature x_j adds β_j to log-odds.
-- `exp(β_j)` is the odds multiplier (holding other features fixed).
+#### Thresholding is a decision rule
+> **Definition:** A **threshold** converts probabilities into labels.
 
-**Python demo: odds multipliers**
+Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
+Pick thresholds based on:
+- decision costs
+- desired recall/precision tradeoff
+- calibration quality
+
+### Deep Dive: Logistic Regression as a Probability Model (Odds and Log-Odds)
+
+Logistic regression is a linear model for probabilities.
+
+#### Key terms (defined)
+> **Definition:** **Odds** are $p/(1-p)$.
+
+> **Definition:** **Log-odds** are $\log\left(\frac{p}{1-p}\right)$.
+
+> **Definition:** The **sigmoid** function maps real numbers to (0,1):
+
+$$
+\sigma(z) = \frac{1}{1+e^{-z}}
+$$
+
+#### Model form
+Logistic regression assumes log-odds are linear:
+
+$$
+\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
+
+Equivalently:
+
+$$
+p = \sigma(\beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k)
+$$
+
+#### Coefficient interpretation
+If you increase $x_j$ by 1 unit (holding other features fixed), log-odds change by $\beta_j$.
+That means odds are multiplied by $e^{\beta_j}$.
+
+Example:
+- if $\beta_j = 0.7$, then odds multiply by $e^{0.7} \approx 2.0$.
+
+#### Why scaling matters
+If predictors are on different scales, coefficients are not directly comparable.
+Standardizing features helps interpret relative influence.
+
+#### Python demo: odds ratio from a fitted model (commented)
 ```python
 import numpy as np
-beta = 0.7
-print('odds multiplier:', np.exp(beta))
+
+# Suppose coef is a learned coefficient (from sklearn or statsmodels)
+coef = 0.7
+odds_multiplier = np.exp(coef)
+print('odds multiplier for +1 unit:', odds_multiplier)
 ```
 
-**Scaling matters**
-- If x is in large units, β will be small; if x is standardized, β is per 1 std dev.
-- For interpretation, standardize or be explicit about units.
+#### Interpretation cautions in macro
+- Coefficients are conditional associations, not causal effects.
+- If features are collinear, coefficients can be unstable.
+- Always evaluate out-of-sample with time-aware splits.
 
+### Project Code Map
+- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
+- `scripts/train_recession.py`: training script that writes artifacts
+- `scripts/predict_recession.py`: prediction script that loads artifacts
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Reporting only accuracy (can be misleading if recessions are rare).

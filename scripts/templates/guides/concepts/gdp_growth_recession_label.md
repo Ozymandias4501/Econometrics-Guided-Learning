@@ -37,6 +37,9 @@ $$
 - YoY is smoother but slower to react.
 - Annualized QoQ is common in macro reporting.
 
+> **Definition:** A **log growth rate** uses differences of logs: $\Delta \log(GDP_t) = \log(GDP_t) - \log(GDP_{t-1})$.
+Log growth is often convenient because it approximates percent growth for small changes and makes compounding math cleaner.
+
 #### Technical recession label used in this project
 > **Definition:** A **technical recession** (teaching proxy here) is two consecutive quarters of negative QoQ GDP growth.
 
@@ -68,10 +71,36 @@ import pandas as pd
 # growth_qoq = 100 * (gdp / gdp.shift(1) - 1)
 
 # Technical recession label
+# Two consecutive negative quarters:
+# - current quarter growth < 0
+# - previous quarter growth < 0
 # recession = ((growth_qoq < 0) & (growth_qoq.shift(1) < 0)).astype(int)
 
 # Next-quarter target
+# Predict next quarter's label using information as-of this quarter:
 # target_next = recession.shift(-1)
+```
+
+#### Project touchpoints (where this logic lives in code)
+- `src/macro.py` implements these transforms explicitly:
+  - `gdp_growth_qoq`, `gdp_growth_qoq_annualized`, `gdp_growth_yoy`
+  - `technical_recession_label`
+  - `next_period_target`
+
+#### Python demo: using the project helper functions (commented)
+```python
+from src import macro
+
+# levels: quarterly GDP level series
+# levels = gdp['GDPC1']
+
+# Growth variants
+# qoq = macro.gdp_growth_qoq(levels)
+# yoy = macro.gdp_growth_yoy(levels)
+
+# Label + next-period target
+# recession = macro.technical_recession_label(qoq)
+# target = macro.next_period_target(recession)
 ```
 
 #### Important limitation

@@ -55,42 +55,119 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Logistic Regression Mechanics
-- Score: `z = β0 + β1 x1 + ...`
-- Probability: `p = 1 / (1 + exp(-z))`
-- Training minimizes **log loss** (cross-entropy), not squared error.
+### Core Classification: Probabilities, Metrics, and Thresholds
 
-### Metrics: When to Use Which
-- ROC-AUC: good for ranking; can be optimistic with heavy class imbalance.
-- PR-AUC: focuses on the positive class; often more informative for rare recessions.
-- Brier score: penalizes miscalibrated probabilities.
+In this project, classification is about predicting recession risk as a probability.
 
-### Thresholds and Decision Costs
-- If false positives are expensive (crying wolf), raise threshold.
-- If missing a recession is expensive, lower threshold.
+#### Logistic regression mechanics
+Logistic regression models probabilities via log-odds:
 
+$$
+\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
 
-### Deep Dive: Calibration and Brier Score (Probabilities You Can Trust)
+Then:
 
-**Calibration** asks: when the model says 0.70, does the event happen ~70% of the time?
+$$
+ p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+$$
 
-**Brier score** is mean squared error of probabilities:
-- `mean((p - y)^2)` where y is 0/1.
-- Lower is better.
+#### Metrics you should treat as standard
+- ROC-AUC: ranking quality across thresholds
+- PR-AUC: often more informative when positives are rare
+- Brier score (or log loss): probability quality
 
-**Python demo: calibration curve**
+#### Thresholding is a decision rule
+> **Definition:** A **threshold** converts probabilities into labels.
+
+Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
+Pick thresholds based on:
+- decision costs
+- desired recall/precision tradeoff
+- calibration quality
+
+### Deep Dive: Calibration, Brier Score, and Decision Thresholds
+
+In classification, you often want probabilities, not just labels.
+
+> **Definition:** A model is **calibrated** if events predicted with probability 0.3 happen about 30% of the time.
+
+#### Brier score (math)
+> **Definition:** The **Brier score** is a proper scoring rule for probability forecasts.
+
+For binary outcomes $y_i \in \{0,1\}$ and predicted probabilities $p_i$:
+
+$$
+\mathrm{Brier} = \frac{1}{n} \sum_{i=1}^n (p_i - y_i)^2
+$$
+
+Lower is better.
+
+#### Why calibration matters for recession risk
+A recession probability model is only useful if you can make decisions from its probabilities:
+- allocate risk
+- run stress tests
+- change thresholds based on costs
+
+If probabilities are not calibrated, "30%" and "70%" are not meaningful signals.
+
+#### Calibration curve (reliability diagram)
+A calibration curve groups predictions into bins and compares:
+- average predicted probability in the bin
+- actual fraction of positives in the bin
+
+If the curve follows the diagonal, calibration is good.
+
+#### Python demo: calibration and Brier (commented)
 ```python
 import numpy as np
 from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
 
-# y_true: 0/1, y_prob: predicted probabilities
+# y_true: 0/1 outcomes
+# y_prob: predicted probabilities
+
+# Example placeholders:
+# y_true = np.array([...])
+# y_prob = np.array([...])
+
+# Brier score
+# print('brier:', brier_score_loss(y_true, y_prob))
+
+# Calibration curve
 # prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
+# print(prob_pred)
+# print(prob_true)
 ```
 
-**Why this matters for recession prediction**
-- A probability model is only useful if you can make decisions from it.
-- Poor calibration means your 30% and 70% signals are not comparable.
+#### Thresholds and decision costs
+> **Definition:** A **decision threshold** converts probabilities to class labels (e.g., predict recession if p >= 0.4).
 
+A good threshold depends on costs:
+- false positives (crying wolf)
+- false negatives (missing a recession)
+
+A common pattern:
+1. define a cost ratio (how bad is FN vs FP?)
+2. choose threshold to minimize expected cost
+
+#### Debug checklist
+1. Always compute base rate (how rare is the positive class?).
+2. Report PR-AUC and Brier score (not just accuracy).
+3. Compare calibrated vs uncalibrated models.
+4. Re-check calibration across eras (walk-forward).
+
+#### Project touchpoints (where you will use these)
+- `src/evaluation.py` computes classification metrics including ROC-AUC, PR-AUC, and Brier score.
+- The calibration notebook asks you to plot a reliability diagram and pick a threshold based on explicit costs.
+
+### Project Code Map
+- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
+- `scripts/train_recession.py`: training script that writes artifacts
+- `scripts/predict_recession.py`: prediction script that loads artifacts
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Reporting only accuracy (can be misleading if recessions are rare).

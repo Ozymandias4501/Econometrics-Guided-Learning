@@ -68,3 +68,7 @@ A common pattern:
 2. Report PR-AUC and Brier score (not just accuracy).
 3. Compare calibrated vs uncalibrated models.
 4. Re-check calibration across eras (walk-forward).
+
+#### Project touchpoints (where you will use these)
+- `src/evaluation.py` computes classification metrics including ROC-AUC, PR-AUC, and Brier score.
+- The calibration notebook asks you to plot a reliability diagram and pick a threshold based on explicit costs.

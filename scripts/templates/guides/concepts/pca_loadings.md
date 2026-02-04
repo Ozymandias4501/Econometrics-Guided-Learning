@@ -71,3 +71,7 @@ from sklearn.preprocessing import StandardScaler
 2. For each PC, list the top positive and negative loadings.
 3. Give the factor a name in economic terms.
 4. Plot the factor through time and compare to known events.
+
+#### Project touchpoints
+- PCA is introduced in the unsupervised notebooks using `sklearn.decomposition.PCA`.
+- You will typically start from `data/processed/panel_monthly.csv` (or `data/sample/panel_monthly_sample.csv`).

@@ -106,6 +106,11 @@ from sklearn.preprocessing import StandardScaler
 4. Validate timestamp meaning.
    - Are your features "known as of" the prediction date?
 
+#### Project touchpoints (where leakage is prevented or easy to introduce)
+- `src/features.py` explicitly forbids non-positive lags in `add_lag_features` to prevent accidental future leakage.
+- `src/evaluation.py` contains time-aware split helpers (`time_train_test_split_index`, `walk_forward_splits`).
+- Classification notebooks use sklearn `Pipeline` to prevent preprocessing leakage.
+
 #### Economics interpretation
 A recession model with leakage will appear to "predict" recessions, but it is usually just reading signals from the future.
 The goal is to predict with only information available at the time.

@@ -52,23 +52,50 @@ x_leak = y.shift(-1)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Why Time Ordering Changes Everything
-- Random splits destroy chronology. In forecasting tasks, your model must only use information available at prediction time.
+### Core Foundations: The Ideas You Will Reuse Everywhere
 
-### Correlation vs Causation
-- **Correlation**: variables move together.
-- **Causation**: changing X changes Y (a stronger claim that needs design/assumptions).
-- In macro/micro data, you will see many correlated variables. Treat coefficients as *associational* unless you have a causal identification strategy.
+This project is built around a simple principle:
 
-### Multicollinearity and VIF
-- **VIF (Variance Inflation Factor)**: how much a coefficient's variance is inflated due to collinearity.
-- High VIF implies unstable coefficients and wide confidence intervals, even if predictions are okay.
+> **Definition:** A good model result is one that would still hold up if you had to use the model in the real world.
 
+To get there, you need correct evaluation and correct data timing.
+
+#### Time series vs cross-sectional (defined)
+> **Definition:** A **time series** is indexed by time; ordering matters.
+
+> **Definition:** **Cross-sectional** data compares many units at one time; ordering is not temporal.
+
+Many ML defaults assume IID (independent and identically distributed) samples. Time series data is rarely IID.
+
+#### What "leakage" really means
+Leakage is not just a bug. It is a violation of the prediction setting.
+If you are predicting the future, your features must be available in the past.
+
+#### What "generalization" means in time series
+In forecasting, generalization means:
+- you train on one historical period
+- you perform well in a later period
+
+That is much harder than random-split generalization because the data generating process can change.
+
+#### A practical habit
+For every dataset row at time t, write a one-line statement:
+- "At time t, we know X, and we are trying to predict Y at time t+h."
+
+If you cannot state that clearly, it is very easy to leak information.
+
+### Project Code Map
+- `scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)
+- `src/evaluation.py`: time splits and metrics used later
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Using `train_test_split(shuffle=True)` on time-indexed data.
 - Looking at the test set repeatedly while tuning ("test leakage").
 - Assuming a significant p-value implies causation.
+- Running many tests/specs and treating a small p-value as proof (multiple testing / p-hacking).
 
 <a id="summary"></a>
 ## Summary + Suggested Readings

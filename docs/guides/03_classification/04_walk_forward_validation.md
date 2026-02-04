@@ -55,44 +55,105 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Logistic Regression Mechanics
-- Score: `z = β0 + β1 x1 + ...`
-- Probability: `p = 1 / (1 + exp(-z))`
-- Training minimizes **log loss** (cross-entropy), not squared error.
+### Core Classification: Probabilities, Metrics, and Thresholds
 
-### Metrics: When to Use Which
-- ROC-AUC: good for ranking; can be optimistic with heavy class imbalance.
-- PR-AUC: focuses on the positive class; often more informative for rare recessions.
-- Brier score: penalizes miscalibrated probabilities.
+In this project, classification is about predicting recession risk as a probability.
 
-### Thresholds and Decision Costs
-- If false positives are expensive (crying wolf), raise threshold.
-- If missing a recession is expensive, lower threshold.
+#### Logistic regression mechanics
+Logistic regression models probabilities via log-odds:
 
+$$
+\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
+
+Then:
+
+$$
+ p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+$$
+
+#### Metrics you should treat as standard
+- ROC-AUC: ranking quality across thresholds
+- PR-AUC: often more informative when positives are rare
+- Brier score (or log loss): probability quality
+
+#### Thresholding is a decision rule
+> **Definition:** A **threshold** converts probabilities into labels.
+
+Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
+Pick thresholds based on:
+- decision costs
+- desired recall/precision tradeoff
+- calibration quality
 
 ### Deep Dive: Walk-Forward Validation (Stability Over Time)
 
-**Walk-forward validation** repeatedly trains on the past and tests on the next time block.
-It answers: "does my model work across multiple eras, or only in one?"
+> **Definition:** **Walk-forward validation** repeatedly trains on the past and tests on the next time block.
 
-**Why it's important in economics**
-- Relationships change (structural breaks).
-- Policy regimes shift.
-- A single split can hide fragility.
+It answers: "Does my model work across multiple eras, or only in one?"
 
-**Pseudo-code**
+#### Why walk-forward matters in economics
+Economic relationships shift:
+- policy changes
+- technology shifts
+- measurement changes
+- financial crises
+
+A single split can hide fragility.
+
+#### Procedure (expanding window)
+Typical expanding-window walk-forward:
+- fold 1: train [0:t1], test [t1:t2]
+- fold 2: train [0:t2], test [t2:t3]
+- ...
+
+> **Definition:** An **expanding window** keeps all past data in training.
+
+> **Definition:** A **rolling window** uses only the most recent fixed-size window for training.
+
+#### Pseudo-code
 ```python
 # for each fold:
-#   train = data[:t]
-#   test  = data[t:t+h]
-#   fit model
-#   compute metrics
+#   train = data[:train_end]
+#   test  = data[train_end:train_end+test_size]
+#   fit model on train
+#   evaluate on test
+#   advance train_end
 ```
 
-**Interpretation**
-- If metrics vary widely across folds, your model is regime-sensitive.
-- This can be a reason to retrain more frequently or include regime features.
+#### Project touchpoints (where walk-forward is implemented)
+- `src/evaluation.py` implements `walk_forward_splits` for fold generation.
+- The walk-forward notebook uses this helper and asks you to plot metrics by era.
 
+```python
+from src.evaluation import walk_forward_splits
+
+# Example: quarterly data with ~120 points
+n = 120
+splits = list(walk_forward_splits(n, initial_train_size=40, test_size=8))
+splits[:3]
+```
+
+#### What to interpret
+- If metrics vary widely across folds, the model is regime-sensitive.
+- If performance collapses in certain periods, analyze what changed:
+  - indicator behavior
+  - label definition
+  - missing data
+
+#### Debug checklist
+1. Ensure each fold trains strictly on the past.
+2. Avoid reusing test periods for tuning.
+3. Plot metrics over time, not just averages.
+4. Keep the feature engineering fixed when comparing across folds.
+
+### Project Code Map
+- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
+- `scripts/train_recession.py`: training script that writes artifacts
+- `scripts/predict_recession.py`: prediction script that loads artifacts
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Reporting only accuracy (can be misleading if recessions are rare).

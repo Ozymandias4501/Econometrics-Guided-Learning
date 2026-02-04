@@ -433,33 +433,50 @@ def solution_snippets(stem: str) -> dict[str, str]:
                 "\n"
                 "rng = np.random.default_rng(0)\n"
                 "n = 800\n"
+                "# Hidden confounder\n"
                 "z = rng.normal(size=n)\n"
+                "\n"
+                "# Two observed variables both driven by z\n"
                 "x = z + rng.normal(scale=0.8, size=n)\n"
                 "w = z + rng.normal(scale=0.8, size=n)\n"
-                "y = 2.0*z + rng.normal(scale=1.0, size=n)\n"
-                "df = pd.DataFrame({'x': x, 'w': w, 'y': y})\n"
-                "df.corr()\n"
+                "\n"
+                "# Target driven by z (not by x directly)\n"
+                "y = 2.0 * z + rng.normal(scale=1.0, size=n)\n"
+                "\n"
+                "df = pd.DataFrame({'z': z, 'x': x, 'w': w, 'y': y})\n"
+                "df.corr(numeric_only=True)\n"
             ),
             "Multicollinearity (VIF)": (
                 "import statsmodels.api as sm\n"
                 "from src.econometrics import vif_table\n"
                 "\n"
-                "# Make x2 highly correlated with x\n"
-                "df['x2'] = df['x'] * 0.95 + np.random.default_rng(1).normal(scale=0.2, size=len(df))\n"
-                "vif_table(df, ['x', 'x2'])\n"
+                "# Build highly correlated predictors\n"
+                "rng = np.random.default_rng(1)\n"
+                "n = 600\n"
+                "x1 = rng.normal(size=n)\n"
+                "x2 = 0.95 * x1 + rng.normal(scale=0.2, size=n)\n"
+                "y = 1.0 + 2.0 * x1 + rng.normal(scale=1.0, size=n)\n"
+                "df = pd.DataFrame({'y': y, 'x1': x1, 'x2': x2})\n"
                 "\n"
-                "X = sm.add_constant(df[['x', 'x2']])\n"
+                "vif_table(df, ['x1', 'x2'])\n"
+                "\n"
+                "X = sm.add_constant(df[['x1', 'x2']])\n"
                 "res = sm.OLS(df['y'], X).fit()\n"
-                "res.summary()\n"
+                "print(res.summary())\n"
             ),
             "Bias/variance": (
                 "from sklearn.linear_model import LinearRegression\n"
                 "from sklearn.tree import DecisionTreeRegressor\n"
                 "from sklearn.metrics import mean_squared_error\n"
                 "\n"
-                "X = df[['x']].to_numpy()\n"
-                "y = df['y'].to_numpy()\n"
-                "split = int(len(df) * 0.8)\n"
+                "# Simple 1D regression problem\n"
+                "rng = np.random.default_rng(2)\n"
+                "n = 400\n"
+                "x = np.linspace(-3, 3, n)\n"
+                "y = np.sin(x) + rng.normal(scale=0.2, size=n)\n"
+                "\n"
+                "X = x.reshape(-1, 1)\n"
+                "split = int(n * 0.8)\n"
                 "\n"
                 "lin = LinearRegression().fit(X[:split], y[:split])\n"
                 "tree = DecisionTreeRegressor(random_state=0).fit(X[:split], y[:split])\n"
@@ -473,6 +490,30 @@ def solution_snippets(stem: str) -> dict[str, str]:
                 "    {'linear_train': rmse_lin_tr, 'linear_test': rmse_lin_te},\n"
                 "    {'tree_train': rmse_tree_tr, 'tree_test': rmse_tree_te},\n"
                 ")\n"
+            ),
+            "Hypothesis testing": (
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "import statsmodels.api as sm\n"
+                "from scipy import stats\n"
+                "\n"
+                "# One-sample t-test: mean(x) == 0?\n"
+                "rng = np.random.default_rng(3)\n"
+                "x = rng.normal(loc=0.1, scale=1.0, size=200)\n"
+                "t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)\n"
+                "print('t:', t_stat, 'p:', p_val)\n"
+                "\n"
+                "# Regression coefficient test: slope == 0?\n"
+                "rng = np.random.default_rng(4)\n"
+                "n = 300\n"
+                "x2 = rng.normal(size=n)\n"
+                "y2 = 1.0 + 0.5 * x2 + rng.normal(scale=1.0, size=n)\n"
+                "\n"
+                "df = pd.DataFrame({'y': y2, 'x': x2})\n"
+                "X = sm.add_constant(df[['x']], has_constant='add')\n"
+                "res = sm.OLS(df['y'], X).fit()\n"
+                "\n"
+                "print(res.summary())\n"
             ),
         }
 
@@ -1148,7 +1189,10 @@ def solutions_markdown(stem: str, sections: list[str]) -> str:
                 [
                     f"<details><summary>Solution: {section}</summary>",
                     "",
+                    "_One possible approach. Your variable names may differ; align them with the notebook._",
+                    "",
                     "```python",
+                    f"# Reference solution for {stem} — {section}",
                     code_snippet.rstrip(),
                     "```",
                     "",
@@ -1301,398 +1345,3166 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
     # Foundations
     if spec.path.endswith("01_time_series_basics.ipynb"):
         cells += [
-            md("## Concept\nYou will build intuition for resampling, lags, rolling windows, and leakage."),
-            md("## Your Turn: Build a Toy Time Series"),
-            code(
-                "import numpy as np\nimport pandas as pd\n\n# TODO: Create a daily toy series with a trend + noise\n# Hint: pd.date_range(..., freq='D')\n..."
+            md(
+                "## Concept\n"
+                "This notebook is about *timing*.\n\n"
+                "Before you touch real economic data, you will practice on a toy series where you can see mistakes clearly.\n"
+                "The same mistakes (especially leakage) show up later when you build recession predictors.\n"
             ),
-            md("## Your Turn: Resample"),
-            code(
-                "# TODO: Resample to month-end and compute monthly mean and last\n..."
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Toy series')}\"></a>\n"
+                "## Toy series\n\n"
+                "### Goal\n"
+                "Create a daily time series with a trend + noise.\n\n"
+                "### Why this matters\n"
+                "Real macro indicators are noisy. You want to learn how resampling and rolling windows change the information your model sees.\n\n"
+                "### Your Turn (1): Build an index + values\n"
             ),
-            md("## Your Turn: Lags + Rolling"),
             code(
-                "# TODO: Create lag-1 and lag-7 features\n# TODO: Create a 14-day rolling mean\n..."
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "# TODO: Create a daily DatetimeIndex from 2010-01-01 for ~5 years.\n"
+                "# Hint: pd.date_range('2010-01-01', periods=..., freq='D')\n"
+                "idx = ...\n"
+                "\n"
+                "# TODO: Create a signal with a slow trend + seasonal-ish wiggle + noise.\n"
+                "# Hint: np.linspace + np.sin + rng.normal\n"
+                "rng = np.random.default_rng(0)\n"
+                "trend = ...\n"
+                "season = ...\n"
+                "noise = ...\n"
+                "\n"
+                "y = pd.Series(trend + season + noise, index=idx, name='y')\n"
+                "y.head()\n"
             ),
-            md("## Leakage Demo"),
+            md("### Your Turn (2): Inspect and visualize"),
             code(
-                "# TODO: Create a target that is tomorrow's value\n# TODO: Compare a random split vs time split\n# Write down what changes and why\n..."
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Print basic summary stats\n"
+                "# TODO: Plot the time series\n"
+                "...\n"
+            ),
+            md("### Checkpoint (toy series sanity)"),
+            code(
+                "# TODO: Confirm the index is daily and sorted\n"
+                "assert isinstance(y.index, pd.DatetimeIndex)\n"
+                "assert y.index.is_monotonic_increasing\n"
+                "assert y.shape[0] > 1000\n"
+                "assert y.isna().sum() == 0\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Resampling')}\"></a>\n"
+                "## Resampling\n\n"
+                "### Goal\n"
+                "Convert daily data to monthly data in two different ways and compare them.\n\n"
+                "### Why this matters\n"
+                "When you resample, you are choosing a *measurement definition*:\n"
+                "- month-end value (`last`) vs\n"
+                "- monthly average (`mean`).\n\n"
+                "These can lead to different model conclusions.\n"
+            ),
+            md("### Your Turn (1): Month-end series (mean vs last)"),
+            code(
+                "# TODO: Build two monthly series:\n"
+                "# - y_me_last: month-end value\n"
+                "# - y_me_mean: monthly average\n"
+                "\n"
+                "# Hint: y.resample('ME').last() and y.resample('ME').mean()\n"
+                "y_me_last = ...\n"
+                "y_me_mean = ...\n"
+                "\n"
+                "y_me_last.head(), y_me_mean.head()\n"
+            ),
+            md("### Your Turn (2): Compare visually and numerically"),
+            code(
+                "# TODO: Put them in one DataFrame and compare.\n"
+                "# - plot both\n"
+                "# - compute correlation\n"
+                "# - compute their difference distribution\n"
+                "df_m = ...\n"
+                "...\n"
+            ),
+            md("### Checkpoint (resampling sanity)"),
+            code(
+                "# TODO: Assert the resampled index is month-end\n"
+                "assert y_me_last.index.freqstr in {'ME', 'M'} or y_me_last.index.inferred_freq in {'M', 'ME'}\n"
+                "assert y_me_last.shape == y_me_mean.shape\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Lag and rolling features')}\"></a>\n"
+                "## Lag and rolling features\n\n"
+                "### Goal\n"
+                "Create features that only use the past: lags and rolling windows.\n\n"
+                "### Why this matters\n"
+                "Most macro prediction is built from lagged indicators (what you knew last month/quarter) and summaries of recent history.\n"
+            ),
+            md("### Your Turn (1): Lags"),
+            code(
+                "# TODO: Create lag features from the DAILY series y:\n"
+                "# - y_lag1: yesterday\n"
+                "# - y_lag7: one week ago\n"
+                "df_feat = pd.DataFrame({'y': y})\n"
+                "df_feat['y_lag1'] = ...\n"
+                "df_feat['y_lag7'] = ...\n"
+                "df_feat.head(10)\n"
+            ),
+            md("### Your Turn (2): Rolling features"),
+            code(
+                "# TODO: Create rolling mean and rolling std features (past-only!)\n"
+                "# Example: 14-day rolling mean and std\n"
+                "df_feat['y_roll14_mean'] = ...\n"
+                "df_feat['y_roll14_std'] = ...\n"
+                "\n"
+                "# TODO: drop rows with NaNs created by lags/rolling\n"
+                "df_feat_clean = ...\n"
+                "df_feat_clean.head()\n"
+            ),
+            md("### Checkpoint (feature availability)"),
+            code(
+                "# TODO: Confirm you did not accidentally leak the future.\n"
+                "# Hint: check that lagged columns align the way you expect.\n"
+                "# Example: df_feat.loc[t, 'y_lag1'] should equal df_feat.loc[t - 1 day, 'y']\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Leakage demo')}\"></a>\n"
+                "## Leakage demo\n\n"
+                "### Goal\n"
+                "Experience how leakage can make results look incredible but meaningless.\n\n"
+                "### What you'll do\n"
+                "1) define a 1-step-ahead prediction task\n"
+                "2) build one legitimate feature set and one leaky feature set\n"
+                "3) compare random split vs time split\n"
+            ),
+            md("### Your Turn (1): Build the prediction dataset"),
+            code(
+                "from sklearn.model_selection import train_test_split\n"
+                "from sklearn.linear_model import LinearRegression\n"
+                "from sklearn.metrics import mean_squared_error\n\n"
+                "# Predict tomorrow's value\n"
+                "# TODO: target = y.shift(-1)\n"
+                "target = ...\n"
+                "\n"
+                "# Legit features: past-only\n"
+                "X_ok = df_feat_clean[['y_lag1', 'y_lag7', 'y_roll14_mean', 'y_roll14_std']].copy()\n"
+                "\n"
+                "# LEAKY feature: tomorrow's value (do not do this in real work)\n"
+                "# TODO: X_leak should include a column that equals the target (or uses shift(-1))\n"
+                "X_leak = ...\n"
+                "\n"
+                "# Align and drop missing rows\n"
+                "df_model = pd.DataFrame({'target': target}).join(X_ok).dropna()\n"
+                "X_ok = df_model[X_ok.columns]\n"
+                "y_arr = df_model['target']\n"
+                "\n"
+                "# TODO: Align X_leak to the same rows as y_arr\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Random split vs time split"),
+            code(
+                "# Random split (WRONG for time series)\n"
+                "X_tr, X_te, y_tr, y_te = train_test_split(X_ok, y_arr, test_size=0.2, shuffle=True, random_state=0)\n"
+                "m = LinearRegression().fit(X_tr, y_tr)\n"
+                "rmse_rand = mean_squared_error(y_te, m.predict(X_te), squared=False)\n"
+                "\n"
+                "# Time split (RIGHT for time series)\n"
+                "split = int(len(X_ok) * 0.8)\n"
+                "X_tr2, X_te2 = X_ok.iloc[:split], X_ok.iloc[split:]\n"
+                "y_tr2, y_te2 = y_arr.iloc[:split], y_arr.iloc[split:]\n"
+                "m2 = LinearRegression().fit(X_tr2, y_tr2)\n"
+                "rmse_time = mean_squared_error(y_te2, m2.predict(X_te2), squared=False)\n"
+                "\n"
+                "rmse_rand, rmse_time\n"
+            ),
+            md("### Your Turn (3): Show how the leaky feature 'cheats'"),
+            code(
+                "# TODO: Repeat the evaluation above using X_leak.\n"
+                "# What happens to the test RMSE?\n"
+                "# Write 3-5 sentences explaining why this result is meaningless.\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("02_stats_basics_for_ml.ipynb"):
         cells += [
-            md("## Concept\nCore statistics ideas that show up constantly in ML: correlation, collinearity, bias/variance, and overfitting."),
-            md("## Your Turn: Correlation vs Causation"),
-            code(
-                "import numpy as np\nimport pandas as pd\n\n# TODO: Simulate two correlated variables and a target\n# Then compute correlations and explain why correlation != causation\n..."
+            md(
+                "## Concept\n"
+                "This notebook gives you the statistical vocabulary you'll use throughout the project.\n\n"
+                "You will build intuition for:\n"
+                "- when correlations are meaningful vs misleading,\n"
+                "- why coefficients can become unstable when features are correlated,\n"
+                "- how overfitting shows up as a gap between train and test performance,\n"
+                "- how to read hypothesis tests (p-values / confidence intervals) without over-trusting them.\n"
             ),
-            md("## Your Turn: Multicollinearity (VIF)"),
-            code(
-                "# TODO: Create two nearly identical features\n# Compute VIF using src.econometrics.vif_table\n..."
+            md(primer("statsmodels_inference")),
+            md(
+                f"<a id=\"{slugify('Correlation vs causation')}\"></a>\n"
+                "## Correlation vs causation\n\n"
+                "### Goal\n"
+                "Simulate a classic confounding scenario where variables are correlated without a direct causal relationship.\n\n"
+                "### Why this matters in economics\n"
+                "Macro indicators often move together. If you interpret correlations as causal effects, you'll make confident but wrong stories.\n"
             ),
-            md("## Your Turn: Bias/Variance"),
+            md("### Your Turn (1): Simulate a confounder"),
             code(
-                "# TODO: Fit a simple model vs a more flexible model on synthetic data\n# Compare train vs test performance\n..."
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "# We will build: z -> x, z -> w, and z -> y.\n"
+                "# That makes x and y correlated even if x doesn't directly cause y.\n"
+                "\n"
+                "rng = np.random.default_rng(0)\n"
+                "n = 800\n"
+                "\n"
+                "# TODO: Simulate a hidden confounder z\n"
+                "z = ...\n"
+                "\n"
+                "# TODO: Create x and w that both depend on z (plus noise)\n"
+                "x = ...\n"
+                "w = ...\n"
+                "\n"
+                "# TODO: Create y that depends on z (plus noise)\n"
+                "y = ...\n"
+                "\n"
+                "df = pd.DataFrame({'z': z, 'x': x, 'w': w, 'y': y})\n"
+                "df.head()\n"
+            ),
+            md("### Your Turn (2): Correlation matrix + interpretation"),
+            code(
+                "# TODO: Compute df.corr() and interpret.\n"
+                "# Questions:\n"
+                "# 1) Are x and y correlated?\n"
+                "# 2) Does that mean x causes y?\n"
+                "# 3) Which variable is the common cause?\n"
+                "corr = df.corr(numeric_only=True)\n"
+                "corr\n"
+            ),
+            md("### Optional extension: a simple regression 'control' demo"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "# TODO: Fit two regressions and compare the coefficient on x:\n"
+                "# 1) y ~ x\n"
+                "# 2) y ~ x + z\n"
+                "# Hint: sm.add_constant + sm.OLS\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Multicollinearity (VIF)')}\"></a>\n"
+                "## Multicollinearity (VIF)\n\n"
+                "### Goal\n"
+                "Create highly correlated predictors and see how they affect coefficient stability.\n\n"
+                "### Key term\n"
+                "> **Definition:** **Multicollinearity** means your predictors are strongly correlated with each other.\n"
+                "It doesn't necessarily hurt prediction, but it can make coefficient interpretation unstable.\n"
+            ),
+            md("### Your Turn (1): Build correlated features"),
+            code(
+                "from src.econometrics import vif_table\n\n"
+                "# TODO: Create x1 and x2 that are almost the same\n"
+                "rng = np.random.default_rng(1)\n"
+                "n = 600\n"
+                "x1 = rng.normal(size=n)\n"
+                "x2 = ...  # make this highly correlated with x1\n"
+                "\n"
+                "# Target depends mostly on x1\n"
+                "eps = rng.normal(scale=1.0, size=n)\n"
+                "y2 = 1.0 + 2.0 * x1 + eps\n"
+                "\n"
+                "df2 = pd.DataFrame({'y': y2, 'x1': x1, 'x2': x2})\n"
+                "df2[['x1','x2']].corr()\n"
+            ),
+            md("### Your Turn (2): Compute VIF + interpret"),
+            code(
+                "# TODO: Compute VIF for x1 and x2.\n"
+                "# How large are the VIFs? What does that suggest?\n"
+                "vif_table(df2, ['x1', 'x2'])\n"
+            ),
+            md("### Your Turn (3): Fit a regression and inspect coefficient stability"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "# Fit y ~ x1 + x2 and inspect coefficients.\n"
+                "# TODO: Compare to fitting y ~ x1 alone.\n"
+                "X_both = sm.add_constant(df2[['x1', 'x2']])\n"
+                "res_both = sm.OLS(df2['y'], X_both).fit()\n"
+                "\n"
+                "X_one = sm.add_constant(df2[['x1']])\n"
+                "res_one = sm.OLS(df2['y'], X_one).fit()\n"
+                "\n"
+                "# TODO: Print the two coefficient estimates on x1\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Bias/variance')}\"></a>\n"
+                "## Bias/variance\n\n"
+                "### Goal\n"
+                "See overfitting as a train/test gap by comparing a simple model vs a flexible one.\n\n"
+                "### Key term\n"
+                "> **Definition:** **Overfitting** happens when a model fits noise in the training data and fails to generalize.\n"
+            ),
+            md("### Your Turn (1): Create a non-linear dataset"),
+            code(
+                "import numpy as np\n"
+                "from sklearn.metrics import mean_squared_error\n"
+                "from sklearn.linear_model import LinearRegression\n"
+                "from sklearn.tree import DecisionTreeRegressor\n\n"
+                "rng = np.random.default_rng(2)\n"
+                "n = 400\n"
+                "\n"
+                "# TODO: Create x on [-3, 3]\n"
+                "x = ...\n"
+                "\n"
+                "# TODO: Create y = sin(x) + noise (nonlinear)\n"
+                "y = ...\n"
+                "\n"
+                "# Train/test split (random is OK here because this is NOT time series)\n"
+                "split = int(n * 0.8)\n"
+                "X = x.reshape(-1, 1)\n"
+                "X_tr, X_te = X[:split], X[split:]\n"
+                "y_tr, y_te = y[:split], y[split:]\n"
+                "\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Fit linear vs tree and compare errors"),
+            code(
+                "# TODO: Fit LinearRegression and a DecisionTreeRegressor\n"
+                "# Compute RMSE on train and test for both\n"
+                "...\n"
+            ),
+            md("### Your Turn (3): Control model complexity"),
+            code(
+                "# TODO: Refit the tree with different max_depth values (e.g., 2, 4, 8, None)\n"
+                "# Track train/test RMSE and describe the pattern.\n"
+                "...\n"
+            ),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Hypothesis testing')}\"></a>\n"
+                "## Hypothesis testing\n\n"
+                "### Goal\n"
+                "Make p-values and confidence intervals concrete with a toy example.\n\n"
+                "### Your Turn (1): One-sample t-test\n"
+                "Simulate a sample whose true mean is not 0 and test whether you can detect it.\n"
+            ),
+            code(
+                "from scipy import stats\n\n"
+                "rng = np.random.default_rng(3)\n"
+                "\n"
+                "# TODO: Simulate x with a small non-zero mean (e.g., 0.1) and some noise\n"
+                "x = ...\n"
+                "\n"
+                "# TODO: Run a one-sample t-test for mean == 0\n"
+                "t_stat, p_val = ...\n"
+                "print('t:', t_stat, 'p:', p_val)\n"
+                "\n"
+                "# TODO: Explain: what does this p-value mean in words?\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Regression coefficient test"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "# TODO: Simulate a simple linear relationship y = 1 + 0.5*x + noise\n"
+                "rng = np.random.default_rng(4)\n"
+                "n = 300\n"
+                "x = ...\n"
+                "y = ...\n"
+                "\n"
+                "df_ht = pd.DataFrame({'y': y, 'x': x})\n"
+                "X = sm.add_constant(df_ht[['x']])\n"
+                "res = sm.OLS(df_ht['y'], X).fit()\n"
+                "\n"
+                "# TODO: Print coefficient, SE, p-value, and 95% CI for x\n"
+                "...\n"
             ),
         ]
 
     # Data notebooks
     if spec.path.endswith("00_fred_api_and_caching.ipynb"):
         cells += [
-            md("## Goal\nFetch a few FRED series, cache raw JSON, and convert observations into tidy DataFrames."),
-            md("## Your Turn: Choose Series"),
-            code(
-                "# TODO: Define a list of FRED series IDs\nseries_ids = [...]\n\n# Suggested: UNRATE, FEDFUNDS, CPIAUCSL, INDPRO, RSAFS, T10Y2Y\n"
+            md(
+                "## Goal\n"
+                "Fetch a basket of economic indicators from FRED, cache the raw API responses, and build a tidy time series panel.\n\n"
+                "### Why this matters\n"
+                "You want to separate:\n"
+                "- **data acquisition** (API calls) from\n"
+                "- **analysis/modeling** (notebooks and scripts).\n\n"
+                "Caching makes your work reproducible and faster.\n"
             ),
-            md("## Your Turn: Fetch Metadata"),
-            code(
-                "from src import fred_api\n\n# TODO: Pick one series and fetch metadata with fred_api.fetch_series_meta\n# Print title, units, frequency, seasonal_adjustment\n..."
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Choose series')}\"></a>\n"
+                "## Choose series\n\n"
+                "### Goal\n"
+                "Pick a starter basket of macro indicators.\n\n"
+                "### Notes\n"
+                "- Different indicators have different frequencies (monthly, daily, quarterly).\n"
+                "- We'll deal with alignment in later notebooks.\n"
             ),
-            md("## Your Turn: Fetch + Cache Observations"),
+            md("### Your Turn (1): Define a basket of series IDs"),
             code(
-                "from src import data as data_utils\n\n# TODO: For each series_id, cache JSON under data/raw/fred/<id>.json\n# Hint: data_utils.load_or_fetch_json + fred_api.fetch_series_observations\n..."
+                "# TODO: Define a list of FRED series IDs (strings)\n"
+                "# Suggested starters:\n"
+                "# - UNRATE   (Unemployment rate, monthly)\n"
+                "# - FEDFUNDS (Fed funds rate, monthly)\n"
+                "# - CPIAUCSL (CPI, monthly)\n"
+                "# - INDPRO   (Industrial Production, monthly)\n"
+                "# - RSAFS    (Retail Sales, monthly)\n"
+                "# - T10Y2Y   (10Y-2Y yield spread, daily)\n"
+                "series_ids = [\n"
+                "    ...,\n"
+                "]\n"
+                "\n"
+                "# TODO: Basic validation\n"
+                "assert isinstance(series_ids, list)\n"
+                "assert all(isinstance(x, str) and x for x in series_ids)\n"
+                "assert len(series_ids) == len(set(series_ids)), 'duplicate series IDs'\n"
+                "series_ids\n"
             ),
-            md("## Fallback"),
+            md(
+                f"<a id=\"{slugify('Fetch metadata')}\"></a>\n"
+                "## Fetch metadata\n\n"
+                "### Goal\n"
+                "Metadata answers: what is this series, what are the units, and what is its native frequency?\n\n"
+                "You will use metadata later to decide:\n"
+                "- which features are meaningful,\n"
+                "- how to align frequencies,\n"
+                "- how to interpret coefficient units.\n"
+            ),
+            md("### Your Turn (1): Fetch metadata for one series"),
             code(
-                "# TODO: If you do not have FRED_API_KEY set, load data/sample/panel_monthly_sample.csv\n..."
+                "from src import fred_api\n\n"
+                "# TODO: Pick one series_id and fetch metadata\n"
+                "sid = series_ids[0]\n"
+                "meta = fred_api.fetch_series_meta(sid)\n"
+                "\n"
+                "# TODO: Print the most important fields (title, units, frequency)\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Fetch metadata for all series and build a table"),
+            code(
+                "import pandas as pd\n"
+                "from src import fred_api\n\n"
+                "# TODO: Loop over series_ids and build a DataFrame of metadata.\n"
+                "# Hint: meta is a dict; you can select keys you care about.\n"
+                "rows = []\n"
+                "for sid in series_ids:\n"
+                "    meta = fred_api.fetch_series_meta(sid)\n"
+                "    rows.append({\n"
+                "        'id': sid,\n"
+                "        'title': meta.get('title'),\n"
+                "        'units': meta.get('units'),\n"
+                "        'frequency': meta.get('frequency'),\n"
+                "        'seasonal_adjustment': meta.get('seasonal_adjustment'),\n"
+                "    })\n"
+                "\n"
+                "meta_df = pd.DataFrame(rows)\n"
+                "meta_df\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fetch + cache observations')}\"></a>\n"
+                "## Fetch + cache observations\n\n"
+                "### Goal\n"
+                "Download observations for each series and cache the raw JSON under `data/raw/fred/`.\n\n"
+                "### Why cache raw JSON?\n"
+                "- It's the exact raw record of what the API returned.\n"
+                "- You can debug parsing issues later without re-downloading.\n"
+            ),
+            md("### Your Turn (1): Fetch and cache JSON payloads"),
+            code(
+                "from src import data as data_utils\n"
+                "from src import fred_api\n\n"
+                "# We'll store raw API responses here\n"
+                "raw_dir = RAW_DIR / 'fred'\n"
+                "raw_dir.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "# TODO: For each series_id, cache JSON under data/raw/fred/<id>.json\n"
+                "# Hint: data_utils.load_or_fetch_json(path, fetch_fn)\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Convert cached payloads to a tidy DataFrame panel"),
+            code(
+                "import pandas as pd\n"
+                "from src import data as data_utils\n"
+                "from src import fred_api\n\n"
+                "# TODO: For each series, load JSON and convert to a 1-column DataFrame\n"
+                "# Hint: fred_api.observations_to_frame(payload, sid)\n"
+                "frames = []\n"
+                "for sid in series_ids:\n"
+                "    payload = data_utils.load_json(raw_dir / f'{sid}.json')\n"
+                "    frames.append(fred_api.observations_to_frame(payload, sid))\n"
+                "\n"
+                "panel = pd.concat(frames, axis=1).sort_index()\n"
+                "panel.head()\n"
+            ),
+            md("### Your Turn (3): Inspect missingness and basic ranges"),
+            code(
+                "# TODO: Print missing values per column\n"
+                "# TODO: Print min/max dates\n"
+                "# TODO: Describe each column\n"
+                "print('date range:', panel.index.min(), '->', panel.index.max())\n"
+                "print(panel.isna().sum().sort_values(ascending=False))\n"
+                "panel.describe().T\n"
+            ),
+            md("### Checkpoint (panel sanity)"),
+            code(
+                "# TODO: These checks should pass if you built a valid panel.\n"
+                "assert isinstance(panel.index, pd.DatetimeIndex)\n"
+                "assert panel.index.is_monotonic_increasing\n"
+                "assert panel.shape[0] > 200\n"
+                "assert panel.shape[1] == len(series_ids)\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fallback to sample')}\"></a>\n"
+                "## Fallback to sample\n\n"
+                "If you cannot fetch from the API (no key, no network), load the bundled sample panel.\n"
+            ),
+            code(
+                "import os\n"
+                "import pandas as pd\n\n"
+                "# TODO: Implement a fallback:\n"
+                "# - if FRED_API_KEY is missing, load data/sample/panel_monthly_sample.csv\n"
+                "# - otherwise, keep using your freshly built panel\n"
+                "if not os.getenv('FRED_API_KEY'):\n"
+                "    panel = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "panel.head()\n"
             ),
         ]
 
     if spec.path.endswith("01_build_macro_monthly_panel.ipynb"):
         cells += [
-            md("## Goal\nBuild a clean month-end panel of predictors (mixed daily/monthly series)."),
-            md("## Your Turn: Load Raw Series"),
-            code(
-                "import pandas as pd\nfrom src import data as data_utils\n\n# TODO: Load cached JSON series into individual DataFrames\n# Convert to numeric and set DatetimeIndex\n..."
+            md(
+                "## Goal\n"
+                "Build a clean **month-end** panel of predictors.\n\n"
+                "### Why this matters\n"
+                "Most economic indicators are not recorded at the same frequency.\n"
+                "Before modeling, you must decide:\n"
+                "- the timeline you will predict on (monthly vs quarterly)\n"
+                "- how to align mixed-frequency indicators onto that timeline\n\n"
+                "In this notebook, you standardize everything to **month-end**.\n"
             ),
-            md("## Your Turn: Align to Month-End"),
-            code(
-                "# TODO: resample to month-end (ME) and forward-fill\n# Save to data/processed/panel_monthly.csv\n..."
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Load series')}\"></a>\n"
+                "## Load series\n\n"
+                "### Goal\n"
+                "Load a macro indicator panel.\n\n"
+                "Options:\n"
+                "1) If you completed `00_fred_api_and_caching`, load raw series from `data/raw/fred/` JSON files.\n"
+                "2) Otherwise, load the offline sample from `data/sample/panel_monthly_sample.csv`.\n"
             ),
-            md("## Checkpoint"),
+            md("### Your Turn (1): Try to load from cached JSON (preferred)"),
             code(
-                "# TODO: Assert no missing values after forward-fill (or explain remaining NaNs)\n..."
+                "import pandas as pd\n"
+                "from src import data as data_utils\n"
+                "from src import fred_api\n\n"
+                "# TODO: Choose the same series_ids you used before.\n"
+                "series_ids = ['UNRATE', 'FEDFUNDS', 'CPIAUCSL', 'INDPRO', 'RSAFS', 'T10Y2Y']\n"
+                "\n"
+                "raw_dir = RAW_DIR / 'fred'\n"
+                "\n"
+                "# TODO: If JSON files exist, load them and build a raw panel.\n"
+                "frames = []\n"
+                "for sid in series_ids:\n"
+                "    path = raw_dir / f'{sid}.json'\n"
+                "    if not path.exists():\n"
+                "        continue\n"
+                "    payload = data_utils.load_json(path)\n"
+                "    frames.append(fred_api.observations_to_frame(payload, sid))\n"
+                "\n"
+                "panel_raw = pd.concat(frames, axis=1).sort_index() if frames else None\n"
+                "panel_raw.head() if panel_raw is not None else None\n"
+            ),
+            md("### Your Turn (2): Fallback to sample if needed"),
+            code(
+                "import pandas as pd\n\n"
+                "# TODO: If panel_raw is None, load the sample.\n"
+                "if panel_raw is None:\n"
+                "    panel_raw = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "panel_raw.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Month-end alignment')}\"></a>\n"
+                "## Month-end alignment\n\n"
+                "### Goal\n"
+                "Convert the panel to **month-end** index and decide how to handle series that update more frequently.\n\n"
+                "In later notebooks we will aggregate monthly -> quarterly; for now, everything becomes monthly.\n"
+            ),
+            md("### Your Turn (1): Ensure month-end index"),
+            code(
+                "from src import features\n\n"
+                "# TODO: If panel_raw is already month-end, verify it.\n"
+                "# If it is daily (or mixed), resample to month-end.\n"
+                "# Hint: features.to_monthly(panel_raw)\n"
+                "panel_me = ...\n"
+                "\n"
+                "panel_me.head()\n"
+            ),
+            md("### Your Turn (2): Compare before/after resampling"),
+            code(
+                "# TODO: Print index frequency guesses before and after.\n"
+                "# TODO: Print how many rows you have before/after.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Missingness')}\"></a>\n"
+                "## Missingness\n\n"
+                "### Goal\n"
+                "Inspect missing values and choose a strategy.\n\n"
+                "In macro panels, a common approach is:\n"
+                "- forward-fill within a series after resampling\n"
+                "- then drop early rows that are still missing because the series starts later\n"
+            ),
+            md("### Your Turn (1): Missingness report"),
+            code(
+                "# TODO: Print missing values per column and as a percent\n"
+                "na_counts = panel_me.isna().sum().sort_values(ascending=False)\n"
+                "na_pct = (na_counts / len(panel_me)).round(3)\n"
+                "pd.DataFrame({'na': na_counts, 'na_pct': na_pct})\n"
+            ),
+            md("### Your Turn (2): Decide and apply a strategy"),
+            code(
+                "# TODO: Choose a missingness strategy.\n"
+                "# Default suggestion:\n"
+                "# - forward fill\n"
+                "# - drop remaining NaNs\n"
+                "panel_filled = panel_me.ffill()\n"
+                "panel_clean = panel_filled.dropna().copy()\n"
+                "\n"
+                "panel_clean.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Save processed panel')}\"></a>\n"
+                "## Save processed panel\n\n"
+                "### Goal\n"
+                "Write your month-end panel to `data/processed/panel_monthly.csv`.\n"
+            ),
+            md("### Your Turn (1): Save"),
+            code(
+                "out_path = PROCESSED_DIR / 'panel_monthly.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "# TODO: Save panel_clean to CSV\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Load back and validate"),
+            code(
+                "import pandas as pd\n\n"
+                "# TODO: Load the saved file and confirm it matches your in-memory data.\n"
+                "panel_check = pd.read_csv(PROCESSED_DIR / 'panel_monthly.csv', index_col=0, parse_dates=True)\n"
+                "assert panel_check.shape == panel_clean.shape\n"
+                "assert panel_check.index.is_monotonic_increasing\n"
+                "panel_check.head()\n"
+            ),
+            md("### Checkpoint"),
+            code(
+                "# TODO: Assert no missing values remain and index is month-end-ish.\n"
+                "assert not panel_clean.isna().any().any()\n"
+                "assert panel_clean.shape[0] > 100\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("02_gdp_growth_and_recession_label.ipynb"):
         cells += [
-            md("## Goal\nCompute GDP growth (QoQ, annualized, YoY) and define a technical recession label from GDP growth."),
-            md("## Your Turn: Load GDP"),
-            code(
-                "# TODO: Fetch GDPC1 from FRED and build a quarterly DataFrame\n# Hint: convert dates to quarter-end timestamps\n..."
+            md(
+                "## Goal\n"
+                "Compute GDP growth (multiple definitions) and define a **technical recession** label.\n\n"
+                "### Technical recession label used in this project\n"
+                "We define recession as:\n"
+                "- two consecutive quarters of negative **real GDP growth** (QoQ)\n\n"
+                "This is a teaching proxy, not an official recession dating rule.\n"
             ),
-            md("## Your Turn: Compute Growth Variants"),
-            code(
-                "from src import macro\n\n# TODO: Compute qoq, qoq_annualized, yoy growth\n..."
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Fetch GDP')}\"></a>\n"
+                "## Fetch GDP\n\n"
+                "### Goal\n"
+                "Load quarterly real GDP levels (`GDPC1`).\n\n"
+                "Options:\n"
+                "1) Fetch from FRED (preferred if you have a key)\n"
+                "2) Load the offline sample (`data/sample/gdp_quarterly_sample.csv`)\n"
             ),
-            md("## Your Turn: Technical Recession Label"),
+            md("### Your Turn (1): Fetch GDPC1 (or load sample)"),
             code(
-                "# TODO: Implement recession_t = 1 if growth_t < 0 and growth_{t-1} < 0\n# Then define target_recession_next_q = recession.shift(-1)\n..."
+                "import os\n"
+                "import pandas as pd\n"
+                "from src import fred_api\n"
+                "from src import data as data_utils\n\n"
+                "sid = 'GDPC1'\n"
+                "\n"
+                "# TODO: If you have FRED_API_KEY, fetch observations and convert to a DataFrame.\n"
+                "# Hint: fred_api.fetch_series_observations + fred_api.observations_to_frame\n"
+                "# Otherwise, load SAMPLE_DIR / 'gdp_quarterly_sample.csv'\n"
+                "if os.getenv('FRED_API_KEY'):\n"
+                "    payload = fred_api.fetch_series_observations(sid, start_date='1980-01-01', end_date=None)\n"
+                "    gdp = fred_api.observations_to_frame(payload, sid)\n"
+                "else:\n"
+                "    gdp = pd.read_csv(SAMPLE_DIR / 'gdp_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "gdp = gdp.sort_index()\n"
+                "gdp.head()\n"
             ),
-            md("## Reflection"),
-            md("- Why is this only a proxy for 'recession'?\n- How could this differ from an official recession indicator?"),
+            md("### Checkpoint (GDP shape)"),
+            code(
+                "# TODO: Confirm quarterly-ish index and no obvious missingness.\n"
+                "assert isinstance(gdp.index, pd.DatetimeIndex)\n"
+                "assert gdp.index.is_monotonic_increasing\n"
+                "assert gdp.shape[1] == 1\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Compute growth')}\"></a>\n"
+                "## Compute growth\n\n"
+                "### Goal\n"
+                "Compute multiple growth definitions from GDP levels.\n\n"
+                "You will compute and compare:\n"
+                "- QoQ growth (percent)\n"
+                "- Annualized QoQ growth (percent)\n"
+                "- YoY growth (percent)\n"
+            ),
+            md("### Your Turn (1): Compute growth variants"),
+            code(
+                "from src import macro\n\n"
+                "# GDP levels series\n"
+                "gdp_levels = gdp['GDPC1'].astype(float)\n"
+                "\n"
+                "# TODO: Compute growth series\n"
+                "gdp_growth_qoq = ...\n"
+                "gdp_growth_qoq_ann = ...\n"
+                "gdp_growth_yoy = ...\n"
+                "\n"
+                "gdp_feat = pd.DataFrame({\n"
+                "    'gdp_level': gdp_levels,\n"
+                "    'gdp_growth_qoq': gdp_growth_qoq,\n"
+                "    'gdp_growth_qoq_annualized': gdp_growth_qoq_ann,\n"
+                "    'gdp_growth_yoy': gdp_growth_yoy,\n"
+                "}).dropna()\n"
+                "gdp_feat.head()\n"
+            ),
+            md("### Your Turn (2): Compare the growth definitions"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot the three growth series on separate subplots.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Define recession label')}\"></a>\n"
+                "## Define recession label\n\n"
+                "### Goal\n"
+                "Construct the technical recession label from QoQ growth.\n\n"
+                "Definition used here:\n"
+                "- `recession_t = 1` if `growth_t < 0` AND `growth_{t-1} < 0`\n"
+            ),
+            md("### Your Turn (1): Build the label and inspect it"),
+            code(
+                "from src import macro\n\n"
+                "# TODO: Compute technical recession label\n"
+                "recession = ...\n"
+                "\n"
+                "# TODO: Attach to gdp_feat and inspect counts\n"
+                "gdp_feat['recession'] = recession\n"
+                "print(gdp_feat['recession'].value_counts())\n"
+                "gdp_feat[['gdp_growth_qoq', 'recession']].tail(12)\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Define next-quarter target')}\"></a>\n"
+                "## Define next-quarter target\n\n"
+                "### Goal\n"
+                "Create the classifier target: **predict next quarter's recession label**.\n\n"
+                "That target is:\n"
+                "- `target_recession_next_q[t] = recession[t+1]`\n\n"
+                "Be careful: this creates a missing value at the end (there is no future label for the last row).\n"
+            ),
+            md("### Your Turn (1): Shift label to build the target"),
+            code(
+                "from src import macro\n\n"
+                "# TODO: Shift recession to build next-quarter target\n"
+                "gdp_feat['target_recession_next_q'] = ...\n"
+                "\n"
+                "# TODO: Drop rows where target is missing\n"
+                "gdp_feat = gdp_feat.dropna(subset=['target_recession_next_q']).copy()\n"
+                "\n"
+                "gdp_feat[['recession', 'target_recession_next_q']].tail(6)\n"
+            ),
+            md("### Your Turn (2): Save to data/processed/gdp_quarterly.csv"),
+            code(
+                "out_path = PROCESSED_DIR / 'gdp_quarterly.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "# TODO: Save gdp_feat to CSV\n"
+                "...\n"
+            ),
+            md("### Reflection"),
+            md(
+                "- Why is this only a proxy for 'recession'?\n"
+                "- How could this differ from official recession dating?\n"
+                "- How might you validate whether this label aligns with economic reality?\n"
+            ),
         ]
 
     if spec.path.endswith("03_build_macro_quarterly_features.ipynb"):
         cells += [
-            md("## Goal\nAggregate monthly predictors to quarterly features (mean vs last), add lags, and merge with GDP + targets."),
-            md("## Your Turn: Load panel_monthly + gdp_quarterly"),
-            code(
-                "from src import data as data_utils\n\n# TODO: Load panel_monthly.csv and gdp_quarterly.csv\n..."
+            md(
+                "## Goal\n"
+                "Build a quarterly modeling table by:\n"
+                "1) aggregating monthly predictors to quarterly features\n"
+                "2) adding lagged predictors (past-only)\n"
+                "3) merging with quarterly GDP growth + recession targets\n\n"
+                "The output is `data/processed/macro_quarterly.csv`.\n"
             ),
-            md("## Your Turn: Quarterly Aggregation"),
-            code(
-                "from src import macro\n\n# TODO: Create quarterly features using BOTH methods: mean and last\n# Compare them visually/statistically\n..."
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Aggregate monthly -> quarterly')}\"></a>\n"
+                "## Aggregate monthly -> quarterly\n\n"
+                "### Goal\n"
+                "Convert the month-end panel into a quarterly feature table.\n\n"
+                "You will try two aggregation rules:\n"
+                "- quarter-end value (`last`)\n"
+                "- quarter-average value (`mean`)\n\n"
+                "Then you will choose one (or keep both with suffixes).\n"
             ),
-            md("## Your Turn: Add Lags"),
+            md("### Your Turn (1): Load inputs"),
             code(
-                "# TODO: Add quarterly lags (1, 2, 4) for each predictor\n..."
+                "import pandas as pd\n\n"
+                "# TODO: Load the processed monthly panel (or fallback to sample)\n"
+                "panel_path = PROCESSED_DIR / 'panel_monthly.csv'\n"
+                "if panel_path.exists():\n"
+                "    panel_m = pd.read_csv(panel_path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    panel_m = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "# TODO: Load quarterly GDP/label table from the previous notebook\n"
+                "gdp_path = PROCESSED_DIR / 'gdp_quarterly.csv'\n"
+                "if gdp_path.exists():\n"
+                "    gdp_q = pd.read_csv(gdp_path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    gdp_q = pd.read_csv(SAMPLE_DIR / 'gdp_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "panel_m.head(), gdp_q.head()\n"
             ),
-            md("## Your Turn: Merge and Save"),
+            md("### Your Turn (2): Aggregate (mean vs last)"),
             code(
-                "# TODO: Merge predictors with GDP growth + recession labels\n# Save to data/processed/macro_quarterly.csv\n..."
+                "from src import macro\n\n"
+                "# TODO: Build quarterly versions of the monthly predictors.\n"
+                "# Hint: macro.monthly_to_quarterly(panel_m, how='mean'|'last')\n"
+                "panel_q_last = ...\n"
+                "panel_q_mean = ...\n"
+                "\n"
+                "# TODO: Compare them (e.g., correlation of each column)\n"
+                "...\n"
+            ),
+            md("### Your Turn (3): Choose a quarterly feature table"),
+            code(
+                "# TODO: Choose which aggregation to use for modeling.\n"
+                "# Option A: use quarter-end values\n"
+                "# Option B: use quarter averages\n"
+                "# Option C: keep both by adding suffixes\n"
+                "\n"
+                "Xq = ...\n"
+                "Xq.head()\n"
+            ),
+            md("### Checkpoint (quarterly index alignment)"),
+            code(
+                "# TODO: Confirm both Xq and gdp_q use quarter-end timestamps.\n"
+                "assert isinstance(Xq.index, pd.DatetimeIndex)\n"
+                "assert isinstance(gdp_q.index, pd.DatetimeIndex)\n"
+                "assert Xq.index.is_monotonic_increasing\n"
+                "assert gdp_q.index.is_monotonic_increasing\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Add lags')}\"></a>\n"
+                "## Add lags\n\n"
+                "### Goal\n"
+                "Add lagged quarterly predictors so the model only uses information available *before* the target period.\n\n"
+                "Typical lags to try:\n"
+                "- 1 quarter\n"
+                "- 2 quarters\n"
+                "- 4 quarters (one year)\n"
+            ),
+            md("### Your Turn (1): Add lag features"),
+            code(
+                "from src import features\n\n"
+                "# TODO: Add lag features for all columns in Xq\n"
+                "# Hint: features.add_lag_features(Xq, columns=Xq.columns, lags=[...])\n"
+                "Xq_lagged = ...\n"
+                "\n"
+                "# TODO: Drop rows with NaNs created by lags\n"
+                "Xq_lagged = Xq_lagged.dropna().copy()\n"
+                "Xq_lagged.head()\n"
+            ),
+            md("### Checkpoint (no future lags)"),
+            code(
+                "# TODO: Confirm you used ONLY positive lags.\n"
+                "# features.add_lag_features will raise if lags <= 0.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Merge with GDP/labels')}\"></a>\n"
+                "## Merge with GDP/labels\n\n"
+                "### Goal\n"
+                "Join lagged predictors with GDP growth and the next-quarter recession target.\n\n"
+                "Key idea:\n"
+                "- predictors at time t\n"
+                "- target at time t (which is recession at t+1)\n"
+            ),
+            md("### Your Turn (1): Merge and build the final table"),
+            code(
+                "# TODO: Join on the quarterly index.\n"
+                "# Keep at least:\n"
+                "# - gdp growth columns\n"
+                "# - recession label\n"
+                "# - target_recession_next_q\n"
+                "# - lagged predictors\n"
+                "\n"
+                "df_q = ...\n"
+                "\n"
+                "# Drop rows with missing target or predictors\n"
+                "df_q = df_q.dropna().copy()\n"
+                "df_q.head()\n"
+            ),
+            md("### Checkpoint (target alignment)"),
+            code(
+                "# TODO: Confirm the target is 0/1 and shifted correctly.\n"
+                "assert set(df_q['target_recession_next_q'].unique()).issubset({0, 1})\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Save macro_quarterly.csv')}\"></a>\n"
+                "## Save macro_quarterly.csv\n\n"
+                "### Goal\n"
+                "Write the final modeling table to `data/processed/macro_quarterly.csv`.\n"
+            ),
+            md("### Your Turn (1): Save + reload"),
+            code(
+                "out_path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "# TODO: Save df_q\n"
+                "...\n"
+                "\n"
+                "# Reload for sanity\n"
+                "df_reload = pd.read_csv(out_path, index_col=0, parse_dates=True)\n"
+                "assert df_reload.shape == df_q.shape\n"
+                "df_reload.tail()\n"
             ),
         ]
 
     if spec.path.endswith("04_census_api_microdata_fetch.ipynb"):
         cells += [
-            md("## Goal\nFetch ACS county-level data and build a micro dataset for regression/classification."),
-            md("## Your Turn: Browse variables.json"),
-            code(
-                "import json\n\n# TODO: Load variables metadata (either from API or data/raw/census/variables_<year>.json)\n# Find variables related to income, rent, poverty, labor force\n..."
+            md(
+                "## Goal\n"
+                "Build a county-level micro dataset from the US Census ACS API.\n\n"
+                "### Why this matters\n"
+                "This micro track is deliberately different from macro time series:\n"
+                "- observations are counties (not time)\n"
+                "- regression interpretation focuses on cross-sectional relationships\n"
+                "- robust SE (HC3) is usually more relevant than time-series HAC\n"
             ),
-            md("## Your Turn: Fetch County Data"),
-            code(
-                "from src import census_api\n\n# TODO: Fetch ACS data at county level and save to data/processed/census_county_<year>.csv\n# Hint: use for_geo='county:*' and in_geo='state:*'\n..."
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Browse variables')}\"></a>\n"
+                "## Browse variables\n\n"
+                "### Goal\n"
+                "Learn how ACS variable codes work and choose a starter set.\n\n"
+                "We'll focus on a practical starter set:\n"
+                "- population\n"
+                "- median household income\n"
+                "- median gross rent\n"
+                "- median home value\n"
+                "- poverty count (to build a poverty rate)\n"
+                "- labor force / unemployment (to build an unemployment rate)\n"
             ),
-            md("## Fallback"),
+            md("### Your Turn (1): Fetch or load variables.json"),
             code(
-                "# TODO: If API is unavailable, load data/sample/census_county_sample.csv\n..."
+                "import json\n"
+                "from src import census_api\n\n"
+                "year = 2022  # TODO: change if you want a different year\n"
+                "raw_dir = RAW_DIR / 'census'\n"
+                "raw_dir.mkdir(parents=True, exist_ok=True)\n"
+                "vars_path = raw_dir / f'variables_{year}.json'\n"
+                "\n"
+                "# TODO: Load variables metadata.\n"
+                "# - If vars_path exists, load it from disk.\n"
+                "# - Otherwise, fetch from the API and save it to vars_path.\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Search for relevant variables"),
+            code(
+                "# The variables metadata is a nested JSON structure.\n"
+                "# TODO: Explore it and search for keywords like:\n"
+                "# - 'Median household income'\n"
+                "# - 'Median gross rent'\n"
+                "# - 'Poverty'\n"
+                "# - 'Labor force'\n"
+                "\n"
+                "# Hint: variables are typically under payload['variables'].\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fetch county data')}\"></a>\n"
+                "## Fetch county data\n\n"
+                "### Goal\n"
+                "Fetch a county-level table for your chosen variables.\n\n"
+                "Default geography:\n"
+                "- all counties: `for=county:*`\n"
+                "- within all states: `in=state:*`\n"
+            ),
+            md("### Your Turn (1): Choose a starter variable set"),
+            code(
+                "# TODO: Use a starter set.\n"
+                "# These are commonly-used ACS 5-year estimate codes:\n"
+                "acs_vars = [\n"
+                "    'NAME',\n"
+                "    'B01003_001E',  # total population\n"
+                "    'B19013_001E',  # median household income\n"
+                "    'B25064_001E',  # median gross rent\n"
+                "    'B25077_001E',  # median home value\n"
+                "    'B17001_002E',  # count below poverty level\n"
+                "    'B23025_002E',  # in labor force\n"
+                "    'B23025_005E',  # unemployed\n"
+                "]\n"
+                "\n"
+                "acs_vars\n"
+            ),
+            md("### Your Turn (2): Fetch the ACS table"),
+            code(
+                "import pandas as pd\n"
+                "from src import census_api\n\n"
+                "# TODO: Fetch the data from the API.\n"
+                "# Hint: census_api.fetch_acs(year=..., get=..., for_geo='county:*', in_geo='state:*')\n"
+                "try:\n"
+                "    df_raw = census_api.fetch_acs(year=year, get=acs_vars, for_geo='county:*', in_geo='state:*')\n"
+                "except Exception as exc:\n"
+                "    df_raw = None\n"
+                "    print('Fetch failed, will use sample. Error:', exc)\n"
+                "\n"
+                "df_raw.head() if df_raw is not None else None\n"
+            ),
+            md("### Your Turn (3): Fallback to sample"),
+            code(
+                "import pandas as pd\n\n"
+                "# TODO: If df_raw is None, load the sample dataset.\n"
+                "if df_raw is None:\n"
+                "    df_raw = pd.read_csv(SAMPLE_DIR / 'census_county_sample.csv')\n"
+                "\n"
+                "df_raw.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Derived rates')}\"></a>\n"
+                "## Derived rates\n\n"
+                "### Goal\n"
+                "Turn raw counts into rates (more comparable across counties).\n\n"
+                "You will build:\n"
+                "- unemployment_rate = unemployed / labor_force\n"
+                "- poverty_rate = below_poverty / population\n"
+            ),
+            md("### Your Turn (1): Cast numeric columns"),
+            code(
+                "# TODO: Ensure numeric columns are numeric (some API returns strings).\n"
+                "# Hint: pd.to_numeric(..., errors='coerce')\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Build derived rates safely"),
+            code(
+                "import numpy as np\n\n"
+                "# TODO: Compute rates with safe division.\n"
+                "# Replace division-by-zero with NaN.\n"
+                "\n"
+                "pop = df_raw['B01003_001E'].astype(float)\n"
+                "labor_force = df_raw['B23025_002E'].astype(float)\n"
+                "unemployed = df_raw['B23025_005E'].astype(float)\n"
+                "below_pov = df_raw['B17001_002E'].astype(float)\n"
+                "\n"
+                "df_raw['unemployment_rate'] = unemployed / labor_force.replace({0: np.nan})\n"
+                "df_raw['poverty_rate'] = below_pov / pop.replace({0: np.nan})\n"
+                "\n"
+                "df_raw[['unemployment_rate', 'poverty_rate']].describe()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Save processed data')}\"></a>\n"
+                "## Save processed data\n\n"
+                "### Goal\n"
+                "Save a cleaned dataset to `data/processed/census_county_<year>.csv`.\n"
+            ),
+            md("### Your Turn (1): Save + reload"),
+            code(
+                "out_path = PROCESSED_DIR / f'census_county_{year}.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "# TODO: Select a useful subset of columns and save.\n"
+                "# Suggested: NAME, state, county, raw vars, unemployment_rate, poverty_rate\n"
+                "cols = ['NAME', 'state', 'county'] + [c for c in acs_vars if c not in {'NAME'}] + ['unemployment_rate', 'poverty_rate']\n"
+                "df_out = df_raw[cols].copy()\n"
+                "df_out.to_csv(out_path, index=False)\n"
+                "\n"
+                "df_check = pd.read_csv(out_path)\n"
+                "df_check.head()\n"
+            ),
+            md("### Checkpoint"),
+            code(
+                "# TODO: Validate rates are in [0, 1] for most rows.\n"
+                "assert (df_out['unemployment_rate'].dropna().between(0, 1).mean() > 0.95)\n"
+                "assert (df_out['poverty_rate'].dropna().between(0, 1).mean() > 0.95)\n"
+                "...\n"
             ),
         ]
 
     # Regression notebooks
     if spec.path.endswith("00_single_factor_regression_micro.ipynb"):
         cells += [
-            md("## Goal\nFit a single-factor regression on cross-sectional (county) data and interpret the coefficient like an elasticity."),
-            md("## Your Turn: Load Census Data"),
-            code(
-                "import numpy as np\nimport pandas as pd\n\nfrom src import data as data_utils\n\n# TODO: Load census_county_<year>.csv OR the sample\n..."
+            md(
+                "## Goal\n"
+                "Fit a single-factor log-log regression on county data and interpret the coefficient like an elasticity.\n\n"
+                "Example question:\n"
+                "- \"Across counties, how does rent scale with income?\"\n\n"
+                "This is **not** a causal claim by default. It's a structured description of a relationship.\n"
             ),
-            md("## Your Turn: Build log-log variables"),
-            code(
-                "# TODO: Create y = log(rent) and x = log(income)\n# Handle missing/zero values carefully\n..."
+            md(primer("statsmodels_inference")),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Load census data')}\"></a>\n"
+                "## Load census data\n\n"
+                "### Goal\n"
+                "Load a county-level dataset created in the Census notebook.\n\n"
+                "If you haven't run the fetch notebook, use the bundled sample.\n"
             ),
-            md("## Your Turn: Fit OLS + Robust SE (HC3)"),
+            md("### Your Turn (1): Load processed county data (or sample)"),
             code(
-                "from src import econometrics\n\n# TODO: Fit OLS with HC3 robust SE\n# Print summary and interpret the slope\n..."
+                "import pandas as pd\n\n"
+                "year = 2022  # TODO: set to the year you fetched\n"
+                "path = PROCESSED_DIR / f'census_county_{year}.csv'\n"
+                "\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'census_county_sample.csv')\n"
+                "\n"
+                "df.head()\n"
             ),
-            md("## Reflection"),
-            md("- What does the coefficient mean in log-log form?\n- What assumptions would make it 'causal'?"),
+            md("### Your Turn (2): Inspect schema"),
+            code(
+                "# TODO: Inspect columns and dtypes.\n"
+                "# Identify which columns represent:\n"
+                "# - income\n"
+                "# - rent\n"
+                "print(df.columns.tolist())\n"
+                "print(df.dtypes)\n"
+                "...\n"
+            ),
+            md("### Checkpoint (required columns)"),
+            code(
+                "# TODO: Confirm the starter variables exist.\n"
+                "# If you used different ACS vars, update these names.\n"
+                "assert 'B19013_001E' in df.columns  # median household income\n"
+                "assert 'B25064_001E' in df.columns  # median gross rent\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Build log variables')}\"></a>\n"
+                "## Build log variables\n\n"
+                "### Goal\n"
+                "Build a clean modeling table with:\n"
+                "- `log_income = log(income)`\n"
+                "- `log_rent = log(rent)`\n\n"
+                "Log-log regression is common in economics because it turns multiplicative relationships into additive ones.\n"
+            ),
+            md("### Your Turn (1): Clean and log-transform"),
+            code(
+                "import numpy as np\n\n"
+                "# Raw variables\n"
+                "income = pd.to_numeric(df['B19013_001E'], errors='coerce')\n"
+                "rent = pd.to_numeric(df['B25064_001E'], errors='coerce')\n"
+                "\n"
+                "# TODO: Drop non-positive values before taking logs\n"
+                "mask = (income > 0) & (rent > 0)\n"
+                "df_m = pd.DataFrame({\n"
+                "    'income': income[mask],\n"
+                "    'rent': rent[mask],\n"
+                "}).dropna()\n"
+                "\n"
+                "# TODO: Create log variables\n"
+                "df_m['log_income'] = ...\n"
+                "df_m['log_rent'] = ...\n"
+                "\n"
+                "df_m[['log_income', 'log_rent']].head()\n"
+            ),
+            md("### Your Turn (2): Visualize the relationship"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Make a scatter plot of log_income vs log_rent.\n"
+                "# Tip: use alpha=0.2 for dense plots.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit OLS + HC3')}\"></a>\n"
+                "## Fit OLS + HC3\n\n"
+                "### Goal\n"
+                "Fit an OLS regression and compute HC3 robust SE (common default for cross-sectional data).\n\n"
+                "Model:\n"
+                "$$\\log(rent_i) = \\beta_0 + \\beta_1 \\log(income_i) + \\varepsilon_i$$\n"
+            ),
+            md("### Your Turn (1): Fit OLS + HC3"),
+            code(
+                "from src import econometrics\n\n"
+                "# TODO: Fit OLS with HC3 robust SE using the helper.\n"
+                "res = econometrics.fit_ols_hc3(df_m, y_col='log_rent', x_cols=['log_income'])\n"
+                "print(res.summary())\n"
+            ),
+            md("### Your Turn (2): Extract the slope and interpret it"),
+            code(
+                "# TODO: Extract coefficient and CI for log_income.\n"
+                "beta = float(res.params['log_income'])\n"
+                "ci = res.conf_int().loc['log_income'].tolist()\n"
+                "\n"
+                "print('beta:', beta)\n"
+                "print('95% CI:', ci)\n"
+                "\n"
+                "# Interpretation prompt:\n"
+                "# In a log-log model, beta is approximately an elasticity.\n"
+                "# Example: a 1% increase in income is associated with about beta% higher rent.\n"
+                "# TODO: Compute the implied change for a 10% income increase.\n"
+                "pct_income = 10.0\n"
+                "approx_pct_rent = ...\n"
+                "approx_pct_rent\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpretation')}\"></a>\n"
+                "## Interpretation\n\n"
+                "Write a short interpretation (5-8 sentences) that answers:\n"
+                "- What is the estimated relationship?\n"
+                "- Is it statistically distinguishable from 0 (given assumptions)?\n"
+                "- Is it economically large?\n"
+                "- What would have to be true for a causal interpretation?\n"
+            ),
+            md("### Your Turn: Write your interpretation"),
+            code("# TODO: Write your interpretation as a Python multiline string.\nnotes = \"\"\"\n...\n\"\"\"\nprint(notes)\n"),
         ]
 
     if spec.path.endswith("01_multifactor_regression_micro_controls.ipynb"):
         cells += [
-            md("## Goal\nFit a multi-factor regression with controls and discuss omitted variable bias."),
-            md("## Your Turn: Choose controls"),
-            code(
-                "# TODO: Choose at least 2 controls (example: log(population), poverty_rate)\n# Compare coefficient on log(income) with vs without controls\n..."
+            md(
+                "## Goal\n"
+                "Fit a multi-factor regression on county data, add controls, and discuss omitted variable bias (OVB).\n\n"
+                "Big idea:\n"
+                "- The coefficient on income can change when you add controls.\n"
+                "- That change is a clue that the simple model was absorbing other effects.\n"
             ),
-            md("## Your Turn: Robust SE + Optional Clustering"),
+            md(primer("statsmodels_inference")),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Choose controls')}\"></a>\n"
+                "## Choose controls\n\n"
+                "### Goal\n"
+                "Pick a set of plausible controls to include alongside income.\n\n"
+                "Starter controls (if you have them):\n"
+                "- `poverty_rate`\n"
+                "- `unemployment_rate`\n"
+                "- `log_population`\n"
+                "- `log_home_value` (if available)\n"
+            ),
+            md("### Your Turn (1): Load data and build baseline variables"),
             code(
-                "# TODO: Fit HC3 robust SE\n# Advanced: cluster by state (research statsmodels cov_type='cluster')\n..."
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "year = 2022\n"
+                "path = PROCESSED_DIR / f'census_county_{year}.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'census_county_sample.csv')\n"
+                "\n"
+                "# Outcome + main regressor\n"
+                "income = pd.to_numeric(df['B19013_001E'], errors='coerce')\n"
+                "rent = pd.to_numeric(df['B25064_001E'], errors='coerce')\n"
+                "\n"
+                "# TODO: Build baseline log variables\n"
+                "mask = (income > 0) & (rent > 0)\n"
+                "df_m = pd.DataFrame({\n"
+                "    'log_income': np.log(income[mask]),\n"
+                "    'log_rent': np.log(rent[mask]),\n"
+                "}).dropna()\n"
+                "\n"
+                "# TODO: Merge in control columns you want to use (from df)\n"
+                "# Hint: df_m = df_m.join(...)\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Choose controls list"),
+            code(
+                "# TODO: Choose at least 2 controls available in df_m.\n"
+                "# Example: ['poverty_rate', 'unemployment_rate']\n"
+                "controls = [\n"
+                "    ...,\n"
+                "]\n"
+                "\n"
+                "controls\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit model')}\"></a>\n"
+                "## Fit model\n\n"
+                "### Goal\n"
+                "Fit:\n"
+                "1) baseline model: log_rent ~ log_income\n"
+                "2) controlled model: log_rent ~ log_income + controls\n"
+            ),
+            md("### Your Turn (1): Fit baseline and controlled models (HC3)"),
+            code(
+                "from src import econometrics\n\n"
+                "# Baseline\n"
+                "res_base = econometrics.fit_ols_hc3(df_m, y_col='log_rent', x_cols=['log_income'])\n"
+                "\n"
+                "# Controlled\n"
+                "x_cols = ['log_income'] + controls\n"
+                "res_ctrl = econometrics.fit_ols_hc3(df_m, y_col='log_rent', x_cols=x_cols)\n"
+                "\n"
+                "print(res_base.summary())\n"
+                "print(res_ctrl.summary())\n"
+            ),
+            md("### Optional: cluster-robust SE by state"),
+            code(
+                "# Advanced (optional): if you have a 'state' column, research statsmodels cluster SE.\n"
+                "# The idea: errors may be correlated within a state.\n"
+                "# TODO: Try cov_type='cluster' and compare SE to HC3.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Compare coefficients')}\"></a>\n"
+                "## Compare coefficients\n\n"
+                "### Goal\n"
+                "Compare the income coefficient with and without controls.\n\n"
+                "Interpretation prompt:\n"
+                "- If the coefficient changes a lot, what omitted factors might income have been proxying for?\n"
+            ),
+            md("### Your Turn (1): Build a comparison table"),
+            code(
+                "import pandas as pd\n\n"
+                "def coef_row(res, name):\n"
+                "    return pd.Series({\n"
+                "        'coef': float(res.params[name]),\n"
+                "        'se': float(res.bse[name]),\n"
+                "        'p': float(res.pvalues[name]),\n"
+                "    })\n"
+                "\n"
+                "comp = pd.DataFrame({\n"
+                "    'baseline': coef_row(res_base, 'log_income'),\n"
+                "    'controlled': coef_row(res_ctrl, 'log_income'),\n"
+                "}).T\n"
+                "comp\n"
+            ),
+            md("### Your Turn (2): Multicollinearity check (VIF)"),
+            code(
+                "from src.econometrics import vif_table\n\n"
+                "# TODO: Compute VIF for the controlled model predictors (excluding the intercept).\n"
+                "vif = vif_table(df_m.dropna(), x_cols)\n"
+                "vif\n"
             ),
         ]
 
     if spec.path.endswith("02_single_factor_regression_macro.ipynb"):
         cells += [
-            md("## Goal\nSingle-factor macro regression: GDP growth vs yield curve spread."),
-            md("## Your Turn: Load macro_quarterly.csv"),
-            code(
-                "from src import data as data_utils\n\n# TODO: Load macro_quarterly.csv (or sample)\n..."
+            md(
+                "## Goal\n"
+                "Fit a classic single-factor macro regression: GDP growth vs yield curve spread.\n\n"
+                "This is a great first macro regression because:\n"
+                "- it is easy to visualize,\n"
+                "- it has a well-known economic story,\n"
+                "- it demonstrates why time-series inference (HAC SE) matters.\n"
             ),
-            md("## Your Turn: Fit OLS and then HAC"),
-            code(
-                "from src import econometrics\n\n# TODO: Fit plain OLS and compare to HAC robust SE\n# Pick maxlags (try 1, 2, 4) and compare\n..."
+            md(primer("pandas_time_series")),
+            md(primer("statsmodels_inference")),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Load macro data')}\"></a>\n"
+                "## Load macro data\n\n"
+                "### Goal\n"
+                "Load the quarterly macro table produced earlier (`macro_quarterly.csv`).\n\n"
+                "If you haven't built it yet, use the bundled sample.\n"
             ),
-            md("## Interpretation"),
-            md("- Does the sign match your expectation?\n- How sensitive is the result to HAC maxlags?"),
+            md("### Your Turn (1): Load macro_quarterly.csv (or sample)"),
+            code(
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df.head()\n"
+            ),
+            md("### Your Turn (2): Choose target and predictor"),
+            code(
+                "# Target: GDP growth\n"
+                "y_col = 'gdp_growth_qoq'\n"
+                "\n"
+                "# Predictor: yield curve spread (try lagged)\n"
+                "# TODO: Try 'T10Y2Y_lag1' first.\n"
+                "x_cols = ['T10Y2Y_lag1']\n"
+                "\n"
+                "# Build modeling table\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.tail()\n"
+            ),
+            md("### Checkpoint (time order + no NaNs)"),
+            code(
+                "assert df_m.index.is_monotonic_increasing\n"
+                "assert not df_m.isna().any().any()\n"
+                "assert df_m.shape[0] > 30\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit OLS')}\"></a>\n"
+                "## Fit OLS\n\n"
+                "### Goal\n"
+                "Fit OLS on a time-based train/test split and evaluate out-of-sample error.\n"
+            ),
+            md("### Your Turn (1): Time split"),
+            code(
+                "from src.evaluation import time_train_test_split_index\n\n"
+                "# TODO: Create a time split (first 80% train, last 20% test)\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "train.index.max(), test.index.min()\n"
+            ),
+            md("### Your Turn (2): Fit OLS on train and evaluate on test"),
+            code(
+                "import statsmodels.api as sm\n"
+                "from src.evaluation import regression_metrics\n\n"
+                "# Build design matrices\n"
+                "X_tr = sm.add_constant(train[x_cols], has_constant='add')\n"
+                "y_tr = train[y_col]\n"
+                "X_te = sm.add_constant(test[x_cols], has_constant='add')\n"
+                "y_te = test[y_col]\n"
+                "\n"
+                "# Fit\n"
+                "res_ols = sm.OLS(y_tr, X_tr).fit()\n"
+                "y_hat = res_ols.predict(X_te)\n"
+                "\n"
+                "metrics = regression_metrics(y_te.to_numpy(), y_hat.to_numpy())\n"
+                "metrics\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit HAC')}\"></a>\n"
+                "## Fit HAC\n\n"
+                "### Goal\n"
+                "Compare naive OLS standard errors to HAC/Newey-West robust standard errors.\n\n"
+                "Key idea:\n"
+                "- coefficients can stay the same\n"
+                "- p-values and confidence intervals can change (sometimes a lot)\n"
+            ),
+            md("### Your Turn (1): Fit HAC with different maxlags"),
+            code(
+                "from src import econometrics\n\n"
+                "# TODO: Fit HAC on the FULL sample (inference focus) with different maxlags.\n"
+                "res_naive = econometrics.fit_ols(df_m, y_col=y_col, x_cols=x_cols)\n"
+                "res_hac1 = econometrics.fit_ols_hac(df_m, y_col=y_col, x_cols=x_cols, maxlags=1)\n"
+                "res_hac4 = econometrics.fit_ols_hac(df_m, y_col=y_col, x_cols=x_cols, maxlags=4)\n"
+                "\n"
+                "print('naive p:', res_naive.pvalues)\n"
+                "print('hac1  p:', res_hac1.pvalues)\n"
+                "print('hac4  p:', res_hac4.pvalues)\n"
+            ),
+            md("### Your Turn (2): Compare confidence intervals"),
+            code(
+                "# TODO: Compare CI for the yield spread coefficient under naive vs HAC.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpretation')}\"></a>\n"
+                "## Interpretation\n\n"
+                "Write a short interpretation (8-12 sentences):\n"
+                "- What sign do you expect for the yield spread coefficient, and why?\n"
+                "- What does a 1 percentage-point change in spread mean for predicted GDP growth (units!)?\n"
+                "- How does your inference change under HAC SE?\n"
+                "- What limitations do you see (endogeneity, omitted variables, regime changes)?\n"
+            ),
+            md("### Your Turn: Write your interpretation"),
+            code("notes = \"\"\"\n...\n\"\"\"\nprint(notes)\n"),
         ]
 
     if spec.path.endswith("03_multifactor_regression_macro.ipynb"):
         cells += [
-            md("## Goal\nMulti-factor regression: GDP growth vs multiple indicators; inspect weights and multicollinearity."),
-            md("## Your Turn: Choose feature set"),
-            code(
-                "# TODO: Choose a set of predictors (levels + lags)\n# Consider standardizing them and comparing standardized coefficients\n..."
+            md(
+                "## Goal\n"
+                "Fit a multi-factor GDP growth regression and learn how to interpret feature weights *carefully*.\n\n"
+                "This notebook is where multicollinearity becomes real:\n"
+                "- many macro indicators move together\n"
+                "- coefficients can change sign or become unstable when features are correlated\n"
             ),
-            md("## Your Turn: VIF"),
+            md(primer("pandas_time_series")),
+            md(primer("statsmodels_inference")),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Choose features')}\"></a>\n"
+                "## Choose features\n\n"
+                "### Goal\n"
+                "Pick a feature set to predict GDP growth.\n\n"
+                "Recommendations:\n"
+                "- Start small (3-6 predictors) before you go wide.\n"
+                "- Prefer lagged predictors (information available before the quarter).\n"
+                "- Keep a record of your feature list.\n"
+            ),
+            md("### Your Turn (1): Load macro data"),
             code(
-                "from src import econometrics\n\n# TODO: Compute VIF for your chosen predictors\n# What does high VIF imply for coefficient stability?\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df.head()\n"
+            ),
+            md("### Your Turn (2): Choose a target + feature list"),
+            code(
+                "# Target\n"
+                "y_col = 'gdp_growth_qoq'\n"
+                "\n"
+                "# TODO: Choose features.\n"
+                "# Start with lagged predictors to reduce timing ambiguity.\n"
+                "x_cols = [\n"
+                "    'T10Y2Y_lag1',\n"
+                "    'UNRATE_lag1',\n"
+                "    'FEDFUNDS_lag1',\n"
+                "    # TODO: add 1-3 more\n"
+                "]\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.tail()\n"
+            ),
+            md("### Checkpoint (feature table)"),
+            code(
+                "assert df_m.index.is_monotonic_increasing\n"
+                "assert not df_m.isna().any().any()\n"
+                "assert df_m.shape[0] > 30\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit model')}\"></a>\n"
+                "## Fit model\n\n"
+                "### Goal\n"
+                "Fit a multi-factor regression and compare:\n"
+                "- raw coefficients (units matter)\n"
+                "- standardized coefficients (compare relative importance)\n"
+            ),
+            md("### Your Turn (1): Time split and fit OLS"),
+            code(
+                "import statsmodels.api as sm\n"
+                "from src.evaluation import time_train_test_split_index, regression_metrics\n\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "X_tr = sm.add_constant(train[x_cols], has_constant='add')\n"
+                "y_tr = train[y_col]\n"
+                "X_te = sm.add_constant(test[x_cols], has_constant='add')\n"
+                "y_te = test[y_col]\n"
+                "\n"
+                "res = sm.OLS(y_tr, X_tr).fit()\n"
+                "y_hat = res.predict(X_te)\n"
+                "\n"
+                "regression_metrics(y_te.to_numpy(), y_hat.to_numpy())\n"
+            ),
+            md("### Your Turn (2): Standardize predictors and compare standardized coefficients"),
+            code(
+                "from sklearn.preprocessing import StandardScaler\n\n"
+                "# Standardize X (train-fitted scaler!)\n"
+                "sc = StandardScaler().fit(train[x_cols])\n"
+                "X_tr_s = sc.transform(train[x_cols])\n"
+                "X_te_s = sc.transform(test[x_cols])\n"
+                "\n"
+                "# Refit on standardized features\n"
+                "X_tr_s = sm.add_constant(X_tr_s, has_constant='add')\n"
+                "X_te_s = sm.add_constant(X_te_s, has_constant='add')\n"
+                "res_s = sm.OLS(y_tr, X_tr_s).fit()\n"
+                "\n"
+                "# TODO: Map standardized coefficients back to feature names (excluding intercept)\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('VIF + stability')}\"></a>\n"
+                "## VIF + stability\n\n"
+                "### Goal\n"
+                "Measure multicollinearity and see whether coefficients are stable.\n\n"
+                "Two simple stability checks:\n"
+                "- VIF (collinearity)\n"
+                "- fit on different eras and compare coefficients\n"
+            ),
+            md("### Your Turn (1): VIF table"),
+            code(
+                "from src.econometrics import vif_table\n\n"
+                "# TODO: Compute VIF on the full feature matrix (no intercept).\n"
+                "vif = vif_table(df_m, x_cols)\n"
+                "vif\n"
+            ),
+            md("### Your Turn (2): Era split coefficient stability"),
+            code(
+                "import pandas as pd\n"
+                "import statsmodels.api as sm\n\n"
+                "# TODO: Fit the same model on an early era vs a late era and compare coefficients.\n"
+                "mid = int(len(df_m) * 0.5)\n"
+                "early = df_m.iloc[:mid]\n"
+                "late = df_m.iloc[mid:]\n"
+                "\n"
+                "res_early = sm.OLS(early[y_col], sm.add_constant(early[x_cols], has_constant='add')).fit()\n"
+                "res_late = sm.OLS(late[y_col], sm.add_constant(late[x_cols], has_constant='add')).fit()\n"
+                "\n"
+                "comp = pd.DataFrame({'early': res_early.params, 'late': res_late.params})\n"
+                "comp\n"
             ),
         ]
 
     if spec.path.endswith("04_inference_time_series_hac.ipynb"):
         cells += [
-            md("## Goal\nUnderstand why standard errors break for time series, and use HAC/Newey-West."),
-            md("## Your Turn: Residual autocorrelation"),
-            code(
-                "# TODO: Fit a simple macro regression\n# Plot residuals over time and compute their autocorrelation\n..."
+            md(
+                "## Goal\n"
+                "Learn why naive OLS standard errors often break in macro time series, and how HAC/Newey-West helps.\n\n"
+                "Big idea:\n"
+                "- coefficients answer \"what best fits the line\"\n"
+                "- standard errors answer \"how uncertain are we about the coefficients\"\n\n"
+                "Time series often violate the assumptions behind naive SE.\n"
             ),
-            md("## Your Turn: Compare SE"),
+            md(primer("statsmodels_inference")),
+            md(primer("hypothesis_testing")),
+            md(
+                f"<a id=\"{slugify('Assumptions')}\"></a>\n"
+                "## Assumptions\n\n"
+                "### Goal\n"
+                "Fit a baseline regression and inspect residuals.\n\n"
+                "Reminder:\n"
+                "- OLS coefficients can be computed even when assumptions fail.\n"
+                "- Inference (SE / p-values / CI) is what becomes unreliable.\n"
+            ),
+            md("### Your Turn (1): Load macro data and pick a simple regression"),
             code(
-                "# TODO: Compare naive OLS SE to HAC SE\n# Explain what changes and why\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'gdp_growth_qoq'\n"
+                "x_cols = ['T10Y2Y_lag1']\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.tail()\n"
+            ),
+            md("### Your Turn (2): Fit OLS and compute residuals"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "X = sm.add_constant(df_m[x_cols], has_constant='add')\n"
+                "y = df_m[y_col]\n"
+                "res = sm.OLS(y, X).fit()\n"
+                "\n"
+                "# Residuals = y - y_hat\n"
+                "resid = res.resid\n"
+                "fitted = res.fittedvalues\n"
+                "\n"
+                "print(res.summary())\n"
+                "resid.head()\n"
+            ),
+            md("### Your Turn (3): Residual diagnostics plots (simple but useful)"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot residuals over time\n"
+                "# TODO: Plot residuals vs fitted values (heteroskedasticity visual check)\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Autocorrelation')}\"></a>\n"
+                "## Autocorrelation\n\n"
+                "### Goal\n"
+                "Measure whether residuals are correlated over time.\n\n"
+                "If residuals are autocorrelated, naive SE can be too small.\n"
+            ),
+            md("### Your Turn (1): Autocorrelation by lag"),
+            code(
+                "# TODO: Compute residual autocorrelation at lags 1..8.\n"
+                "# Hint: resid.autocorr(lag=k)\n"
+                "ac = {k: float(resid.autocorr(lag=k)) for k in range(1, 9)}\n"
+                "ac\n"
+            ),
+            md("### Your Turn (2): A simple ACF plot"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot the autocorrelation values as a bar chart.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('HAC SE')}\"></a>\n"
+                "## HAC SE\n\n"
+                "### Goal\n"
+                "Fit the same model but compute HAC/Newey-West robust SE.\n\n"
+                "Your task:\n"
+                "- compare coefficient (should be the same)\n"
+                "- compare SE/p-values (can differ)\n"
+            ),
+            md("### Your Turn (1): Compare naive vs HAC with different maxlags"),
+            code(
+                "from src import econometrics\n\n"
+                "res_naive = econometrics.fit_ols(df_m, y_col=y_col, x_cols=x_cols)\n"
+                "res_hac1 = econometrics.fit_ols_hac(df_m, y_col=y_col, x_cols=x_cols, maxlags=1)\n"
+                "res_hac4 = econometrics.fit_ols_hac(df_m, y_col=y_col, x_cols=x_cols, maxlags=4)\n"
+                "\n"
+                "# TODO: Print SE/p-values side-by-side for the slope coefficient.\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Write a careful interpretation"),
+            code(
+                "# TODO: Write 6-10 sentences answering:\n"
+                "# - Did HAC increase or decrease your SE?\n"
+                "# - How did that affect your p-value/CI?\n"
+                "# - What assumptions are still required even with HAC?\n"
+                "notes = \"\"\"\n...\n\"\"\"\nprint(notes)\n"
             ),
         ]
 
     if spec.path.endswith("05_regularization_ridge_lasso.ipynb"):
         cells += [
-            md("## Goal\nUse ridge and lasso to handle correlated features and understand coefficient shrinkage."),
-            md("## Your Turn: Build X/y"),
-            code(
-                "# TODO: Choose a regression target (GDP growth) and build a feature matrix\n# Split by time\n..."
+            md(
+                "## Goal\n"
+                "Use ridge and lasso regression to handle correlated macro predictors.\n\n"
+                "Why this notebook exists:\n"
+                "- OLS coefficients can be unstable when predictors are correlated.\n"
+                "- Ridge shrinks coefficients smoothly.\n"
+                "- Lasso can set some coefficients exactly to 0 (feature selection-ish).\n"
             ),
-            md("## Your Turn: Ridge vs Lasso"),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Build feature matrix')}\"></a>\n"
+                "## Build feature matrix\n\n"
+                "### Goal\n"
+                "Choose a target and feature set from the macro quarterly table.\n"
+            ),
+            md("### Your Turn (1): Load data and pick columns"),
             code(
-                "# TODO: Fit Ridge and Lasso across a range of alphas\n# Plot coefficient paths\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'gdp_growth_qoq'\n"
+                "\n"
+                "# TODO: Choose a feature list.\n"
+                "# Tip: start with lagged features to avoid timing ambiguity.\n"
+                "x_cols = [\n"
+                "    'T10Y2Y_lag1',\n"
+                "    'UNRATE_lag1',\n"
+                "    'FEDFUNDS_lag1',\n"
+                "    'INDPRO_lag1',\n"
+                "    'RSAFS_lag1',\n"
+                "    # TODO: add more lags/features if you want\n"
+                "]\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.tail()\n"
+            ),
+            md("### Your Turn (2): Time split"),
+            code(
+                "from src.evaluation import time_train_test_split_index\n\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "X_train = train[x_cols]\n"
+                "y_train = train[y_col]\n"
+                "X_test = test[x_cols]\n"
+                "y_test = test[y_col]\n"
+                "\n"
+                "X_train.shape, X_test.shape\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit ridge/lasso')}\"></a>\n"
+                "## Fit ridge/lasso\n\n"
+                "### Goal\n"
+                "Fit ridge and lasso over a range of regularization strengths and compare out-of-sample error.\n"
+            ),
+            md("### Your Turn (1): Fit ridge and lasso across alpha grid"),
+            code(
+                "import numpy as np\n"
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import Ridge, Lasso\n"
+                "from sklearn.metrics import mean_squared_error\n\n"
+                "alphas = np.logspace(-3, 2, 20)\n"
+                "\n"
+                "ridge_rmse = []\n"
+                "lasso_rmse = []\n"
+                "\n"
+                "for a in alphas:\n"
+                "    ridge = Pipeline([\n"
+                "        ('scaler', StandardScaler()),\n"
+                "        ('model', Ridge(alpha=float(a))),\n"
+                "    ])\n"
+                "    lasso = Pipeline([\n"
+                "        ('scaler', StandardScaler()),\n"
+                "        ('model', Lasso(alpha=float(a), max_iter=20000)),\n"
+                "    ])\n"
+                "\n"
+                "    ridge.fit(X_train, y_train)\n"
+                "    lasso.fit(X_train, y_train)\n"
+                "\n"
+                "    ridge_pred = ridge.predict(X_test)\n"
+                "    lasso_pred = lasso.predict(X_test)\n"
+                "\n"
+                "    ridge_rmse.append(mean_squared_error(y_test, ridge_pred, squared=False))\n"
+                "    lasso_rmse.append(mean_squared_error(y_test, lasso_pred, squared=False))\n"
+                "\n"
+                "best_ridge = float(alphas[int(np.argmin(ridge_rmse))])\n"
+                "best_lasso = float(alphas[int(np.argmin(lasso_rmse))])\n"
+                "best_ridge, best_lasso\n"
+            ),
+            md("### Your Turn (2): Plot RMSE vs alpha"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot ridge_rmse and lasso_rmse vs alphas (log scale).\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Coefficient paths')}\"></a>\n"
+                "## Coefficient paths\n\n"
+                "### Goal\n"
+                "Visualize how coefficients shrink as regularization increases.\n\n"
+                "This is one of the best ways to build intuition for what ridge/lasso are doing.\n"
+            ),
+            md("### Your Turn (1): Fit models and record coefficients across alphas"),
+            code(
+                "import pandas as pd\n"
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import Ridge, Lasso\n\n"
+                "ridge_coefs = []\n"
+                "lasso_coefs = []\n"
+                "\n"
+                "for a in alphas:\n"
+                "    ridge = Pipeline([('scaler', StandardScaler()), ('model', Ridge(alpha=float(a)))])\n"
+                "    lasso = Pipeline([('scaler', StandardScaler()), ('model', Lasso(alpha=float(a), max_iter=20000))])\n"
+                "    ridge.fit(X_train, y_train)\n"
+                "    lasso.fit(X_train, y_train)\n"
+                "\n"
+                "    ridge_coefs.append(ridge.named_steps['model'].coef_)\n"
+                "    lasso_coefs.append(lasso.named_steps['model'].coef_)\n"
+                "\n"
+                "ridge_coefs = pd.DataFrame(ridge_coefs, columns=x_cols, index=alphas)\n"
+                "lasso_coefs = pd.DataFrame(lasso_coefs, columns=x_cols, index=alphas)\n"
+                "\n"
+                "ridge_coefs.head()\n"
+            ),
+            md("### Your Turn (2): Plot coefficient paths"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot coefficient paths for ridge and lasso.\n"
+                "# Hint: loop over columns and plot series on same axes.\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("06_rolling_regressions_stability.ipynb"):
         cells += [
-            md("## Goal\nRolling regressions: see how relationships change over time."),
-            md("## Your Turn: Rolling window fit"),
-            code(
-                "# TODO: Fit a rolling-window regression of GDP growth on yield spread\n# Plot the coefficient over time\n..."
+            md(
+                "## Goal\n"
+                "Use rolling regressions to see how relationships change over time.\n\n"
+                "This is a realism check:\n"
+                "- A coefficient that is stable across decades is rare in macro.\n"
+                "- If coefficients drift, you should be cautious about \"the\" relationship.\n"
             ),
-            md("## Reflection"),
-            md("- When does the sign or magnitude change?\n- What macro regimes might explain it?"),
+            md(primer("pandas_time_series")),
+            md(primer("statsmodels_inference")),
+            md(
+                f"<a id=\"{slugify('Rolling regression')}\"></a>\n"
+                "## Rolling regression\n\n"
+                "### Goal\n"
+                "Fit the same regression repeatedly on a moving window.\n\n"
+                "We will start with a simple model:\n"
+                "- GDP growth ~ yield curve spread (lagged)\n"
+            ),
+            md("### Your Turn (1): Load data and set up the window"),
+            code(
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'gdp_growth_qoq'\n"
+                "x_col = 'T10Y2Y_lag1'\n"
+                "\n"
+                "df_m = df[[y_col, x_col, 'recession']].dropna().copy()\n"
+                "\n"
+                "# Rolling window length in quarters\n"
+                "window = 40  # ~10 years\n"
+                "df_m.head()\n"
+            ),
+            md("### Your Turn (2): Fit rolling windows and collect coefficients"),
+            code(
+                "import numpy as np\n"
+                "import statsmodels.api as sm\n\n"
+                "rows = []\n"
+                "for end in range(window, len(df_m) + 1):\n"
+                "    chunk = df_m.iloc[end - window : end]\n"
+                "    X = sm.add_constant(chunk[[x_col]], has_constant='add')\n"
+                "    y = chunk[y_col]\n"
+                "    res = sm.OLS(y, X).fit()\n"
+                "\n"
+                "    # Record the coefficient on x_col and a simple CI\n"
+                "    beta = float(res.params[x_col])\n"
+                "    ci_low, ci_high = res.conf_int().loc[x_col].tolist()\n"
+                "    rows.append({\n"
+                "        'date': chunk.index.max(),\n"
+                "        'beta': beta,\n"
+                "        'ci_low': float(ci_low),\n"
+                "        'ci_high': float(ci_high),\n"
+                "    })\n"
+                "\n"
+                "roll = pd.DataFrame(rows).set_index('date')\n"
+                "roll.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Coefficient drift')}\"></a>\n"
+                "## Coefficient drift\n\n"
+                "### Goal\n"
+                "Visualize coefficient stability over time.\n"
+            ),
+            md("### Your Turn (1): Plot coefficient + CI over time"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot roll['beta'] and a shaded CI band.\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Summarize coefficient distribution"),
+            code(
+                "# TODO: Compute summary stats for beta.\n"
+                "# Identify periods where the sign changed.\n"
+                "roll['beta'].describe()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Regime interpretation')}\"></a>\n"
+                "## Regime interpretation\n\n"
+                "### Goal\n"
+                "Compare coefficient drift to recession periods.\n\n"
+                "This is not proof of causality.\n"
+                "It is a structured way to ask: \"does the relationship change during recessions or different eras?\"\n"
+            ),
+            md("### Your Turn (1): Overlay recession shading (simple)"),
+            code(
+                "# TODO: Create a recession indicator aligned to roll index.\n"
+                "# Hint: use df_m['recession'] reindexed to roll.index\n"
+                "...\n"
+            ),
+            md("### Reflection"),
+            md(
+                "- When does the sign or magnitude change?\n"
+                "- What macro regimes might explain it?\n"
+                "- If you were building a model, would you trust one fixed coefficient?\n"
+            ),
         ]
 
     # Classification notebooks
     if spec.path.endswith("00_recession_classifier_baselines.ipynb"):
         cells += [
-            md("## Goal\nBuild baselines for predicting next-quarter technical recession."),
-            md("## Your Turn: Load macro_quarterly.csv"),
-            code(
-                "from src import data as data_utils\n\n# TODO: Load macro_quarterly.csv (or sample)\n..."
+            md(
+                "## Goal\n"
+                "Establish baselines for predicting **next-quarter technical recession**.\n\n"
+                "Baselines matter because:\n"
+                "- recession is rare (class imbalance)\n"
+                "- a model that beats chance may still be useless\n"
+                "- you need a reference point before tuning anything\n"
             ),
-            md("## Your Turn: Baselines"),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Load data')}\"></a>\n"
+                "## Load data\n\n"
+                "### Goal\n"
+                "Load the macro quarterly modeling table and select:\n"
+                "- `y = target_recession_next_q`\n"
+                "- a minimal set of features\n"
+            ),
+            md("### Your Turn (1): Load macro_quarterly.csv (or sample)"),
             code(
-                "from src import evaluation\n\n# TODO: Compute baseline predictions (majority class, persistence, simple threshold)\n# Evaluate with ROC-AUC, PR-AUC, Brier\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df.head()\n"
+            ),
+            md("### Your Turn (2): Define target and a starter feature set"),
+            code(
+                "# Target (0/1)\n"
+                "y_col = 'target_recession_next_q'\n"
+                "\n"
+                "# TODO: Pick a small feature set.\n"
+                "# Tip: use lagged predictors.\n"
+                "x_cols = [\n"
+                "    'T10Y2Y_lag1',\n"
+                "    'UNRATE_lag1',\n"
+                "    'FEDFUNDS_lag1',\n"
+                "]\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols + ['recession']].dropna().copy()\n"
+                "df_m[y_col].value_counts(dropna=False)\n"
+            ),
+            md("### Checkpoint (class imbalance awareness)"),
+            code(
+                "# TODO: Compute the base rate of recession in the target.\n"
+                "base_rate = df_m[y_col].mean()\n"
+                "base_rate\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Define baselines')}\"></a>\n"
+                "## Define baselines\n\n"
+                "You will implement 3 baselines:\n"
+                "1) **Majority class**: always predict 0\n"
+                "2) **Persistence**: predict next recession equals current recession label\n"
+                "3) **Simple rule**: yield spread negative => recession (choose threshold)\n"
+            ),
+            md("### Your Turn (1): Build baseline probability scores"),
+            code(
+                "import numpy as np\n\n"
+                "y_true = df_m[y_col].astype(int).to_numpy()\n"
+                "\n"
+                "# Baseline 1: always 0 probability\n"
+                "p_majority = np.zeros_like(y_true, dtype=float)\n"
+                "\n"
+                "# Baseline 2: persistence (use current recession label as probability)\n"
+                "p_persist = df_m['recession'].astype(float).to_numpy()\n"
+                "\n"
+                "# Baseline 3: simple rule on yield spread\n"
+                "# TODO: Choose a threshold (e.g., 0.0 means inverted curve)\n"
+                "thr = 0.0\n"
+                "p_rule = (df_m['T10Y2Y_lag1'].to_numpy() < thr).astype(float)\n"
+                "\n"
+                "p_majority[:5], p_persist[:5], p_rule[:5]\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Evaluate metrics')}\"></a>\n"
+                "## Evaluate metrics\n\n"
+                "### Goal\n"
+                "Evaluate baselines with metrics that make sense for imbalanced classification:\n"
+                "- ROC-AUC\n"
+                "- PR-AUC\n"
+                "- Brier score\n"
+                "- precision/recall at a chosen threshold\n"
+            ),
+            md("### Your Turn (1): Evaluate metrics"),
+            code(
+                "from src.evaluation import classification_metrics\n\n"
+                "metrics = {\n"
+                "    'majority': classification_metrics(y_true, p_majority, threshold=0.5),\n"
+                "    'persistence': classification_metrics(y_true, p_persist, threshold=0.5),\n"
+                "    'rule': classification_metrics(y_true, p_rule, threshold=0.5),\n"
+                "}\n"
+                "\n"
+                "metrics\n"
+            ),
+            md("### Your Turn (2): Time-aware evaluation preview (optional)"),
+            code(
+                "# Optional: do the same baseline evaluation on a time-based train/test split.\n"
+                "# Why: baselines can look better in-sample than out-of-sample.\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("01_logistic_recession_classifier.ipynb"):
         cells += [
-            md("## Goal\nTrain a logistic regression classifier for next-quarter recession and interpret coefficients/odds."),
-            md("## Your Turn: Fit model"),
-            code(
-                "# TODO: Build train/test split by time\n# Fit StandardScaler + LogisticRegression\n# Evaluate metrics and plot ROC/PR\n..."
+            md(
+                "## Goal\n"
+                "Train a logistic regression classifier for next-quarter technical recession.\n\n"
+                "You will learn:\n"
+                "- how to do a time-based split\n"
+                "- how to fit a probabilistic classifier (outputs probabilities)\n"
+                "- how to interpret coefficients as log-odds / odds ratios\n"
+                "- why threshold selection is a decision problem, not a default\n"
             ),
-            md("## Your Turn: Threshold tuning"),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Train/test split')}\"></a>\n"
+                "## Train/test split\n\n"
+                "### Goal\n"
+                "Split chronologically so the model trains on the past and is evaluated on the future.\n"
+            ),
+            md("### Your Turn (1): Load data and select columns"),
             code(
-                "# TODO: Evaluate at thresholds 0.3, 0.5, 0.7\n# Discuss precision/recall tradeoffs\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'target_recession_next_q'\n"
+                "x_cols = ['T10Y2Y_lag1', 'UNRATE_lag1', 'FEDFUNDS_lag1', 'INDPRO_lag1']\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.tail()\n"
+            ),
+            md("### Your Turn (2): Create a time split"),
+            code(
+                "from src.evaluation import time_train_test_split_index\n\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "X_train = train[x_cols]\n"
+                "y_train = train[y_col].astype(int)\n"
+                "X_test = test[x_cols]\n"
+                "y_test = test[y_col].astype(int)\n"
+                "\n"
+                "train.index.max(), test.index.min()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit logistic')}\"></a>\n"
+                "## Fit logistic\n\n"
+                "### Goal\n"
+                "Fit a logistic regression model inside a Pipeline (to avoid preprocessing leakage).\n"
+            ),
+            md("### Your Turn (1): Fit the pipeline"),
+            code(
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import LogisticRegression\n\n"
+                "clf = Pipeline([\n"
+                "    ('scaler', StandardScaler()),\n"
+                "    ('model', LogisticRegression(max_iter=5000)),\n"
+                "])\n"
+                "\n"
+                "# TODO: Fit on training data\n"
+                "clf.fit(X_train, y_train)\n"
+                "\n"
+                "# Predicted probabilities for class 1\n"
+                "p_test = clf.predict_proba(X_test)[:, 1]\n"
+                "p_test[:5]\n"
+            ),
+            md("### Your Turn (2): Evaluate metrics"),
+            code(
+                "from src.evaluation import classification_metrics\n\n"
+                "classification_metrics(y_test.to_numpy(), p_test, threshold=0.5)\n"
+            ),
+            md("### Your Turn (3): Interpret coefficients (odds ratios)"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "# Coefficients live in the underlying model\n"
+                "coefs = clf.named_steps['model'].coef_[0]\n"
+                "\n"
+                "# TODO: Build a coefficient table.\n"
+                "coef_df = pd.DataFrame({'feature': x_cols, 'coef': coefs})\n"
+                "\n"
+                "# Odds ratio for a 1-unit increase in standardized feature:\n"
+                "# OR = exp(coef)\n"
+                "coef_df['odds_ratio'] = np.exp(coef_df['coef'])\n"
+                "coef_df.sort_values('coef')\n"
+            ),
+            md(
+                f"<a id=\"{slugify('ROC/PR')}\"></a>\n"
+                "## ROC/PR\n\n"
+                "### Goal\n"
+                "Plot ROC and precision-recall curves.\n\n"
+                "Why both?\n"
+                "- ROC can look optimistic under heavy class imbalance\n"
+                "- PR focuses on the positive class (recessions)\n"
+            ),
+            md("### Your Turn: Plot ROC and PR curves"),
+            code(
+                "import matplotlib.pyplot as plt\n"
+                "from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay\n\n"
+                "# TODO: Create ROC and PR plots.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Threshold tuning')}\"></a>\n"
+                "## Threshold tuning\n\n"
+                "### Goal\n"
+                "Compare metrics at different probability thresholds.\n\n"
+                "A lower threshold catches more recessions (higher recall) but raises false positives.\n"
+            ),
+            md("### Your Turn: Evaluate multiple thresholds"),
+            code(
+                "from src.evaluation import classification_metrics\n\n"
+                "for thr in [0.3, 0.5, 0.7]:\n"
+                "    m = classification_metrics(y_test.to_numpy(), p_test, threshold=thr)\n"
+                "    print(thr, m)\n"
             ),
         ]
 
     if spec.path.endswith("02_calibration_and_costs.ipynb"):
         cells += [
-            md("## Goal\nCalibrate probabilities and choose thresholds based on decision costs."),
-            md("## Your Turn: Calibration"),
-            code(
-                "# TODO: Compute calibration curve and Brier score\n# Compare calibrated vs uncalibrated probabilities\n..."
+            md(
+                "## Goal\n"
+                "Go beyond accuracy: evaluate probability quality (calibration) and choose thresholds based on decision costs.\n\n"
+                "Why this matters:\n"
+                "- A recession probability model is only useful if probabilities mean something.\n"
+                "- Threshold selection depends on the cost of false positives vs false negatives.\n"
             ),
-            md("## Your Turn: Cost-based threshold"),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Calibration')}\"></a>\n"
+                "## Calibration\n\n"
+                "### Goal\n"
+                "Check whether predicted probabilities match observed frequencies.\n\n"
+                "A calibrated model:\n"
+                "- among events predicted at 30%, about 30% should occur (in the long run)\n"
+            ),
+            md("### Your Turn (1): Fit a base classifier and get probabilities"),
             code(
-                "# TODO: Define a simple cost matrix (FP vs FN)\n# Pick a threshold that minimizes expected cost\n..."
+                "import pandas as pd\n"
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import LogisticRegression\n"
+                "from src.evaluation import time_train_test_split_index\n\n"
+                "# Load data\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'target_recession_next_q'\n"
+                "x_cols = ['T10Y2Y_lag1', 'UNRATE_lag1', 'FEDFUNDS_lag1', 'INDPRO_lag1']\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "X_train = train[x_cols]\n"
+                "y_train = train[y_col].astype(int)\n"
+                "X_test = test[x_cols]\n"
+                "y_test = test[y_col].astype(int)\n"
+                "\n"
+                "clf = Pipeline([\n"
+                "    ('scaler', StandardScaler()),\n"
+                "    ('model', LogisticRegression(max_iter=5000)),\n"
+                "])\n"
+                "clf.fit(X_train, y_train)\n"
+                "p_test = clf.predict_proba(X_test)[:, 1]\n"
+                "\n"
+                "p_test[:5]\n"
+            ),
+            md("### Your Turn (2): Calibration curve and reliability plot"),
+            code(
+                "import matplotlib.pyplot as plt\n"
+                "from sklearn.calibration import calibration_curve\n\n"
+                "# TODO: Compute calibration curve\n"
+                "# Hint: calibration_curve(y_true, y_prob, n_bins=...)\n"
+                "prob_true, prob_pred = ...\n"
+                "\n"
+                "# TODO: Plot prob_pred vs prob_true with a y=x reference line\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Brier score')}\"></a>\n"
+                "## Brier score\n\n"
+                "### Goal\n"
+                "Compute the Brier score (mean squared error of probabilities).\n\n"
+                "Lower is better.\n"
+            ),
+            md("### Your Turn: Compute Brier score and interpret"),
+            code(
+                "from sklearn.metrics import brier_score_loss\n\n"
+                "brier = brier_score_loss(y_test.to_numpy(), p_test)\n"
+                "brier\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Decision costs')}\"></a>\n"
+                "## Decision costs\n\n"
+                "### Goal\n"
+                "Choose a probability threshold using a simple cost model.\n\n"
+                "Example framing:\n"
+                "- False negative (miss a recession) might be more costly than a false positive.\n"
+                "- You will encode that as a cost ratio and pick the threshold that minimizes expected cost.\n"
+            ),
+            md("### Your Turn (1): Define costs and compute expected cost across thresholds"),
+            code(
+                "import numpy as np\n\n"
+                "# Cost of false positives vs false negatives\n"
+                "cost_fp = 1.0\n"
+                "cost_fn = 5.0\n"
+                "\n"
+                "thresholds = np.linspace(0.05, 0.95, 19)\n"
+                "costs = []\n"
+                "for thr in thresholds:\n"
+                "    y_pred = (p_test >= thr).astype(int)\n"
+                "    fp = ((y_pred == 1) & (y_test.to_numpy() == 0)).sum()\n"
+                "    fn = ((y_pred == 0) & (y_test.to_numpy() == 1)).sum()\n"
+                "    costs.append(cost_fp * fp + cost_fn * fn)\n"
+                "\n"
+                "best_thr = float(thresholds[int(np.argmin(costs))])\n"
+                "best_thr\n"
+            ),
+            md("### Your Turn (2): Plot cost vs threshold"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot thresholds vs costs and mark the best_thr.\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("03_tree_models_and_importance.ipynb"):
         cells += [
-            md("## Goal\nCompare a tree-based classifier to logistic regression; interpret feature importance."),
-            md("## Your Turn: Fit a tree model"),
-            code(
-                "# TODO: Fit RandomForestClassifier (or GradientBoostingClassifier)\n# Compare metrics to logistic regression\n..."
+            md(
+                "## Goal\n"
+                "Compare a tree-based classifier to logistic regression and interpret feature importance.\n\n"
+                "Trees can capture non-linearities and interactions, but are easier to overfit.\n"
             ),
-            md("## Your Turn: Importance"),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Fit tree model')}\"></a>\n"
+                "## Fit tree model\n\n"
+                "### Goal\n"
+                "Fit a tree-based classifier on the recession prediction task.\n"
+            ),
+            md("### Your Turn (1): Load data and split"),
             code(
-                "# TODO: Compare built-in feature importances vs permutation importance\n# Discuss why they can disagree\n..."
+                "import pandas as pd\n"
+                "from src.evaluation import time_train_test_split_index\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'target_recession_next_q'\n"
+                "x_cols = ['T10Y2Y_lag1', 'UNRATE_lag1', 'FEDFUNDS_lag1', 'INDPRO_lag1', 'RSAFS_lag1']\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "\n"
+                "split = time_train_test_split_index(len(df_m), test_size=0.2)\n"
+                "train = df_m.iloc[split.train_slice]\n"
+                "test = df_m.iloc[split.test_slice]\n"
+                "\n"
+                "X_train = train[x_cols]\n"
+                "y_train = train[y_col].astype(int)\n"
+                "X_test = test[x_cols]\n"
+                "y_test = test[y_col].astype(int)\n"
+            ),
+            md("### Your Turn (2): Fit a RandomForestClassifier"),
+            code(
+                "from sklearn.ensemble import RandomForestClassifier\n\n"
+                "# TODO: Fit a simple random forest.\n"
+                "# Start small to avoid overfitting.\n"
+                "rf = RandomForestClassifier(\n"
+                "    n_estimators=300,\n"
+                "    max_depth=3,\n"
+                "    random_state=0,\n"
+                ")\n"
+                "\n"
+                "rf.fit(X_train, y_train)\n"
+                "p_test = rf.predict_proba(X_test)[:, 1]\n"
+                "p_test[:5]\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Compare metrics')}\"></a>\n"
+                "## Compare metrics\n\n"
+                "### Goal\n"
+                "Compare tree performance to a logistic baseline.\n"
+            ),
+            md("### Your Turn: Evaluate and compare"),
+            code(
+                "from src.evaluation import classification_metrics\n"
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import LogisticRegression\n\n"
+                "# Logistic baseline\n"
+                "logit = Pipeline([\n"
+                "    ('scaler', StandardScaler()),\n"
+                "    ('model', LogisticRegression(max_iter=5000)),\n"
+                "])\n"
+                "logit.fit(X_train, y_train)\n"
+                "p_logit = logit.predict_proba(X_test)[:, 1]\n"
+                "\n"
+                "m_rf = classification_metrics(y_test.to_numpy(), p_test, threshold=0.5)\n"
+                "m_logit = classification_metrics(y_test.to_numpy(), p_logit, threshold=0.5)\n"
+                "\n"
+                "{'random_forest': m_rf, 'logistic': m_logit}\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpret importance')}\"></a>\n"
+                "## Interpret importance\n\n"
+                "### Goal\n"
+                "Compare built-in feature importance to permutation importance.\n\n"
+                "Why they can disagree:\n"
+                "- built-in importance can be biased toward high-cardinality/noisy features\n"
+                "- permutation importance measures impact on a chosen metric on a chosen dataset\n"
+            ),
+            md("### Your Turn (1): Built-in feature importances"),
+            code(
+                "import pandas as pd\n\n"
+                "imp = pd.Series(rf.feature_importances_, index=x_cols).sort_values(ascending=False)\n"
+                "imp\n"
+            ),
+            md("### Your Turn (2): Permutation importance"),
+            code(
+                "import pandas as pd\n"
+                "from sklearn.inspection import permutation_importance\n\n"
+                "# TODO: Compute permutation importance using ROC-AUC or average_precision.\n"
+                "r = permutation_importance(\n"
+                "    rf,\n"
+                "    X_test,\n"
+                "    y_test,\n"
+                "    n_repeats=30,\n"
+                "    random_state=0,\n"
+                "    scoring='roc_auc',\n"
+                ")\n"
+                "\n"
+                "perm = pd.Series(r.importances_mean, index=x_cols).sort_values(ascending=False)\n"
+                "perm\n"
             ),
         ]
 
     if spec.path.endswith("04_walk_forward_validation.ipynb"):
         cells += [
-            md("## Goal\nWalk-forward evaluation: measure stability across time."),
-            md("## Your Turn: Implement walk-forward"),
+            md(
+                "## Goal\n"
+                "Evaluate recession prediction stability over time using walk-forward validation.\n\n"
+                "Walk-forward answers the question:\n"
+                "- \"Does my model work in *multiple eras*, or only in the era I trained on?\"\n"
+            ),
+            md(primer("sklearn_pipelines")),
+            md(
+                f"<a id=\"{slugify('Walk-forward splits')}\"></a>\n"
+                "## Walk-forward splits\n\n"
+                "### Goal\n"
+                "Generate a sequence of train/test splits that move forward through time.\n"
+            ),
+            md("### Your Turn (1): Load data and define X/y"),
             code(
-                "from src import evaluation\n\n# TODO: Use evaluation.walk_forward_splits to evaluate across folds\n# Plot metrics over time and identify unstable periods\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "y_col = 'target_recession_next_q'\n"
+                "x_cols = ['T10Y2Y_lag1', 'UNRATE_lag1', 'FEDFUNDS_lag1', 'INDPRO_lag1', 'RSAFS_lag1']\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "\n"
+                "X = df_m[x_cols]\n"
+                "y = df_m[y_col].astype(int)\n"
+                "X.shape, y.mean()\n"
+            ),
+            md("### Your Turn (2): Generate walk-forward splits"),
+            code(
+                "from src.evaluation import walk_forward_splits\n\n"
+                "# TODO: Choose split settings.\n"
+                "# initial_train_size: first training window size\n"
+                "# test_size: number of quarters per fold\n"
+                "splits = list(walk_forward_splits(len(df_m), initial_train_size=40, test_size=8))\n"
+                "len(splits), splits[0]\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Metric stability')}\"></a>\n"
+                "## Metric stability\n\n"
+                "### Goal\n"
+                "Fit the same model on each fold and track metrics across time.\n"
+            ),
+            md("### Your Turn (1): Evaluate a model across folds"),
+            code(
+                "import pandas as pd\n"
+                "from sklearn.pipeline import Pipeline\n"
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.linear_model import LogisticRegression\n"
+                "from src.evaluation import classification_metrics\n\n"
+                "rows = []\n"
+                "for sp in splits:\n"
+                "    X_tr = X.iloc[sp.train_slice]\n"
+                "    y_tr = y.iloc[sp.train_slice]\n"
+                "    X_te = X.iloc[sp.test_slice]\n"
+                "    y_te = y.iloc[sp.test_slice]\n"
+                "\n"
+                "    clf = Pipeline([\n"
+                "        ('scaler', StandardScaler()),\n"
+                "        ('model', LogisticRegression(max_iter=5000)),\n"
+                "    ])\n"
+                "    clf.fit(X_tr, y_tr)\n"
+                "    p = clf.predict_proba(X_te)[:, 1]\n"
+                "    m = classification_metrics(y_te.to_numpy(), p, threshold=0.5)\n"
+                "\n"
+                "    rows.append({\n"
+                "        'train_end': X_tr.index.max(),\n"
+                "        'test_end': X_te.index.max(),\n"
+                "        **m,\n"
+                "    })\n"
+                "\n"
+                "wf = pd.DataFrame(rows).set_index('test_end')\n"
+                "wf.head()\n"
+            ),
+            md("### Your Turn (2): Plot metrics over time"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot roc_auc, pr_auc, and brier over time.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Failure analysis')}\"></a>\n"
+                "## Failure analysis\n\n"
+                "### Goal\n"
+                "Identify which eras the model struggles with and investigate why.\n"
+            ),
+            md("### Your Turn (1): Find the worst fold"),
+            code(
+                "# TODO: Pick a metric and find the worst fold.\n"
+                "# Example: lowest PR-AUC\n"
+                "worst = wf.sort_values('pr_auc').head(1)\n"
+                "worst\n"
+            ),
+            md("### Your Turn (2): Inspect features in that era"),
+            code(
+                "# TODO: Look at feature distributions in the worst fold.\n"
+                "# Compare to a better-performing fold.\n"
+                "...\n"
             ),
         ]
 
     # Unsupervised
     if spec.path.endswith("01_pca_macro_factors.ipynb"):
         cells += [
-            md("## Goal\nUse PCA to extract macro factors and interpret loadings."),
-            md("## Your Turn: Standardize data"),
-            code(
-                "# TODO: Load panel_monthly.csv (or sample)\n# Standardize features and run PCA\n..."
+            md(
+                "## Goal\n"
+                "Use PCA to extract a small number of macro factors from many indicators.\n\n"
+                "Why PCA is useful here:\n"
+                "- macro series are correlated\n"
+                "- PCA creates orthogonal (uncorrelated) components\n"
+                "- components can act like \"macro factors\" (growth, inflation, rates, etc.)\n"
             ),
-            md("## Your Turn: Interpret"),
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Standardize')}\"></a>\n"
+                "## Standardize\n\n"
+                "### Goal\n"
+                "Load a monthly panel and standardize features (mean 0, std 1).\n\n"
+                "PCA is sensitive to scale: if one variable has larger units, it can dominate the components.\n"
+            ),
+            md("### Your Turn (1): Load panel_monthly.csv (or sample)"),
             code(
-                "# TODO: Inspect explained variance and loadings\n# Name the first 1-2 factors in economic terms\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'panel_monthly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df.head()\n"
+            ),
+            md("### Your Turn (2): Build X and standardize"),
+            code(
+                "from sklearn.preprocessing import StandardScaler\n\n"
+                "x_cols = df.columns.tolist()\n"
+                "X = df[x_cols].dropna().copy()\n"
+                "\n"
+                "sc = StandardScaler().fit(X)\n"
+                "X_s = sc.transform(X)\n"
+                "\n"
+                "# TODO: Validate standardization\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit PCA')}\"></a>\n"
+                "## Fit PCA\n\n"
+                "### Goal\n"
+                "Fit PCA and inspect explained variance.\n"
+            ),
+            md("### Your Turn (1): Fit PCA"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "from sklearn.decomposition import PCA\n\n"
+                "pca = PCA(n_components=3).fit(X_s)\n"
+                "\n"
+                "evr = pd.Series(pca.explained_variance_ratio_, index=[f'PC{i+1}' for i in range(pca.n_components_)])\n"
+                "evr\n"
+            ),
+            md("### Your Turn (2): Scree plot"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot explained variance ratio by component.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpret loadings')}\"></a>\n"
+                "## Interpret loadings\n\n"
+                "### Goal\n"
+                "Interpret what each component represents in economic terms.\n\n"
+                "Loadings tell you which original variables contribute most to each component.\n"
+            ),
+            md("### Your Turn (1): Build a loadings table"),
+            code(
+                "import pandas as pd\n\n"
+                "loadings = pd.DataFrame(\n"
+                "    pca.components_.T,\n"
+                "    index=x_cols,\n"
+                "    columns=[f'PC{i+1}' for i in range(pca.n_components_)],\n"
+                ")\n"
+                "\n"
+                "# TODO: For each PC, list the top + and top - loadings.\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Name the components"),
+            code(
+                "# TODO: Write a name/interpretation for PC1 and PC2.\n"
+                "notes = \"\"\"\n"
+                "PC1: ...\n"
+                "PC2: ...\n"
+                "\"\"\"\n"
+                "print(notes)\n"
             ),
         ]
 
     if spec.path.endswith("02_clustering_macro_regimes.ipynb"):
         cells += [
-            md("## Goal\nCluster macro regimes and relate them to technical recessions."),
-            md("## Your Turn: Choose representation"),
-            code(
-                "# TODO: Cluster either PCA factors or standardized raw features\n# Try k=3..6 and interpret clusters\n..."
+            md(
+                "## Goal\n"
+                "Cluster macro periods into \"regimes\" and relate regimes to your technical recession label.\n\n"
+                "Clustering is exploratory:\n"
+                "- you are not predicting a target\n"
+                "- you are summarizing structure in the data\n"
             ),
-            md("## Your Turn: Link to recession"),
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Clustering')}\"></a>\n"
+                "## Clustering\n\n"
+                "### Goal\n"
+                "Choose a feature representation and fit a clustering algorithm.\n"
+            ),
+            md("### Your Turn (1): Load data and choose features to cluster"),
             code(
-                "# TODO: Compare cluster assignments with recession labels\n# Are some clusters recession-heavy?\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "# TODO: Choose a small set of features (levels or lags).\n"
+                "x_cols = ['UNRATE', 'FEDFUNDS', 'CPIAUCSL', 'INDPRO', 'RSAFS', 'T10Y2Y']\n"
+                "\n"
+                "df_m = df[x_cols + ['recession']].dropna().copy()\n"
+                "df_m.head()\n"
+            ),
+            md("### Your Turn (2): Standardize features"),
+            code(
+                "from sklearn.preprocessing import StandardScaler\n\n"
+                "sc = StandardScaler().fit(df_m[x_cols])\n"
+                "X = sc.transform(df_m[x_cols])\n"
+                "\n"
+                "# TODO: sanity-check scaling (mean ~0, std ~1)\n"
+                "...\n"
+            ),
+            md("### Your Turn (3): Fit a clustering model (KMeans)"),
+            code(
+                "from sklearn.cluster import KMeans\n\n"
+                "# TODO: Choose a k to start (you'll justify it in the next section)\n"
+                "k = 4\n"
+                "km = KMeans(n_clusters=k, random_state=0, n_init=20)\n"
+                "labels = km.fit_predict(X)\n"
+                "\n"
+                "df_m['cluster'] = labels\n"
+                "df_m['cluster'].value_counts()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Choose k')}\"></a>\n"
+                "## Choose k\n\n"
+                "### Goal\n"
+                "Try multiple k values and use a diagnostic to pick one.\n\n"
+                "We'll use the silhouette score as a simple quantitative guide (not a proof).\n"
+            ),
+            md("### Your Turn: Compute silhouette scores for k=2..6"),
+            code(
+                "import pandas as pd\n"
+                "from sklearn.cluster import KMeans\n"
+                "from sklearn.metrics import silhouette_score\n\n"
+                "rows = []\n"
+                "for k in range(2, 7):\n"
+                "    km = KMeans(n_clusters=k, random_state=0, n_init=20)\n"
+                "    lab = km.fit_predict(X)\n"
+                "    rows.append({'k': k, 'silhouette': float(silhouette_score(X, lab))})\n"
+                "\n"
+                "pd.DataFrame(rows)\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Relate to recessions')}\"></a>\n"
+                "## Relate to recessions\n\n"
+                "### Goal\n"
+                "Relate cluster assignments to recession periods.\n\n"
+                "A useful first question:\n"
+                "- Which clusters have the highest recession rate?\n"
+            ),
+            md("### Your Turn (1): Recession rate by cluster"),
+            code(
+                "import pandas as pd\n\n"
+                "rate = df_m.groupby('cluster')['recession'].mean().sort_values(ascending=False)\n"
+                "rate\n"
+            ),
+            md("### Your Turn (2): Visualize clusters over time"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot one feature over time and color by cluster.\n"
+                "# Or plot clusters as colored bands over the timeline.\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("03_anomaly_detection.ipynb"):
         cells += [
-            md("## Goal\nDetect anomalies (crisis periods) and compare to recession labels."),
-            md("## Your Turn: Fit anomaly detector"),
+            md(
+                "## Goal\n"
+                "Detect unusual macro periods (potential crises) using anomaly detection.\n\n"
+                "This is not about predicting recessions directly. It's about:\n"
+                "- flagging periods that look \"different\" in feature space\n"
+                "- interpreting what those periods correspond to historically\n"
+            ),
+            md(primer("pandas_time_series")),
+            md(
+                f"<a id=\"{slugify('Fit detector')}\"></a>\n"
+                "## Fit detector\n\n"
+                "### Goal\n"
+                "Fit an anomaly detector on standardized macro features.\n"
+            ),
+            md("### Your Turn (1): Load data and choose features"),
             code(
-                "# TODO: Use IsolationForest or z-score rules on standardized macro data\n# Flag anomalies and plot over time\n..."
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'macro_quarterly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "x_cols = ['UNRATE', 'FEDFUNDS', 'CPIAUCSL', 'INDPRO', 'RSAFS', 'T10Y2Y']\n"
+                "df_m = df[x_cols + ['recession']].dropna().copy()\n"
+                "df_m.head()\n"
+            ),
+            md("### Your Turn (2): Standardize and fit IsolationForest"),
+            code(
+                "from sklearn.preprocessing import StandardScaler\n"
+                "from sklearn.ensemble import IsolationForest\n\n"
+                "sc = StandardScaler().fit(df_m[x_cols])\n"
+                "X = sc.transform(df_m[x_cols])\n"
+                "\n"
+                "# TODO: Choose contamination (expected fraction of anomalies)\n"
+                "iso = IsolationForest(contamination=0.05, random_state=0)\n"
+                "iso.fit(X)\n"
+                "\n"
+                "# Higher score means more normal in sklearn; we'll invert for \"anomaly score\"\n"
+                "score_normal = iso.score_samples(X)\n"
+                "df_m['anomaly_score'] = -score_normal\n"
+                "df_m[['anomaly_score']].head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Inspect anomalies')}\"></a>\n"
+                "## Inspect anomalies\n\n"
+                "### Goal\n"
+                "Identify the most anomalous periods and inspect them.\n"
+            ),
+            md("### Your Turn (1): List top anomalous dates"),
+            code(
+                "# TODO: Sort by anomaly_score and print the top 10 most anomalous dates.\n"
+                "df_m[['anomaly_score']].sort_values('anomaly_score', ascending=False).head(10)\n"
+            ),
+            md("### Your Turn (2): Plot anomaly score over time"),
+            code(
+                "import matplotlib.pyplot as plt\n\n"
+                "# TODO: Plot df_m['anomaly_score'] over time.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Compare to recessions')}\"></a>\n"
+                "## Compare to recessions\n\n"
+                "### Goal\n"
+                "Compare anomaly flags to technical recession labels.\n\n"
+                "Questions:\n"
+                "- Do anomalies cluster around recessions?\n"
+                "- Are there anomalies outside recessions (e.g., inflation shocks)?\n"
+            ),
+            md("### Your Turn: Simple comparison"),
+            code(
+                "# TODO: Define a binary anomaly flag (top X%) and compute recession rate among anomalies.\n"
+                "...\n"
             ),
         ]
 
     # Model ops
     if spec.path.endswith("01_reproducible_pipeline_design.ipynb"):
         cells += [
-            md("## Goal\nUnderstand run IDs, configs, and artifact layout in outputs/."),
-            md("## Your Turn: Inspect scripts and configs"),
-            code(
-                "# TODO: Open configs/recession.yaml and scripts/train_recession.py\n# List what is configurable and what is hard-coded\n..."
+            md(
+                "## Goal\n"
+                "Understand how to turn notebooks into reproducible runs with configs + artifacts.\n\n"
+                "A model is not \"done\" when you get a good plot.\n"
+                "A model is done when you can re-run it and reproduce:\n"
+                "- the dataset used\n"
+                "- the features used\n"
+                "- the metrics\n"
+                "- the predictions\n"
             ),
-            md("## Your Turn: Run a pipeline"),
-            md("Run in terminal:\n- python scripts/build_datasets.py --recession-config configs/recession.yaml --census-config configs/census.yaml\n- python scripts/train_recession.py --config configs/recession.yaml\nThen inspect outputs/<run_id>"),
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Configs')}\"></a>\n"
+                "## Configs\n\n"
+                "### Goal\n"
+                "Inspect a YAML config and understand what it controls.\n"
+            ),
+            md("### Your Turn (1): Load and inspect configs/recession.yaml"),
+            code(
+                "import yaml\n"
+                "from pathlib import Path\n\n"
+                "cfg_path = PROJECT_ROOT / 'configs' / 'recession.yaml'\n"
+                "cfg = yaml.safe_load(cfg_path.read_text())\n"
+                "\n"
+                "# TODO: Print top-level keys and explain what each one controls.\n"
+                "cfg.keys()\n"
+            ),
+            md("### Your Turn (2): Find where config values are used"),
+            code(
+                "# TODO: Open scripts/train_recession.py and scripts/build_datasets.py.\n"
+                "# Find how 'series', 'feature settings', and 'split rules' are used.\n"
+                "# Write a short list of 'hard-coded' vs 'configurable'.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Outputs')}\"></a>\n"
+                "## Outputs\n\n"
+                "### Goal\n"
+                "Run a pipeline and inspect the artifact bundle under `outputs/<run_id>/`.\n"
+            ),
+            md("### Your Turn: Run the pipeline from your terminal"),
+            md(
+                "Run these commands in terminal (from repo root):\n"
+                "- `python scripts/build_datasets.py --recession-config configs/recession.yaml --census-config configs/census.yaml`\n"
+                "- `python scripts/train_recession.py --config configs/recession.yaml`\n\n"
+                "Then come back here and inspect the generated `outputs/<run_id>/` folder.\n"
+            ),
+            md("### Your Turn (2): Inspect outputs/ in Python"),
+            code(
+                "from pathlib import Path\n\n"
+                "# TODO: List run folders under outputs/\n"
+                "out_dir = PROJECT_ROOT / 'outputs'\n"
+                "runs = sorted([p for p in out_dir.glob('*') if p.is_dir()])\n"
+                "runs[-3:]\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Reproducibility')}\"></a>\n"
+                "## Reproducibility\n\n"
+                "### Goal\n"
+                "Verify that a run is self-describing (you can tell what it did).\n\n"
+                "Minimum expected artifacts:\n"
+                "- `model.joblib`\n"
+                "- `metrics.json`\n"
+                "- `predictions.csv`\n"
+            ),
+            md("### Your Turn: Check artifact bundle completeness"),
+            code(
+                "# TODO: Pick the newest run folder and check expected files exist.\n"
+                "if not runs:\n"
+                "    raise RuntimeError('No runs found. Did you run the training script?')\n"
+                "\n"
+                "run = runs[-1]\n"
+                "expected = ['model.joblib', 'metrics.json', 'predictions.csv']\n"
+                "for name in expected:\n"
+                "    print(name, (run / name).exists())\n"
+                "...\n"
+            ),
         ]
 
     if spec.path.endswith("02_build_cli_train_predict.ipynb"):
         cells += [
-            md("## Goal\nBuild/extend a CLI that trains and predicts while saving artifacts."),
-            md("## Your Turn: Extend the training script"),
-            code(
-                "# TODO: Add a CLI flag to include/exclude GDP-derived features\n# TODO: Add a CLI flag to choose logistic vs random_forest\n# Implement and re-run training\n..."
+            md(
+                "## Goal\n"
+                "Practice model ops by extending the CLI scripts:\n"
+                "- add flags/config controls\n"
+                "- generate artifact bundles\n"
+                "- run predict to produce new outputs\n\n"
+                "This notebook is hands-on *engineering*, not just analysis.\n"
             ),
-            md("## Your Turn: Predict script"),
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Training CLI')}\"></a>\n"
+                "## Training CLI\n\n"
+                "### Goal\n"
+                "Extend `scripts/train_recession.py` so you can control key behavior from the command line.\n"
+            ),
+            md("### Your Turn (1): Inspect the current CLI"),
             code(
-                "# TODO: Modify scripts/predict_recession.py to accept a date filter\n# Example: only output the last N rows\n..."
+                "# TODO: Open scripts/train_recession.py and find:\n"
+                "# - how argparse is set up\n"
+                "# - what args exist today\n"
+                "# - what config fields are read\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Add a meaningful flag"),
+            md(
+                "Implement at least one of these:\n"
+                "- `--model logistic|random_forest`\n"
+                "- `--include-gdp-features true|false`\n"
+                "- `--test-size 0.2`\n\n"
+                "Constraints:\n"
+                "- default behavior should remain unchanged\n"
+                "- the selected option must be written to the run folder (as JSON/YAML)\n"
+            ),
+            code(
+                "# TODO: After implementing, re-run training and confirm it works.\n"
+                "# In terminal: python scripts/train_recession.py --config configs/recession.yaml --model random_forest\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Prediction CLI')}\"></a>\n"
+                "## Prediction CLI\n\n"
+                "### Goal\n"
+                "Extend `scripts/predict_recession.py` to support useful output controls.\n"
+            ),
+            md("### Your Turn: Add a filter option"),
+            md(
+                "Implement one option:\n"
+                "- `--last-n 20` (only write last N predictions)\n"
+                "- `--from-date 2010-01-01` (filter by date)\n\n"
+                "Make sure the filter is applied to the output CSV.\n"
+            ),
+            code(
+                "# TODO: After implementing, run prediction on your latest run.\n"
+                "# In terminal: python scripts/predict_recession.py --run-id <run_id> --last-n 20\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Artifacts')}\"></a>\n"
+                "## Artifacts\n\n"
+                "### Goal\n"
+                "Verify your artifact bundle is complete and interpretable.\n"
+            ),
+            md("### Your Turn: Inspect the newest run artifacts"),
+            code(
+                "from pathlib import Path\n\n"
+                "out_dir = PROJECT_ROOT / 'outputs'\n"
+                "runs = sorted([p for p in out_dir.glob('*') if p.is_dir()])\n"
+                "if not runs:\n"
+                "    raise RuntimeError('No runs found. Run training first.')\n"
+                "\n"
+                "run = runs[-1]\n"
+                "print('run:', run.name)\n"
+                "print('files:', [p.name for p in run.iterdir()])\n"
+                "...\n"
             ),
         ]
 
     if spec.path.endswith("03_model_cards_and_reporting.ipynb"):
         cells += [
-            md("## Goal\nWrite a model card and connect it to your run artifacts."),
-            md("## Your Turn: Model card"),
-            code(
-                "# TODO: Copy reports/capstone_report.md template and fill it for one run\n# Focus on intended use, limitations, and monitoring ideas\n..."
+            md(
+                "## Goal\n"
+                "Write a \"model card\"-style document for one training run.\n\n"
+                "A model card forces you to answer:\n"
+                "- What is this model for?\n"
+                "- What data did it use?\n"
+                "- How was it evaluated?\n"
+                "- What are the limitations and risks?\n"
             ),
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Model card')}\"></a>\n"
+                "## Model card\n\n"
+                "### Goal\n"
+                "Fill out the provided report template for one run.\n"
+            ),
+            md("### Your Turn (1): Pick a run folder"),
+            code(
+                "from pathlib import Path\n\n"
+                "out_dir = PROJECT_ROOT / 'outputs'\n"
+                "runs = sorted([p for p in out_dir.glob('*') if p.is_dir()])\n"
+                "runs[-3:]\n"
+            ),
+            md("### Your Turn (2): Load metrics.json and predictions.csv"),
+            code(
+                "import json\n"
+                "import pandas as pd\n\n"
+                "# TODO: Pick a run folder (e.g., the newest)\n"
+                "run = runs[-1]\n"
+                "\n"
+                "metrics = json.loads((run / 'metrics.json').read_text())\n"
+                "preds = pd.read_csv(run / 'predictions.csv')\n"
+                "\n"
+                "metrics, preds.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Reporting')}\"></a>\n"
+                "## Reporting\n\n"
+                "### Goal\n"
+                "Connect artifacts to a written narrative.\n\n"
+                "Write a report that includes:\n"
+                "- what you predicted (label definition)\n"
+                "- dataset + time range\n"
+                "- train/test or walk-forward evaluation summary\n"
+                "- key plots/metrics\n"
+            ),
+            md("### Your Turn: Fill reports/capstone_report.md for this run"),
+            code(
+                "# TODO: Open reports/capstone_report.md and fill it using the artifacts above.\n"
+                "# - insert metrics\n"
+                "# - insert a short interpretation narrative\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Limitations')}\"></a>\n"
+                "## Limitations\n\n"
+                "### Goal\n"
+                "Write a high-quality limitations section.\n\n"
+                "Prompts:\n"
+                "- data limitations (timing, revisions, coverage)\n"
+                "- label limitations (technical recession proxy)\n"
+                "- evaluation limitations (few recessions, era changes)\n"
+                "- deployment limitations (stale model, monitoring)\n"
+            ),
+            md("### Your Turn: Write limitations as bullet points"),
+            code("limitations = [\n    '...'\n]\nlimitations\n"),
         ]
 
     # Capstone
     if spec.path.endswith("00_capstone_brief.ipynb"):
         cells += [
-            md("## Capstone Brief\nYou will produce a final model + report + dashboard."),
-            md("### Deliverables\n- A reproducible run under outputs/\n- A written report in reports/capstone_report.md\n- A Streamlit dashboard that loads your artifacts"),
-            md("### Rubric\n- Problem framing and label definition\n- Data pipeline correctness (no leakage)\n- Evaluation quality (time-aware)\n- Interpretation and limitations\n- Reproducibility"),
-            md("## Your Turn: Pick scope"),
-            md("Option A: Macro-only recession prediction\nOption B: Macro + Micro (add a cross-sectional module to your report)"),
+            md(
+                "## Capstone Brief\n"
+                "You will produce a final model + report + dashboard.\n\n"
+                "Treat this like a mini research + engineering project:\n"
+                "- clear question\n"
+                "- defensible dataset + label\n"
+                "- time-aware evaluation\n"
+                "- careful interpretation\n"
+                "- reproducible artifacts\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Deliverables')}\"></a>\n"
+                "## Deliverables\n"
+                "- A reproducible run under `outputs/<run_id>/`\n"
+                "- A written report in `reports/capstone_report.md`\n"
+                "- A Streamlit dashboard that loads your artifacts (`apps/streamlit_app.py`)\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Rubric')}\"></a>\n"
+                "## Rubric\n"
+                "- Problem framing and label definition\n"
+                "- Data pipeline correctness (no leakage)\n"
+                "- Evaluation quality (time-aware)\n"
+                "- Interpretation and limitations\n"
+                "- Reproducibility\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Scope selection')}\"></a>\n"
+                "## Scope selection\n\n"
+                "Pick one:\n"
+                "- **Option A: Macro-only** recession prediction + deep evaluation/interpretation\n"
+                "- **Option B: Macro + Micro** (add a cross-sectional section in your report)\n"
+            ),
+            md("### Your Turn: Decide and write down your scope"),
+            code("scope = \"...\"  # TODO: 'macro' or 'macro+micro'\nprint(scope)\n"),
         ]
 
     if spec.path.endswith("01_capstone_workspace.ipynb"):
         cells += [
-            md("## Capstone Workspace\nThis is your working area. It should end with artifacts + report + dashboard."),
-            md("## Your Turn: Load final dataset"),
-            code(
-                "# TODO: Load data/processed/macro_quarterly.csv\n# Choose your final feature set and target\n..."
+            md(
+                "## Capstone Workspace\n"
+                "This notebook is your working area. It should end with:\n"
+                "- artifacts under `outputs/<run_id>/`\n"
+                "- an updated report `reports/capstone_report.md`\n"
+                "- a working Streamlit dashboard\n"
             ),
-            md("## Your Turn: Train final model"),
-            code(
-                "# TODO: Train at least 2 models and select one\n# Use time split and walk-forward\n..."
+            md(
+                f"<a id=\"{slugify('Data')}\"></a>\n"
+                "## Data\n\n"
+                "### Goal\n"
+                "Choose the dataset(s), target, and feature set you will use.\n"
             ),
-            md("## Your Turn: Interpret"),
+            md("### Your Turn (1): Load final dataset"),
             code(
-                "# TODO: Provide coefficient/importance analysis and error analysis\n..."
+                "import pandas as pd\n\n"
+                "# TODO: Load macro_quarterly.csv from data/processed/.\n"
+                "# If it doesn't exist, build it first in the data notebooks.\n"
+                "path = PROCESSED_DIR / 'macro_quarterly.csv'\n"
+                "df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "df.tail()\n"
             ),
-            md("## Your Turn: Write artifacts"),
+            md("### Your Turn (2): Define target + features"),
             code(
-                "# TODO: Save model + metrics + predictions to outputs/ and update reports/capstone_report.md\n..."
+                "# TODO: Choose your target and feature list.\n"
+                "# Example target: 'target_recession_next_q'\n"
+                "y_col = 'target_recession_next_q'\n"
+                "\n"
+                "x_cols = [\n"
+                "    # TODO: your features\n"
+                "]\n"
+                "\n"
+                "df_m = df[[y_col] + x_cols].dropna().copy()\n"
+                "df_m.head()\n"
             ),
-            md("## Your Turn: Run dashboard"),
+            md(
+                f"<a id=\"{slugify('Modeling')}\"></a>\n"
+                "## Modeling\n\n"
+                "### Goal\n"
+                "Train at least 2 models and select one based on time-aware evaluation.\n"
+            ),
+            md("### Your Turn (1): Train/test split + baseline"),
+            code(
+                "# TODO: Implement a time split and fit a baseline model.\n"
+                "# Baselines can include:\n"
+                "# - logistic regression\n"
+                "# - simple rule model\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Walk-forward evaluation"),
+            code(
+                "# TODO: Implement walk-forward evaluation for your chosen models.\n"
+                "# Save fold metrics and compare stability.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpretation')}\"></a>\n"
+                "## Interpretation\n\n"
+                "### Goal\n"
+                "Explain what your model learned and where it fails.\n"
+            ),
+            md("### Your Turn (1): Feature interpretation"),
+            code(
+                "# TODO: Provide at least one of:\n"
+                "# - coefficient interpretation (logistic regression odds ratios)\n"
+                "# - permutation importance\n"
+                "# - partial dependence (optional)\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Error analysis"),
+            code(
+                "# TODO: Identify false positives and false negatives in the test period.\n"
+                "# Compare indicator levels during those errors.\n"
+                "...\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Artifacts')}\"></a>\n"
+                "## Artifacts\n\n"
+                "### Goal\n"
+                "Write a complete artifact bundle and update your report.\n"
+            ),
+            md("### Your Turn (1): Save artifacts under outputs/<run_id>/"),
+            code(
+                "# TODO: Save:\n"
+                "# - model.joblib\n"
+                "# - metrics.json\n"
+                "# - predictions.csv\n"
+                "# - plots/ (optional)\n"
+                "...\n"
+            ),
+            md("### Your Turn (2): Update report"),
+            code(
+                "# TODO: Update reports/capstone_report.md with:\n"
+                "# - your final metrics\n"
+                "# - your interpretation narrative\n"
+                "# - limitations and monitoring plan\n"
+                "...\n"
+            ),
+            md("### Your Turn (3): Run dashboard"),
             md("In terminal: `streamlit run apps/streamlit_app.py`"),
         ]
 
@@ -1816,8 +4628,9 @@ def guide_code_map(category: str, stem: str) -> list[str]:
     """Return a short list of project code references relevant to this guide."""
 
     common = [
-        "`src/data.py`: caching helpers and JSON load/save utilities",
-        "`src/features.py`: feature engineering helpers (lags, pct changes, rolling features)",
+        "`src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)",
+        "`src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)",
+        "`src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)",
     ]
 
     if category == "00_foundations":
@@ -1829,9 +4642,9 @@ def guide_code_map(category: str, stem: str) -> list[str]:
 
     if category == "01_data":
         out = [
-            "`src/fred_api.py`: FRED client (metadata + observations)",
-            "`src/census_api.py`: Census/ACS client",
-            "`src/macro.py`: GDP growth and technical recession label helpers",
+            "`src/fred_api.py`: FRED client (`fetch_series_meta`, `fetch_series_observations`, `observations_to_frame`)",
+            "`src/census_api.py`: Census/ACS client (`fetch_variables`, `fetch_acs`)",
+            "`src/macro.py`: GDP + labels (`gdp_growth_qoq`, `gdp_growth_yoy`, `technical_recession_label`, `monthly_to_quarterly`)",
             "`scripts/build_datasets.py`: end-to-end dataset builder",
             *common,
         ]
@@ -1843,8 +4656,8 @@ def guide_code_map(category: str, stem: str) -> list[str]:
 
     if category == "02_regression":
         out = [
-            "`src/econometrics.py`: OLS + robust SE (HC3/HAC) + VIF",
-            "`src/macro.py`: GDP growth + label utilities (macro notebooks)",
+            "`src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)",
+            "`src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)",
             "`src/evaluation.py`: regression metrics helpers",
             *common,
         ]
@@ -1852,7 +4665,7 @@ def guide_code_map(category: str, stem: str) -> list[str]:
 
     if category == "03_classification":
         return [
-            "`src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier)",
+            "`src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)",
             "`scripts/train_recession.py`: training script that writes artifacts",
             "`scripts/predict_recession.py`: prediction script that loads artifacts",
             *common,
@@ -2105,7 +4918,7 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             technical = (
                 concept("core_regression")
                 + "\n\n"
-                concept_omitted_variable_bias_deep_dive()
+                + concept_omitted_variable_bias_deep_dive()
                 + "\n\n"
                 + concept_robust_se_hc3_deep_dive()
                 + "\n\n"
@@ -2449,7 +5262,7 @@ def write_guide_part_indexes(specs: list[NotebookSpec], root: Path) -> None:
         for spec in sorted(items, key=lambda s: s.path):
             stem = Path(spec.path).stem
             nb_rel = f"../../../{spec.path}"
-            chapter_lines.append(f"- [{stem}]({stem}.md) (Notebook: {nb_rel})")
+            chapter_lines.append(f"- [{stem}]({stem}.md) — Notebook: [{stem}.ipynb]({nb_rel})")
 
         rendered = render_template(load_template(tmpl_rel), {"CHAPTERS": "\n".join(chapter_lines)})
         out_path = root / "docs" / "guides" / category / "index.md"

@@ -48,41 +48,108 @@ pca = PCA(n_components=2).fit(X)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### PCA Intuition
-- PCA finds directions that explain maximum variance.
-- Components are orthogonal (uncorrelated by construction).
-- Loadings help you interpret what each factor represents.
+### Core Unsupervised Learning: Describe Structure Before Predicting
 
-### Clustering Intuition
-- k-means finds k centroids and assigns each point to the closest.
-- Choosing k is a modeling decision; use elbow plots and interpretability.
+Unsupervised methods help you understand structure in the indicators.
+They do not require a target label.
 
+#### Standardization matters
+Many unsupervised methods rely on distances or variances.
+If one variable has larger units, it dominates.
+
+> **Definition:** **Standardization** rescales each feature to mean 0 and standard deviation 1.
+
+#### Interpretation stance
+Treat unsupervised outputs as:
+- descriptions (factors, regimes, anomalies)
+- hypotheses you can investigate
+
+Avoid treating them as causal explanations.
 
 ### Deep Dive: PCA and Loadings (Turning Many Indicators Into Factors)
 
-**PCA** finds orthogonal directions that explain maximum variance.
+> **Definition:** **Principal Component Analysis (PCA)** finds orthogonal directions (components) that explain the most variance in the data.
 
-**Loadings** tell you which original variables contribute to a component.
-A component can often be interpreted as a macro "factor" (e.g., growth, inflation, rates).
+> **Definition:** A **component** is a linear combination of original variables.
 
-**Critical step: standardization**
-- Without standardization, PCA mostly learns the biggest-unit variable.
+> **Definition:** **Loadings** are the weights that map original variables into a component.
 
-**Python demo**
+#### Why PCA is useful in macro
+Macro indicators are often correlated (growth, inflation, rates). PCA can:
+- compress many indicators into a few factors
+- reduce multicollinearity
+- create interpretable latent "macro factors"
+
+#### Standardization is not optional
+> **Definition:** **Standardization** rescales features to mean 0 and std 1.
+
+Distance/variance depends on units. Without standardization, PCA mostly learns the biggest-unit variable.
+
+#### The math (high level)
+Let $X$ be a centered (and typically standardized) data matrix.
+PCA finds vectors $w_k$ that maximize:
+
+$$
+\max_{w_k} \; \mathrm{Var}(X w_k) \quad \text{s.t. } ||w_k||_2 = 1 \text{ and } w_k \perp w_{k'}
+$$
+
+This leads to eigenvectors of the covariance (or correlation) matrix.
+
+#### Interpreting loadings
+A component score is:
+
+$$
+\text{factor}_k = X w_k
+$$
+
+- Large positive loading means the factor increases when that variable increases.
+- Large negative loading means the factor increases when that variable decreases.
+
+#### Python demo (commented)
 ```python
+import numpy as np
+import pandas as pd
+
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-# X_scaled = StandardScaler().fit_transform(X)
+# X: DataFrame of macro features
+# X = ...
+
+# 1) Standardize
+# scaler = StandardScaler().fit(X)
+# X_scaled = scaler.transform(X)
+
+# 2) Fit PCA
 # pca = PCA(n_components=3).fit(X_scaled)
-# loadings = pca.components_  # rows are components
+
+# 3) Loadings: rows are components, columns are original features
+# loadings = pd.DataFrame(
+#     pca.components_,
+#     columns=X.columns,
+#     index=[f'PC{i+1}' for i in range(pca.n_components_)],
+# )
+
+# 4) Explained variance
+# print(pca.explained_variance_ratio_)
 ```
 
-**Interpretation playbook**
-- Look at the largest positive/negative loadings.
-- Give the factor a name.
-- Check if that factor spikes during known historical episodes.
+#### Interpretation playbook
+1. Inspect explained variance ratio to decide how many PCs matter.
+2. For each PC, list the top positive and negative loadings.
+3. Give the factor a name in economic terms.
+4. Plot the factor through time and compare to known events.
 
+#### Project touchpoints
+- PCA is introduced in the unsupervised notebooks using `sklearn.decomposition.PCA`.
+- You will typically start from `data/processed/panel_monthly.csv` (or `data/sample/panel_monthly_sample.csv`).
+
+### Project Code Map
+- `src/features.py`: feature engineering helpers (standardization happens in notebooks)
+- `data/sample/panel_monthly_sample.csv`: offline dataset for experimentation
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Forgetting to standardize (PCA will just pick the biggest-unit variable).

@@ -118,3 +118,10 @@ Practical rule: if you searched over 50 features/specs, a few p-values < 0.05 ar
 - Treat p-values as one piece of evidence, not the goal.
 - Report effect sizes and uncertainty (confidence intervals), not just "significant".
 - Use out-of-sample evaluation for predictive tasks.
+
+#### Project touchpoints (where hypothesis testing shows up)
+- Regression notebooks use `statsmodels` summaries and ask you to interpret:
+  - coefficients, standard errors, t-stats, p-values, and confidence intervals
+- `src/econometrics.py` provides convenience wrappers:
+  - `fit_ols_hc3` for cross-sectional robust SE
+  - `fit_ols_hac` for time-series robust SE

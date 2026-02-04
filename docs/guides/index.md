@@ -6,11 +6,15 @@ Use `docs/index.md` for the recommended learning path.
 
 ## 00_foundations
 
+- [Part overview](00_foundations/index.md)
+
 - [00_setup](00_foundations/00_setup.md)
 - [01_time_series_basics](00_foundations/01_time_series_basics.md)
 - [02_stats_basics_for_ml](00_foundations/02_stats_basics_for_ml.md)
 
 ## 01_data
+
+- [Part overview](01_data/index.md)
 
 - [00_fred_api_and_caching](01_data/00_fred_api_and_caching.md)
 - [01_build_macro_monthly_panel](01_data/01_build_macro_monthly_panel.md)
@@ -19,6 +23,8 @@ Use `docs/index.md` for the recommended learning path.
 - [04_census_api_microdata_fetch](01_data/04_census_api_microdata_fetch.md)
 
 ## 02_regression
+
+- [Part overview](02_regression/index.md)
 
 - [00_single_factor_regression_micro](02_regression/00_single_factor_regression_micro.md)
 - [01_multifactor_regression_micro_controls](02_regression/01_multifactor_regression_micro_controls.md)
@@ -30,6 +36,8 @@ Use `docs/index.md` for the recommended learning path.
 
 ## 03_classification
 
+- [Part overview](03_classification/index.md)
+
 - [00_recession_classifier_baselines](03_classification/00_recession_classifier_baselines.md)
 - [01_logistic_recession_classifier](03_classification/01_logistic_recession_classifier.md)
 - [02_calibration_and_costs](03_classification/02_calibration_and_costs.md)
@@ -38,17 +46,23 @@ Use `docs/index.md` for the recommended learning path.
 
 ## 04_unsupervised
 
+- [Part overview](04_unsupervised/index.md)
+
 - [01_pca_macro_factors](04_unsupervised/01_pca_macro_factors.md)
 - [02_clustering_macro_regimes](04_unsupervised/02_clustering_macro_regimes.md)
 - [03_anomaly_detection](04_unsupervised/03_anomaly_detection.md)
 
 ## 05_model_ops
 
+- [Part overview](05_model_ops/index.md)
+
 - [01_reproducible_pipeline_design](05_model_ops/01_reproducible_pipeline_design.md)
 - [02_build_cli_train_predict](05_model_ops/02_build_cli_train_predict.md)
 - [03_model_cards_and_reporting](05_model_ops/03_model_cards_and_reporting.md)
 
 ## 06_capstone
+
+- [Part overview](06_capstone/index.md)
 
 - [00_capstone_brief](06_capstone/00_capstone_brief.md)
 - [01_capstone_workspace](06_capstone/01_capstone_workspace.md)

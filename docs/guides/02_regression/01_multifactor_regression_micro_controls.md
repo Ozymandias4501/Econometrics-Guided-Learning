@@ -54,39 +54,91 @@ res_hc3 = res.get_robustcov_results(cov_type='HC3')
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
+### Core Regression: Mechanics, Interpretation, and Uncertainty
+
+Regression is used for both prediction and inference.
+
+#### The model
+We write a linear regression as:
+
+$$
+\mathbf{y} = \mathbf{X}\beta + \varepsilon
+$$
+
+- $\mathbf{y}$: outcomes
+- $\mathbf{X}$: predictors (features)
+- $\beta$: coefficients
+- $\varepsilon$: error term (everything not modeled)
+
+OLS estimates:
+
+$$
+\hat\beta = (X'X)^{-1}X'y
+$$
+
+#### Coefficient interpretation
+> **Definition:** A **coefficient** $\beta_j$ is the expected change in $y$ for a one-unit change in $x_j$, holding other features fixed (within the model).
+
+Key interpretation cautions:
+- "Holding others fixed" can be unrealistic when predictors are correlated.
+- A coefficient is not automatically causal.
+
+#### Standard errors and confidence intervals
+> **Definition:** A **standard error** measures uncertainty in an estimated coefficient.
+
+A 95% confidence interval is roughly:
+
+$$
+\hat\beta_j \pm 1.96 \cdot \widehat{SE}(\hat\beta_j)
+$$
+
+(Exact multipliers depend on the t distribution and sample size.)
+
+#### Robust standard errors
+Robust SE do not change coefficients, but they change uncertainty estimates.
+- HC3: common for cross-section (heteroskedasticity)
+- HAC/Newey-West: common for time series (autocorrelation + heteroskedasticity)
+
+#### Prediction vs inference
+- For prediction, use time-aware evaluation and report out-of-sample metrics.
+- For inference, report uncertainty and diagnose assumptions.
+
 ### Deep Dive: Omitted Variable Bias (Why Adding Controls Changes Coefficients)
 
-**Omitted variable bias (OVB)** happens when:
-1) you omit a variable Z that affects Y, and
-2) Z is correlated with an included regressor X.
+> **Definition:** **Omitted variable bias (OVB)** happens when a missing variable influences the outcome and is correlated with an included predictor.
 
-Then the coefficient on X partly absorbs Z's effect.
+If you omit that variable, your coefficient can absorb its effect.
 
-#### Key Terms (defined)
-- **Confounder**: a variable related to both X and Y.
-- **Control variable**: a variable included to reduce confounding.
-- **Specification**: the set of variables you include in a regression.
+#### Setup
+Suppose the true model is:
 
-#### Python demo: a confounder makes X look important
+$$
+ y = \beta x + \gamma z + \varepsilon
+$$
+
+If you regress $y$ on $x$ but omit $z$, the estimated effect of $x$ can be biased if $x$ and $z$ are correlated.
+
+#### Python demo: confounder makes x look important (commented)
 ```python
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 rng = np.random.default_rng(0)
+
 n = 2000
 
-# Z affects Y, and Z also affects X.
+# z affects y, and z also affects x
 z = rng.normal(size=n)
 x = 0.8*z + rng.normal(scale=1.0, size=n)
 y = 2.0*z + rng.normal(scale=1.0, size=n)
 
 df = pd.DataFrame({'y': y, 'x': x, 'z': z})
 
-# Omitted Z: biased coefficient on x
+# Omitted z: biased coefficient on x
 res_omit = sm.OLS(df['y'], sm.add_constant(df[['x']])).fit()
 
-# Include Z: coefficient on x shrinks toward 0
+# Include z: coefficient on x shrinks
 res_full = sm.OLS(df['y'], sm.add_constant(df[['x', 'z']])).fit()
 
 print('omit z:', res_omit.params)
@@ -94,31 +146,29 @@ print('full  :', res_full.params)
 ```
 
 #### Practical rule
-- If your coefficient flips sign or changes drastically when adding plausible controls,
-  your original interpretation was likely fragile.
-
+If a coefficient flips sign or changes drastically when adding plausible controls,
+be cautious about interpreting the original coefficient.
 
 ### Deep Dive: Robust Standard Errors (HC3) for Cross-Sectional Data
 
-In cross-sectional economics, heteroskedasticity is common: richer counties often have different variance in outcomes.
-Naive OLS standard errors assume constant variance; HC3 relaxes that.
+Cross-sectional data often has heteroskedasticity.
 
-#### Key Terms (defined)
-- **Heteroskedasticity**: error variance changes with x.
-- **Robust SE**: covariance estimates that remain valid under certain violations.
-- **HC3**: a popular heteroskedasticity-robust SE variant (often conservative).
+> **Definition:** **Heteroskedasticity** means the variance of errors changes with predictors.
 
-#### What changes when you use HC3?
-- Coefficients (beta) do not change.
-- Standard errors / p-values / confidence intervals change.
+If you ignore it, OLS coefficients can be the same, but standard errors can be wrong.
 
-#### Python demo: heteroskedastic errors and robust SE
+#### What changes and what does not
+- Coefficients $\hat\beta$ do not change.
+- Standard errors, t-stats, p-values, and confidence intervals change.
+
+#### Python demo: heteroskedastic errors and robust SE (commented)
 ```python
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 rng = np.random.default_rng(0)
+
 n = 400
 x = rng.normal(size=n)
 
@@ -135,28 +185,144 @@ print('HC3 SE  :', res_hc3.bse)
 ```
 
 #### Interpretation warning
-- A small p-value is not a causal certificate.
-- Robust SE helps with *uncertainty* under heteroskedasticity, not with confounding.
+Robust SE improves uncertainty estimates under heteroskedasticity.
+It does not fix confounding or make a coefficient causal.
 
+### Deep Dive: Hypothesis Testing (How To Read p-values Without Fooling Yourself)
 
-### OLS Objective
-- Model: `y = Xβ + ε`
-- OLS chooses `β` to minimize `Σ (y_i - ŷ_i)^2`.
+Hypothesis testing shows up everywhere in statistics and econometrics, especially in regression output.
 
-### Interpreting Coefficients
-- In a simple regression with one feature, the slope is the expected change in `y` for a +1 change in `x`.
-- In a multi-factor regression, the slope is the expected change in `y` for a +1 change in `x_j` *holding other X fixed*.
-- If features are correlated (multicollinearity), "holding others fixed" can be a fragile, unrealistic counterfactual.
+#### The basic setup
+> **Definition:** A **hypothesis** is a claim about a population parameter (like a mean or a regression coefficient).
 
-### Inference vs Prediction
-- Inference: emphasize coefficient uncertainty and assumptions.
-- Prediction: emphasize out-of-sample performance.
-- You can have strong prediction with weak/unstable coefficients.
+> **Definition:** The **null hypothesis** $H_0$ is the default claim (often "no effect" or "no difference").
 
-### Robust Standard Errors
-- **HC3** addresses heteroskedasticity (common for cross-sectional county data).
-- **HAC/Newey-West** addresses autocorrelation + heteroskedasticity (common for quarterly macro time series).
+> **Definition:** The **alternative hypothesis** $H_1$ is what you consider if the null looks inconsistent with the data.
 
+Example in regression:
+- $H_0: \beta_j = 0$ (feature $x_j$ has no linear association with $y$ after controlling for other X)
+- $H_1: \beta_j \ne 0$ (two-sided)
+
+#### Test statistics, p-values, and alpha
+> **Definition:** A **test statistic** is a number computed from the data that measures how incompatible the data is with $H_0$.
+
+> **Definition:** A **p-value** is the probability (under the null model assumptions) of seeing a test statistic at least as extreme as what you observed.
+
+> **Definition:** The **significance level** $\alpha$ is a chosen cutoff (like 0.05) for rejecting $H_0$.
+
+Important: the p-value is **not**:
+- the probability that $H_0$ is true
+- the probability your model is correct
+- a measure of economic importance
+
+#### Type I / Type II errors and power
+> **Definition:** A **Type I error** is rejecting $H_0$ when it is true (false positive). Probability = $\alpha$ (approximately, under assumptions).
+
+> **Definition:** A **Type II error** is failing to reject $H_0$ when $H_1$ is true (false negative).
+
+> **Definition:** **Power** is $1 - P(\text{Type II error})$: the probability you detect an effect when it exists.
+
+Power increases with:
+- larger sample size
+- lower noise
+- larger true effect size
+
+#### Hypothesis testing in OLS regression
+OLS coefficient estimates:
+
+$$
+\hat\beta = (X'X)^{-1}X'y
+$$
+
+A typical coefficient test uses a t-statistic:
+
+$$
+ t_j = \frac{\hat\beta_j - 0}{\widehat{SE}(\hat\beta_j)}
+$$
+
+- If model assumptions hold, $t_j$ is compared to a t distribution.
+- The p-value is derived from that distribution.
+
+> **Key idea:** Changing the standard error estimator changes the t-statistic and p-value, even when the coefficient stays the same.
+
+#### Robust standard errors and hypothesis testing
+- **Plain OLS SE** assume homoskedastic, uncorrelated errors.
+- **HC3 SE** relax heteroskedasticity (common in cross-section).
+- **HAC/Newey-West SE** relax autocorrelation + heteroskedasticity (common in time series).
+
+This project uses robust SE to avoid overly confident inference.
+
+#### Confidence intervals and hypothesis tests (relationship)
+A 95% confidence interval for $\beta_j$ is roughly:
+
+$$
+\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j)
+$$
+
+If the interval does not include 0, the two-sided p-value is typically < 0.05.
+
+#### Python demo: a simple t-test vs a regression coefficient test
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy import stats
+
+rng = np.random.default_rng(0)
+
+# 1) One-sample t-test: is the mean of x equal to 0?
+x = rng.normal(loc=0.2, scale=1.0, size=200)
+t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)
+print('t-test t:', t_stat, 'p:', p_val)
+
+# 2) Regression t-test: is slope on x equal to 0?
+# Create y that depends on x
+n = 300
+x2 = rng.normal(size=n)
+y = 1.0 + 0.5 * x2 + rng.normal(scale=1.0, size=n)
+
+df = pd.DataFrame({'y': y, 'x': x2})
+X = sm.add_constant(df[['x']])
+res = sm.OLS(df['y'], X).fit()
+print(res.summary())
+
+# Manual t-stat for slope (matches summary output)
+beta_hat = res.params['x']
+se_hat = res.bse['x']
+print('manual t:', beta_hat / se_hat)
+```
+
+#### How hypothesis tests go wrong in macro/ML workflows
+Common failure modes:
+- **Multiple testing**: trying many features/specifications inflates false positives.
+- **P-hacking**: changing the spec until p-values look good.
+- **Autocorrelation/nonstationarity**: time series violate assumptions; naive SE can be wildly wrong.
+- **Confounding**: significance does not imply causation.
+
+> **Definition:** **Multiple testing** means running many hypothesis tests; even if all nulls are true, some p-values will be small by chance.
+
+Practical rule: if you searched over 50 features/specs, a few p-values < 0.05 are expected even with no real signal.
+
+#### How to use p-values responsibly in this project
+- Prefer robust SE (HC3 / HAC) when appropriate.
+- Treat p-values as one piece of evidence, not the goal.
+- Report effect sizes and uncertainty (confidence intervals), not just "significant".
+- Use out-of-sample evaluation for predictive tasks.
+
+#### Project touchpoints (where hypothesis testing shows up)
+- Regression notebooks use `statsmodels` summaries and ask you to interpret:
+  - coefficients, standard errors, t-stats, p-values, and confidence intervals
+- `src/econometrics.py` provides convenience wrappers:
+  - `fit_ols_hc3` for cross-sectional robust SE
+  - `fit_ols_hac` for time-series robust SE
+
+### Project Code Map
+- `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
+- `src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)
+- `src/evaluation.py`: regression metrics helpers
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Interpreting a coefficient as causal without a causal design.

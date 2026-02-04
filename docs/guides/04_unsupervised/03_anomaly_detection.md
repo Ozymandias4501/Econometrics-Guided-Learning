@@ -48,54 +48,78 @@ pca = PCA(n_components=2).fit(X)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### PCA Intuition
-- PCA finds directions that explain maximum variance.
-- Components are orthogonal (uncorrelated by construction).
-- Loadings help you interpret what each factor represents.
+### Core Unsupervised Learning: Describe Structure Before Predicting
 
-### Clustering Intuition
-- k-means finds k centroids and assigns each point to the closest.
-- Choosing k is a modeling decision; use elbow plots and interpretability.
+Unsupervised methods help you understand structure in the indicators.
+They do not require a target label.
 
+#### Standardization matters
+Many unsupervised methods rely on distances or variances.
+If one variable has larger units, it dominates.
+
+> **Definition:** **Standardization** rescales each feature to mean 0 and standard deviation 1.
+
+#### Interpretation stance
+Treat unsupervised outputs as:
+- descriptions (factors, regimes, anomalies)
+- hypotheses you can investigate
+
+Avoid treating them as causal explanations.
 
 ### Deep Dive: Anomaly Detection (Crisis Periods)
 
 Anomaly detection flags observations that look unusual relative to the bulk of the data.
-In macro, anomalies often correspond to crises (e.g., 2008, 2020), but not always.
+In macro, anomalies often correspond to crises, but not always.
 
-#### Key Terms (defined)
-- **Outlier**: an observation far from typical behavior.
-- **Anomaly score**: a numeric measure of "unusualness".
-- **Isolation Forest**: detects anomalies by how easily points are isolated by random splits.
-- **Contamination**: expected fraction of anomalies (hyperparameter).
+#### Key terms (defined)
+> **Definition:** An **outlier** is an observation far from typical behavior.
 
-#### Python demo: Isolation Forest intuition
+> **Definition:** An **anomaly score** measures "unusualness".
+
+> **Definition:** **Isolation Forest** isolates points by random splits; anomalies isolate quickly.
+
+> **Definition:** **Contamination** is the expected fraction of anomalies (a hyperparameter).
+
+#### Python demo: Isolation Forest intuition (commented)
 ```python
 import numpy as np
+
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
 rng = np.random.default_rng(0)
+
+# Mostly normal points
 X_normal = rng.normal(size=(300, 3))
+
+# A few anomalous points
 X_anom = rng.normal(loc=6.0, scale=1.0, size=(10, 3))
+
 X = np.vstack([X_normal, X_anom])
 X = StandardScaler().fit_transform(X)
 
 iso = IsolationForest(contamination=0.05, random_state=0).fit(X)
-scores = -iso.score_samples(X)  # higher = more anomalous
-scores[-10:].round(3)
+
+# Higher score => more anomalous
+scores = -iso.score_samples(X)
+print(scores[-10:])
 ```
 
-#### Interpreting anomalies
-- An anomaly is not automatically "bad" or "recession".
-- It means the pattern of indicators is rare.
-- Compare anomaly flags to your recession label to see overlaps and differences.
+#### Interpretation cautions
+- Anomaly does not mean recession.
+- Anomaly means the pattern is rare.
 
-#### Debug tips
-- Always standardize before distance/forest methods.
-- Sensitivity-check the contamination parameter.
-- Inspect which features contribute (e.g., via z-scores) for flagged periods.
+#### Debug checklist
+1. Standardize features.
+2. Sensitivity-check contamination.
+3. Inspect which indicators are extreme in anomalous periods.
 
+### Project Code Map
+- `src/features.py`: feature engineering helpers (standardization happens in notebooks)
+- `data/sample/panel_monthly_sample.csv`: offline dataset for experimentation
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Forgetting to standardize (PCA will just pick the biggest-unit variable).

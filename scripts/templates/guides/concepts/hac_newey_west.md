@@ -35,6 +35,21 @@ $$
 
 Newey-West is a common HAC estimator that downweights higher lags.
 
+One way to think about the "meat" term is:
+- compute residuals $\hat\varepsilon_t$
+- estimate autocovariances of $\hat\varepsilon_t$ up to a maximum lag $L$
+- combine them with weights $w_k$ (Newey-West commonly uses Bartlett weights)
+
+You will often see formulas like:
+
+$$
+\widehat{\Omega}_{NW} = \Gamma_0 + \\sum_{k=1}^{L} w_k (\\Gamma_k + \\Gamma_k')
+$$
+
+Where:
+- $\\Gamma_k$ estimates the lag-$k$ covariance contribution
+- $w_k = 1 - \\frac{k}{L+1}$ (Bartlett) downweights higher lags
+
 #### What changes and what does not
 - Coefficients $\hat\beta$ do **not** change.
 - Standard errors, t-stats, p-values, and confidence intervals **do** change.
@@ -78,6 +93,10 @@ Practical approach:
 - try a small set of maxlags
 - report sensitivity
 - if inference flips wildly, treat the result as fragile
+
+#### Project touchpoints (where HAC shows up in this repo)
+- `src/econometrics.py` wraps this as `fit_ols_hac(df, y_col=..., x_cols=..., maxlags=...)`.
+- Regression notebooks compare naive OLS SE to HAC SE and ask you to report sensitivity to `maxlags`.
 
 #### Practical macro warning
 In macro time series, p-values can be misleading due to:

@@ -49,32 +49,55 @@ target_next_q = recession.shift(-1)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
+### Core Data: Build Datasets You Can Trust
+
+Modeling is downstream of data.
+If you do not trust your data processing, you cannot trust your model output.
+
+#### The three layers of a real data pipeline
+> **Definition:** **Raw data** is the closest representation of what the source returned.
+
+> **Definition:** **Processed data** is cleaned and aligned for analysis.
+
+> **Definition:** A **modeling table** is the final table with features and targets aligned and ready for splitting.
+
+#### Timing is part of the schema
+When you build features, you are also defining "what was known when".
+That is why frequency alignment and target shifting are first-class topics in this project.
+
+#### A practical habit
+Keep a simple data dictionary as you go:
+- what is each column?
+- what are its units?
+- what frequency is it observed?
+- what transformations did you apply?
+
 ### Deep Dive: APIs + Caching (How Real-World Data Ingestion Works)
 
-This project intentionally makes you interact with real APIs because data ingestion is where many ML projects fail.
-In practice, you need to understand *protocols*, *schemas*, and *reproducibility*.
+This project makes you interact with real APIs because data ingestion is where many ML projects fail.
+In practice, you need to understand protocols, schemas, error handling, and reproducibility.
 
-#### Key Terms (defined)
-- **API (Application Programming Interface)**: a contract for requesting and receiving structured data.
-- **HTTP**: the protocol used for requests/responses (what `requests.get(...)` uses under the hood).
-- **Endpoint**: a specific API path (e.g., `series/observations`).
-- **Query parameters**: key/value inputs in the URL (e.g., `series_id=UNRATE`).
-- **Status code**: tells you whether a request succeeded (200) or failed (4xx/5xx).
-- **Timeout**: how long you wait before giving up (prevents hanging forever).
-- **Retry/backoff**: re-attempting requests after transient failures.
-- **Schema**: expected structure of the JSON payload.
-- **Cache**: stored copy of responses used to avoid repeated calls and make runs reproducible.
+#### Key terms (defined)
+> **Definition:** An **API (Application Programming Interface)** is a contract for requesting and receiving structured data.
 
-#### Why caching matters for learning (and for production)
-- **Speed**: you can iterate without waiting on the network.
-- **Reproducibility**: your results do not change because an endpoint changed or the data was revised.
-- **Debuggability**: you can inspect raw payloads when parsing fails.
+> **Definition:** An **endpoint** is a specific API path that returns a particular dataset.
+
+> **Definition:** **Query parameters** are inputs you pass to an endpoint (like `series_id=UNRATE`).
+
+> **Definition:** A **schema** is the expected structure of the response payload (field names, types).
+
+> **Definition:** A **cache** is a local copy of responses used to avoid repeated calls and make runs reproducible.
+
+#### Why caching matters
+- Speed: iterate without waiting on the network.
+- Reproducibility: your results do not change because the API changed or the data was revised.
+- Debuggability: you can inspect raw payloads when parsing fails.
 
 #### Raw vs processed data
-- `data/raw/`: the API's response (JSON) with minimal transformation.
-- `data/processed/`: tables you created (CSV) after cleaning and aligning time.
+- `data/raw/` should hold cached JSON responses (closest to the API output).
+- `data/processed/` should hold your cleaned, aligned, analysis-ready tables.
 
-#### Python demo: minimal caching pattern
+#### Python demo: minimal caching pattern (commented)
 ```python
 from __future__ import annotations
 
@@ -83,30 +106,42 @@ from pathlib import Path
 import requests
 
 def load_or_fetch_json(path: Path, fetch_fn):
+    """Load JSON from disk if present; otherwise fetch and write it."""
     if path.exists():
         return json.loads(path.read_text())
+
     payload = fetch_fn()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload))
     return payload
 
 def fetch_example(url: str, params: dict):
+    """Minimal HTTP GET with a timeout and basic error handling."""
     r = requests.get(url, params=params, timeout=30)
     r.raise_for_status()  # raises on 4xx/5xx
     return r.json()
 ```
 
-#### Debug playbook: when your API code fails
-1. Print the full URL + params (so you can reproduce outside Python).
-2. Inspect the status code and response body.
-3. Cache the raw payload and re-run parsing offline.
-4. Validate schema assumptions (`payload.keys()`, sample rows).
-5. Add defensive parsing (type conversion, missing markers, etc.).
+#### Debug playbook (when API calls fail)
+1. Print the full URL and params.
+2. Check HTTP status code.
+3. Cache the raw response and debug parsing offline.
+4. Inspect payload keys (`payload.keys()`) and sample rows.
+5. Add defensive parsing (type conversion, missing markers).
 
 #### Economics caveat: revisions and vintages
-- Some macro series are revised after initial release (GDP is a classic example).
-- If you re-fetch later, historical values can change; caching avoids silent drift.
+Many macro series are revised (GDP is a classic example). If you re-fetch later, historical values can change.
+Caching avoids silent drift.
 
+### Project Code Map
+- `scripts/fetch_fred.py`: CLI fetch for FRED
+- `src/fred_api.py`: FRED client (`fetch_series_meta`, `fetch_series_observations`, `observations_to_frame`)
+- `src/census_api.py`: Census/ACS client (`fetch_variables`, `fetch_acs`)
+- `src/macro.py`: GDP + labels (`gdp_growth_qoq`, `gdp_growth_yoy`, `technical_recession_label`, `monthly_to_quarterly`)
+- `scripts/build_datasets.py`: end-to-end dataset builder
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
 - Merging quarterly GDP with monthly predictors without explicit aggregation (silent misalignment).
