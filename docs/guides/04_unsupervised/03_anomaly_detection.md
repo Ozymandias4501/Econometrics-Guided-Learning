@@ -21,6 +21,11 @@ This unsupervised module explores macro structure: factors, regimes, and anomali
 - **Anomaly detection**: flagging unusual points (often crisis periods).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -48,71 +53,175 @@ pca = PCA(n_components=2).fit(X)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Unsupervised Learning: Describe Structure Before Predicting
+### Core Unsupervised Learning: describe structure before predicting
 
-Unsupervised methods help you understand structure in the indicators.
-They do not require a target label.
+Unsupervised methods are tools for *description* rather than *prediction*:
+they help you understand structure in the indicators without a target label.
 
-#### Standardization matters
-Many unsupervised methods rely on distances or variances.
-If one variable has larger units, it dominates.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Standardization** rescales each feature to mean 0 and standard deviation 1.
+In macro and finance, variables move together for many reasons:
+- common shocks,
+- regimes (expansions vs recessions),
+- measurement changes.
 
-#### Interpretation stance
-Treat unsupervised outputs as:
-- descriptions (factors, regimes, anomalies)
-- hypotheses you can investigate
+Unsupervised methods help answer:
+- “Are there a few latent factors driving many series?” (PCA)
+- “Do observations cluster into regimes?” (clustering)
+- “Which periods look unusual?” (anomaly detection)
 
-Avoid treating them as causal explanations.
+These outputs are best treated as hypotheses you can investigate, not as causal explanations.
 
-### Deep Dive: Anomaly Detection (Crisis Periods)
+#### 2) Notation + setup (define symbols)
 
-Anomaly detection flags observations that look unusual relative to the bulk of the data.
-In macro, anomalies often correspond to crises, but not always.
+Let $X$ be an $n \\times p$ feature matrix:
+- rows: time periods or entities,
+- columns: standardized indicators.
 
-#### Key terms (defined)
-> **Definition:** An **outlier** is an observation far from typical behavior.
+Standardization is often essential:
 
-> **Definition:** An **anomaly score** measures "unusualness".
+$$
+\\tilde x_{ij} = \\frac{x_{ij} - \\bar x_j}{s_j}
+$$
 
-> **Definition:** **Isolation Forest** isolates points by random splits; anomalies isolate quickly.
+**What each term means**
+- $\\bar x_j$: mean of feature $j$,
+- $s_j$: standard deviation of feature $j$,
+- standardization prevents high-variance features from dominating.
 
-> **Definition:** **Contamination** is the expected fraction of anomalies (a hyperparameter).
+#### 3) Assumptions (and what can go wrong)
 
-#### Python demo: Isolation Forest intuition (commented)
-```python
-import numpy as np
+Unsupervised methods assume:
+- features are comparable after scaling,
+- distance/variance summaries reflect meaningful structure.
 
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
+Common failure modes:
+- forgetting to standardize,
+- including strong trends (nonstationarity) so “clusters” become time periods,
+- over-interpreting factors as “the economy’s true drivers.”
 
-rng = np.random.default_rng(0)
+#### 4) Estimation mechanics (high level)
 
-# Mostly normal points
-X_normal = rng.normal(size=(300, 3))
+- **PCA:** finds orthogonal directions that explain maximal variance.
+- **Clustering (k-means):** partitions observations to minimize within-cluster distances.
+- **Anomaly detection:** flags observations far from the “typical” pattern.
 
-# A few anomalous points
-X_anom = rng.normal(loc=6.0, scale=1.0, size=(10, 3))
+#### 5) Diagnostics + robustness (minimum set)
 
-X = np.vstack([X_normal, X_anom])
-X = StandardScaler().fit_transform(X)
+1) **Standardization check**
+- confirm features have mean ~0 and std ~1 after scaling.
 
-iso = IsolationForest(contamination=0.05, random_state=0).fit(X)
+2) **Stability**
+- do PCA loadings or cluster assignments change a lot if you change the sample period?
 
-# Higher score => more anomalous
-scores = -iso.score_samples(X)
-print(scores[-10:])
-```
+3) **Interpretability**
+- can you label factors/clusters with economic meaning using external context?
 
-#### Interpretation cautions
-- Anomaly does not mean recession.
-- Anomaly means the pattern is rare.
+4) **Sensitivity**
+- try different numbers of components/clusters; do conclusions persist?
 
-#### Debug checklist
-1. Standardize features.
-2. Sensitivity-check contamination.
-3. Inspect which indicators are extreme in anomalous periods.
+#### 6) Interpretation + reporting
+
+Report:
+- preprocessing (standardization, transformations),
+- chosen hyperparameters (k, number of PCs),
+- stability checks.
+
+**What this does NOT mean**
+- Clusters are not proof of causal regimes.
+- PCA components are not “true” economic factors; they are variance summaries.
+
+#### Exercises
+
+- [ ] Standardize a feature matrix and verify means/stds.
+- [ ] Fit PCA and interpret the top component using loadings.
+- [ ] Cluster the dataset and compare cluster periods to known recessions.
+- [ ] Try two different k values and explain how clustering changes.
+
+### Deep Dive: Anomaly detection — finding “unusual” macro periods
+
+Anomaly detection flags observations that look unusual relative to typical patterns.
+
+#### 1) Intuition (plain English)
+
+Crises (2008, 2020) look different in multivariate indicator space.
+Anomaly detection can highlight these periods without a recession label.
+
+Use it to:
+- detect outliers,
+- generate hypotheses,
+- build monitoring dashboards.
+
+#### 2) Notation + setup (define symbols)
+
+Let $x_t$ be the feature vector at time $t$.
+An anomaly detector produces a score:
+$$
+s_t = s(x_t),
+$$
+where larger (or smaller, depending on convention) means “more anomalous.”
+
+Simple baseline: z-score on one feature:
+$$
+z_t = \\frac{x_t - \\bar x}{s}.
+$$
+
+Multivariate baselines:
+- distance from mean (Mahalanobis distance),
+- isolation forest score,
+- reconstruction error from PCA.
+
+#### 3) Assumptions
+
+Anomaly detection assumes:
+- features are scaled comparably,
+- “typical” behavior exists and is represented in the data.
+
+Structural breaks can shift what is “normal,” so anomaly thresholds should be treated as time-varying in real monitoring.
+
+#### 4) Estimation mechanics (high level)
+
+Common approaches:
+- **PCA reconstruction:** anomalies have large reconstruction error using a few PCs.
+- **Isolation forest:** anomalies are easier to isolate with random splits.
+- **Distance-based:** far from center in standardized space.
+
+#### 5) Inference: focus on false positives/negatives
+
+Anomaly detection is not hypothesis testing; it is a scoring/ranking tool.
+Validate by:
+- checking whether known crises score high,
+- inspecting the top anomalies qualitatively.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Known-event sanity**
+- do 2008/2020 periods appear as anomalies?
+
+2) **Feature contribution**
+- which features drive the anomaly score? (inspect deviations)
+
+3) **Threshold sensitivity**
+- how many anomalies do you flag under different thresholds?
+
+4) **Stability**
+- do top anomalies persist if you change feature set or standardization window?
+
+#### 7) Interpretation + reporting
+
+Report:
+- anomaly method and preprocessing,
+- how threshold was chosen,
+- examples of top anomalies and what indicators drove them.
+
+**What this does NOT mean**
+- anomalies are not causal explanations; they are flags.
+
+#### Exercises
+
+- [ ] Fit an anomaly detector and list the top 10 anomalous dates; interpret at least 3.
+- [ ] Compare two methods (PCA reconstruction vs isolation forest) and discuss differences.
+- [ ] Vary the anomaly threshold and report how many periods are flagged.
 
 ### Project Code Map
 - `src/features.py`: feature engineering helpers (standardization happens in notebooks)

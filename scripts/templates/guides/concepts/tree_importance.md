@@ -1,60 +1,76 @@
-### Deep Dive: Tree Models + Feature Importance (What To Trust)
+### Deep Dive: Tree models and feature importance (interpretation pitfalls)
 
-Tree models can capture non-linear relationships and interactions.
-They can also overfit and they can be misinterpreted.
+Tree-based models can capture nonlinearities and interactions, but interpretation requires care.
 
-#### Key terms (defined)
-> **Definition:** A **decision tree** predicts by splitting data using feature thresholds.
+#### 1) Intuition (plain English)
 
-> **Definition:** A **random forest** averages many trees trained on bootstrapped samples.
+Trees can outperform linear models in prediction, especially when relationships are nonlinear.
+But tree “feature importance” is often misunderstood.
 
-> **Definition:** **Impurity-based importance** ("Gini importance") measures how much a feature reduces impurity across splits.
+**Story example:** A random forest says a variable is “important.”
+That does not mean changing the variable causes the outcome; it means the variable helps prediction in the fitted model.
 
-> **Definition:** **Permutation importance** measures how much performance drops when you shuffle a feature.
+#### 2) Notation + setup (define terms)
 
-#### Why impurity-based importance can mislead
-Impurity-based importance can be biased toward:
-- features with many possible split points
-- correlated features (importance can be split unpredictably)
+Tree models partition feature space into regions and predict with averages (regression) or probabilities (classification).
 
-Permutation importance is often more reliable for "usefulness" but still has caveats:
-- correlated features can share importance
-- shuffling breaks correlation structure
+Feature importance measures (common types):
+- **impurity-based importance:** how much splits reduce impurity across the forest,
+- **permutation importance:** how much performance drops when a feature is shuffled.
 
-#### Python demo: impurity vs permutation importance (commented)
-```python
-import numpy as np
+#### 3) Assumptions
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
+Interpretation assumes:
+- evaluation is leakage-free,
+- features are aligned correctly in time,
+- importance is stable across folds/periods.
 
-rng = np.random.default_rng(0)
+Correlated features complicate importance:
+- the model can “spread” importance across correlated predictors.
 
-# Two correlated features + one noise feature
-n = 800
-x1 = rng.normal(size=n)
-x2 = 0.9 * x1 + rng.normal(scale=0.5, size=n)
-x3 = rng.normal(size=n)
-X = np.column_stack([x1, x2, x3])
+#### 4) Estimation mechanics (high level)
 
-# Outcome depends mostly on x1
-p = 1 / (1 + np.exp(-(0.5 + 1.0 * x1)))
-y = rng.binomial(1, p)
+Impurity-based importance is fast but can be biased toward:
+- variables with many possible split points,
+- noisy continuous features.
 
-# Split (random here only because this is toy IID data)
-X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+Permutation importance is often more reliable:
+- measure baseline performance,
+- shuffle one feature in the test set,
+- measure performance drop.
 
-rf = RandomForestClassifier(n_estimators=300, random_state=0).fit(X_tr, y_tr)
-auc = roc_auc_score(y_te, rf.predict_proba(X_te)[:, 1])
-print('AUC:', auc)
-print('gini importances:', rf.feature_importances_)
+#### 5) Inference: treat importance as descriptive
 
-pi = permutation_importance(rf, X_te, y_te, n_repeats=20, random_state=0, scoring='roc_auc')
-print('perm importances:', pi.importances_mean)
-```
+Importance does not come with simple p-values.
+Uncertainty can be assessed via:
+- cross-validation variability,
+- bootstrap resampling,
+- permutation distributions.
 
-#### Interpretation rule
-Treat feature importance as "useful for prediction".
-Do not treat it as causal influence.
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Out-of-sample importance**
+- compute importance on test/validation data, not training.
+
+2) **Stability across folds/time**
+- if importance changes drastically across periods, interpretation is fragile.
+
+3) **Correlation groups**
+- check whether important variables are part of a correlated cluster; interpret the group, not a single variable.
+
+#### 7) Interpretation + reporting
+
+Report:
+- model type and evaluation scheme,
+- the importance method (impurity vs permutation),
+- stability checks.
+
+**What this does NOT mean**
+- importance is not a causal effect,
+- importance is not the same as “economic significance.”
+
+#### Exercises
+
+- [ ] Compute impurity and permutation importance for the same model; compare and explain differences.
+- [ ] Evaluate importance stability across two time periods.
+- [ ] Identify a correlated feature group and explain why “the most important feature” can be unstable.

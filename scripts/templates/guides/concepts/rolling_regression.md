@@ -1,50 +1,71 @@
-### Deep Dive: Rolling Regressions (Stability and Structural Breaks)
+### Deep Dive: Rolling regressions — coefficient stability over time
 
-A rolling regression re-fits a model on a moving window of past data.
+Rolling regressions are a simple tool to see whether relationships drift across macro regimes.
 
-#### Key terms (defined)
-> **Definition:** A **rolling window** is a fixed-size window that moves forward through time.
+#### 1) Intuition (plain English)
 
-> **Definition:** A **structural break** is when the relationship between X and Y changes.
+In macro data, relationships change:
+- policy regimes shift,
+- financial structure changes,
+- measurement changes.
 
-#### Why rolling regressions matter in macro
-Relationships can change across eras.
-A single coefficient can hide that instability.
+A single “full-sample” regression can hide instability.
+Rolling regressions estimate coefficients repeatedly on moving windows to reveal drift.
 
-#### Python demo: coefficient changes over time (commented)
-```python
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
+#### 2) Notation + setup (define symbols)
 
-rng = np.random.default_rng(0)
+Let window length be $W$ (in periods).
+For each end time $t \\ge W$, define the window:
+$$
+\\{t-W+1, \\dots, t\\}.
+$$
 
-n = 200
-x = rng.normal(size=n)
+Estimate:
+$$
+\\hat\\beta_t = \\arg\\min_{\\beta} \\sum_{s=t-W+1}^{t} (y_s - x_s'\\beta)^2.
+$$
 
-# Coefficient changes halfway
-beta = np.r_[np.repeat(0.2, n//2), np.repeat(-0.2, n - n//2)]
-y = 1.0 + beta * x + rng.normal(scale=1.0, size=n)
+**What each term means**
+- $\\hat\\beta_t$ is the coefficient estimate using only the most recent $W$ observations ending at $t$.
 
-idx = pd.date_range('1970-03-31', periods=n, freq='QE')
-df = pd.DataFrame({'y': y, 'x': x}, index=idx)
+#### 3) Assumptions and caveats
 
-window = 60
-betas = []
-dates = []
+Rolling regressions assume:
+- the relationship is approximately stable within each window,
+- $W$ is large enough for estimation but small enough to detect changes.
 
-for end in range(window, len(df)+1):
-    sub = df.iloc[end-window:end]
-    res = sm.OLS(sub['y'], sm.add_constant(sub[['x']])).fit()
-    betas.append(res.params['x'])
-    dates.append(sub.index[-1])
+Inference caveat:
+- consecutive windows overlap heavily, so estimates are correlated.
 
-beta_series = pd.Series(betas, index=dates)
-print(beta_series.head())
-```
+#### 4) Mechanics (practical use)
 
-#### Interpretation
-If coefficients drift:
-- the model is not describing a single stable mechanism
-- for prediction, you may want to weight recent history more
-- for inference, be cautious about a single "effect" claim
+Typical workflow:
+1) choose a window (e.g., 40 quarters ≈ 10 years),
+2) estimate $\\hat\\beta_t$ for each $t$,
+3) plot $\\hat\\beta_t$ with CI bands,
+4) compare drift to recession shading or known events.
+
+#### 5) Diagnostics + robustness (minimum set)
+
+1) **Window sensitivity**
+- try multiple $W$; does the drift pattern persist?
+
+2) **Residual diagnostics**
+- within each window, check autocorrelation; HAC may still be needed.
+
+3) **Regime interpretation**
+- do coefficient changes align with known macro events? (recessions, policy changes)
+
+#### 6) Interpretation + reporting
+
+Rolling coefficients suggest instability but do not identify why.
+Report:
+- window length,
+- SE choice,
+- and a narrative linking drift to plausible regime changes.
+
+#### Exercises
+
+- [ ] Run a rolling regression and plot the coefficient path with CI.
+- [ ] Compare two window lengths and explain the bias–variance trade-off.
+- [ ] Identify one period where the coefficient changes sign and propose a macro explanation.

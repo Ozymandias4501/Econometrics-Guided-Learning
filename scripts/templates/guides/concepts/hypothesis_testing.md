@@ -1,77 +1,135 @@
-### Deep Dive: Hypothesis Testing (How To Read p-values Without Fooling Yourself)
+### Deep Dive: Hypothesis Testing — how to read p-values without fooling yourself
 
-Hypothesis testing shows up everywhere in statistics and econometrics, especially in regression output.
+Hypothesis tests show up everywhere in econometrics output. The goal of this section is not to worship p-values, but to understand what they *are* and what they *are not*.
 
-#### The basic setup
-> **Definition:** A **hypothesis** is a claim about a population parameter (like a mean or a regression coefficient).
+#### 1) Intuition (plain English)
 
-> **Definition:** The **null hypothesis** $H_0$ is the default claim (often "no effect" or "no difference").
+A hypothesis test is a structured way to ask:
+- “If the true effect were zero, how surprising is my estimate?”
 
-> **Definition:** The **alternative hypothesis** $H_1$ is what you consider if the null looks inconsistent with the data.
+It is **not** a direct answer to:
+- “What is the probability the effect is real?”
+- “Is my model correct?”
+
+**Story example:** You regress unemployment on an interest-rate spread and get a small p-value.
+That might mean:
+- the relationship is real in-sample,
+- or your SE are wrong (autocorrelation),
+- or you tried many specs (multiple testing),
+- or the effect is tiny but precisely estimated.
+
+#### 2) Notation + setup (define symbols)
+
+We usually test a claim about a population parameter $\\theta$ (mean, regression coefficient, difference in means, …).
+
+Define:
+- $H_0$: the **null hypothesis** (default claim),
+- $H_1$: the **alternative hypothesis** (what you consider if evidence contradicts $H_0$),
+- $T$: a **test statistic** computed from data,
+- $\\alpha$: a pre-chosen significance level (e.g., 0.05).
 
 Example in regression:
-- $H_0: \beta_j = 0$ (feature $x_j$ has no linear association with $y$ after controlling for other X)
-- $H_1: \beta_j \ne 0$ (two-sided)
+- $H_0: \\beta_j = 0$
+- $H_1: \\beta_j \\neq 0$ (two-sided)
 
-#### Test statistics, p-values, and alpha
-> **Definition:** A **test statistic** is a number computed from the data that measures how incompatible the data is with $H_0$.
+#### 3) Assumptions (why tests are conditional statements)
 
-> **Definition:** A **p-value** is the probability (under the null model assumptions) of seeing a test statistic at least as extreme as what you observed.
+Every p-value is conditional on:
+- the statistical model (e.g., OLS assumptions),
+- the standard error estimator you use (naive vs robust vs HAC vs clustered),
+- the sample and selection process.
 
-> **Definition:** The **significance level** $\alpha$ is a chosen cutoff (like 0.05) for rejecting $H_0$.
+If those assumptions fail, the p-value may be meaningless.
 
-Important: the p-value is **not**:
-- the probability that $H_0$ is true
-- the probability your model is correct
-- a measure of economic importance
+#### 4) Estimation mechanics in OLS: where t-stats come from
 
-#### Type I / Type II errors and power
-> **Definition:** A **Type I error** is rejecting $H_0$ when it is true (false positive). Probability = $\alpha$ (approximately, under assumptions).
-
-> **Definition:** A **Type II error** is failing to reject $H_0$ when $H_1$ is true (false negative).
-
-> **Definition:** **Power** is $1 - P(\text{Type II error})$: the probability you detect an effect when it exists.
-
-Power increases with:
-- larger sample size
-- lower noise
-- larger true effect size
-
-#### Hypothesis testing in OLS regression
-OLS coefficient estimates:
+OLS estimates coefficients:
 
 $$
-\hat\beta = (X'X)^{-1}X'y
+\\hat\\beta = (X'X)^{-1}X'y.
 $$
 
-A typical coefficient test uses a t-statistic:
+For coefficient $\\beta_j$, you compute an estimated standard error $\\widehat{SE}(\\hat\\beta_j)$.
+
+The t-statistic for testing $H_0: \\beta_j = 0$ is:
 
 $$
- t_j = \frac{\hat\beta_j - 0}{\widehat{SE}(\hat\beta_j)}
+t_j = \\frac{\\hat\\beta_j - 0}{\\widehat{SE}(\\hat\\beta_j)}.
 $$
 
-- If model assumptions hold, $t_j$ is compared to a t distribution.
-- The p-value is derived from that distribution.
+**What each term means**
+- numerator: your estimated effect.
+- denominator: your uncertainty estimate.
+- large |t| means “many standard errors away from 0.”
 
-> **Key idea:** Changing the standard error estimator changes the t-statistic and p-value, even when the coefficient stays the same.
+Under suitable assumptions, $t_j$ is compared to a t distribution (or asymptotic normal), producing a p-value.
 
-#### Robust standard errors and hypothesis testing
-- **Plain OLS SE** assume homoskedastic, uncorrelated errors.
-- **HC3 SE** relax heteroskedasticity (common in cross-section).
-- **HAC/Newey-West SE** relax autocorrelation + heteroskedasticity (common in time series).
+#### 5) What the p-value actually means
 
-This project uses robust SE to avoid overly confident inference.
+> **Definition:** The **p-value** is the probability (under the null and model assumptions) of observing a test statistic at least as extreme as what you observed.
 
-#### Confidence intervals and hypothesis tests (relationship)
-A 95% confidence interval for $\beta_j$ is roughly:
+So:
+- p-value is about the *data under the null model*,
+- not about the probability the null is true.
+
+Also: p-values do not measure effect size.
+
+#### 6) Confidence intervals (often more informative than p-values)
+
+A 95% confidence interval is approximately:
 
 $$
-\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j)
+\\hat\\beta_j \\pm t_{0.975} \\cdot \\widehat{SE}(\\hat\\beta_j).
 $$
 
-If the interval does not include 0, the two-sided p-value is typically < 0.05.
+Interpretation:
+- it is a range of values consistent with the data under assumptions,
+- it shows both sign and magnitude uncertainty.
 
-#### Python demo: a simple t-test vs a regression coefficient test
+If the 95% CI excludes 0, the two-sided p-value is typically < 0.05.
+
+#### 7) Robust SE change p-values (without changing coefficients)
+
+Different SE estimators correspond to different assumptions about errors:
+- **Naive OLS SE:** homoskedastic, uncorrelated errors.
+- **HC3:** heteroskedasticity-robust (cross-section).
+- **HAC/Newey–West:** autocorrelation + heteroskedasticity (time series).
+- **Clustered SE:** within-cluster correlated errors (panels/DiD).
+
+**Key idea:** changing SE changes $\\widehat{SE}(\\hat\\beta_j)$ → changes t-stat and p-value, even when $\\hat\\beta_j$ is identical.
+
+#### 8) Diagnostics: how hypothesis testing goes wrong (minimum set)
+
+1) **Multiple testing**
+- If you try many features/specs, some will “work” by chance.
+- A few p-values < 0.05 are expected even if all true effects are 0.
+
+2) **P-hacking / specification search**
+- tweaking the model until p-values look good invalidates the usual interpretation.
+
+3) **Wrong SE (dependence)**
+- autocorrelation or clustering can make naive SE far too small.
+
+4) **Confounding**
+- a “significant” association is not a causal effect without identification.
+
+Practical rule:
+- interpret p-values as one piece of evidence, not a conclusion.
+
+#### 9) Interpretation + reporting (how to write results responsibly)
+
+Good reporting includes:
+- effect size (coefficient) in meaningful units,
+- uncertainty (CI preferred),
+- correct SE choice for the data structure,
+- a note about model limitations and identification.
+
+**What this does NOT mean**
+- “Significant” is not “important.”
+- “Not significant” is not “no effect” (could be low power).
+
+#### 10) Small Python demo (optional)
+
 ```python
 import numpy as np
 import pandas as pd
@@ -80,13 +138,12 @@ from scipy import stats
 
 rng = np.random.default_rng(0)
 
-# 1) One-sample t-test: is the mean of x equal to 0?
+# 1) One-sample t-test
 x = rng.normal(loc=0.2, scale=1.0, size=200)
 t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)
 print('t-test t:', t_stat, 'p:', p_val)
 
-# 2) Regression t-test: is slope on x equal to 0?
-# Create y that depends on x
+# 2) Regression t-test
 n = 300
 x2 = rng.normal(size=n)
 y = 1.0 + 0.5 * x2 + rng.normal(scale=1.0, size=n)
@@ -95,33 +152,11 @@ df = pd.DataFrame({'y': y, 'x': x2})
 X = sm.add_constant(df[['x']])
 res = sm.OLS(df['y'], X).fit()
 print(res.summary())
-
-# Manual t-stat for slope (matches summary output)
-beta_hat = res.params['x']
-se_hat = res.bse['x']
-print('manual t:', beta_hat / se_hat)
 ```
 
-#### How hypothesis tests go wrong in macro/ML workflows
-Common failure modes:
-- **Multiple testing**: trying many features/specifications inflates false positives.
-- **P-hacking**: changing the spec until p-values look good.
-- **Autocorrelation/nonstationarity**: time series violate assumptions; naive SE can be wildly wrong.
-- **Confounding**: significance does not imply causation.
+#### Exercises
 
-> **Definition:** **Multiple testing** means running many hypothesis tests; even if all nulls are true, some p-values will be small by chance.
-
-Practical rule: if you searched over 50 features/specs, a few p-values < 0.05 are expected even with no real signal.
-
-#### How to use p-values responsibly in this project
-- Prefer robust SE (HC3 / HAC) when appropriate.
-- Treat p-values as one piece of evidence, not the goal.
-- Report effect sizes and uncertainty (confidence intervals), not just "significant".
-- Use out-of-sample evaluation for predictive tasks.
-
-#### Project touchpoints (where hypothesis testing shows up)
-- Regression notebooks use `statsmodels` summaries and ask you to interpret:
-  - coefficients, standard errors, t-stats, p-values, and confidence intervals
-- `src/econometrics.py` provides convenience wrappers:
-  - `fit_ols_hc3` for cross-sectional robust SE
-  - `fit_ols_hac` for time-series robust SE
+- [ ] Take one regression output and rewrite it in words: coefficient, CI, and what assumptions the p-value relies on.
+- [ ] Show how p-values change when you switch from naive SE to HC3 or HAC (same coefficient, different uncertainty).
+- [ ] Create a multiple-testing demonstration: test 50 random predictors against random noise and count how many p-values < 0.05.
+- [ ] Write 6 sentences explaining why “statistically significant” is not the same as “economically meaningful.”

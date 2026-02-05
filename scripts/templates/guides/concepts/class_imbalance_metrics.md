@@ -1,52 +1,91 @@
-### Deep Dive: Class Imbalance and Why Accuracy Lies
+### Deep Dive: Class imbalance and metrics (why accuracy is misleading)
 
-Recessions are rare. That makes recession prediction an imbalanced classification problem.
+Recessions are rare. Rare events require different evaluation habits.
 
-#### Key terms (defined)
-> **Definition:** The **base rate** is the prevalence of the positive class (fraction of recession quarters).
+#### 1) Intuition (plain English)
 
-> **Definition:** **Imbalanced data** means one class is much rarer than the other.
+If 95% of quarters are “no recession,” a dumb model that always predicts “no recession” has 95% accuracy.
+That accuracy is useless.
 
-> **Definition:** **Accuracy** is $(TP + TN) / (TP + TN + FP + FN)$.
+So we use metrics that focus on:
+- ranking risk (AUC),
+- detecting positives (recall),
+- avoiding false alarms (precision),
+- probability quality (Brier/log loss).
 
-> **Definition:** **Precision** is $TP / (TP + FP)$.
+#### 2) Notation + setup (define symbols)
 
-> **Definition:** **Recall** is $TP / (TP + FN)$.
+Confusion matrix terms:
+- TP: true positives
+- FP: false positives
+- TN: true negatives
+- FN: false negatives
 
-Where $TP, TN, FP, FN$ are the confusion-matrix counts.
+Key metrics:
 
-#### The accuracy trap
-If recessions happen 10% of the time, predicting "no recession" always gives 90% accuracy.
-That model is useless.
+$$
+\\text{Precision} = \\frac{TP}{TP + FP}
+\\qquad
+\\text{Recall} = \\frac{TP}{TP + FN}
+$$
 
-#### Metrics you should always report
-- PR-AUC (rare-event focus)
-- ROC-AUC (ranking)
-- Brier score or log loss (probability quality)
+$$
+\\text{F1} = 2 \\cdot \\frac{\\text{Precision}\\cdot \\text{Recall}}{\\text{Precision}+\\text{Recall}}
+$$
 
-#### Python demo: why PR-AUC can be more honest than ROC-AUC
-```python
-import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score
+Baseline (prevalence):
+$$
+\\pi = \\Pr(y=1).
+$$
 
-rng = np.random.default_rng(0)
+#### 3) Assumptions (what metrics assume)
 
-# 10% positives
-n = 500
-y = rng.binomial(1, 0.1, size=n)
+Metrics assume:
+- you evaluate on future-like data (time-aware splits),
+- labels are correctly aligned to horizon,
+- the positive class definition is stable.
 
-# A weak signal score
-score = 0.2 * y + rng.normal(scale=1.0, size=n)
+#### 4) Estimation mechanics: ranking vs thresholding
 
-print('ROC-AUC:', roc_auc_score(y, score))
-print('PR-AUC :', average_precision_score(y, score))
-```
+Two different tasks:
+- **ranking:** can the model rank high-risk periods above low-risk periods? (ROC-AUC, PR-AUC)
+- **decisions:** choose a threshold $\\tau$ and act (precision/recall at $\\tau$)
 
-#### Baselines you should compute
-- Majority class baseline
-- Persistence baseline (predict next = current)
-- Simple heuristic baseline (economic rule-of-thumb)
+PR-AUC is often more informative than ROC-AUC when positives are rare.
 
-#### Decision framing
-Ultimately you will pick a threshold and make decisions.
-Define costs for false positives vs false negatives.
+#### 5) Inference: cost is part of evaluation
+
+A threshold is not a statistical property; it is a decision rule.
+Choosing it requires a cost story:
+- false negatives (missed recessions) vs false positives (false alarms).
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Report prevalence**
+- always report the positive rate in the test period.
+
+2) **Use PR curves**
+- PR curves are sensitive to imbalance and directly reflect precision/recall trade-offs.
+
+3) **Threshold sweep**
+- show metrics across thresholds; do not report a single arbitrary threshold.
+
+4) **Error analysis**
+- inspect false positives and false negatives; are they clustered in certain regimes?
+
+#### 7) Interpretation + reporting
+
+Report:
+- ROC-AUC + PR-AUC,
+- at least one thresholded operating point (precision/recall),
+- and how threshold was chosen.
+
+**What this does NOT mean**
+- a high accuracy can be meaningless under imbalance,
+- AUC does not tell you calibration.
+
+#### Exercises
+
+- [ ] Compute accuracy, precision, recall for a baseline “always negative” classifier; interpret.
+- [ ] Plot ROC and PR curves and explain why PR is more informative here.
+- [ ] Choose a threshold based on a cost story and report the resulting confusion matrix.

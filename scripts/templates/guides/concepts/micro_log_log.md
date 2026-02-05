@@ -1,51 +1,80 @@
-### Deep Dive: Log-Log Regression (Elasticity-Style Interpretation)
+### Deep Dive: Log–log regression (elasticity-style interpretation)
 
-In microeconomic cross-sectional data, log transforms are common because many variables (income, population, rent) are heavy-tailed.
+Log transforms are common in micro data because many variables (income, rent, population) are heavy-tailed and relationships are often multiplicative.
 
-#### Key terms (defined)
-> **Definition:** **Cross-sectional data** observes many units (counties) at one time.
+#### 1) Intuition (plain English)
 
-> **Definition:** A **log transform** uses $\log(x)$ to compress scale and turn multiplicative relationships into additive ones.
+In a log–log model, coefficients are approximately **elasticities**:
+- “A 1% increase in $x$ is associated with a $\\beta$% change in $y$.”
 
-#### Log-log model and interpretation
-A log-log regression is:
+This is often a more interpretable economic statement than “one dollar changes rent by …”
 
-$$
-\log(y) = \alpha + \beta \log(x) + \varepsilon
-$$
+#### 2) Notation + setup (define symbols)
 
-Interpretation (rule of thumb):
-- a 1% increase in $x$ is associated with about a $\beta$% increase in $y$.
-
-Why? Because for small changes:
+Log–log regression:
 
 $$
-\Delta \log(x) \approx \frac{\Delta x}{x}
+\\log(y_i) = \\alpha + \\beta \\log(x_i) + \\varepsilon_i.
 $$
 
-#### Pitfall: zeros and missing values
-- $\log(0)$ is undefined.
-- Filter out non-positive values or use a different transform (`log1p`) if justified.
+**What each term means**
+- $\\log(\\cdot)$ compresses scale and turns multiplicative relationships into additive ones.
+- $\\beta$ is the elasticity-like coefficient.
 
-#### Python demo: simulated log-log relationship (commented)
-```python
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
+Why elasticity? For small changes:
 
-rng = np.random.default_rng(0)
+$$
+\\Delta \\log(x) \\approx \\frac{\\Delta x}{x}
+\\quad \\Rightarrow \\quad
+\\Delta \\log(y) \\approx \\beta \\Delta \\log(x).
+$$
 
-n = 800
-x = np.exp(rng.normal(size=n))
+So a 1% change in $x$ corresponds to about a $\\beta$% change in $y$.
 
-# y grows with x^0.3 (multiplicative)
-y = 2.0 * (x ** 0.3) * np.exp(rng.normal(scale=0.2, size=n))
+#### 3) Assumptions (and practical caveats)
 
-df = pd.DataFrame({'x': x, 'y': y})
-df['lx'] = np.log(df['x'])
-df['ly'] = np.log(df['y'])
+Log transforms require:
+- $x_i > 0$ and $y_i > 0$.
 
-X = sm.add_constant(df[['lx']])
-res = sm.OLS(df['ly'], X).fit()
-print(res.params)
-```
+Common issues:
+- zeros (log undefined),
+- negative values,
+- heavy measurement error at small values.
+
+Workarounds (must be justified):
+- filter to positive values,
+- use `log1p` (changes interpretation),
+- use alternative functional forms.
+
+#### 4) Estimation mechanics
+
+Once transformed, you fit OLS on $\\log(y)$ and $\\log(x)$ as usual.
+Interpretation should be in percent changes, not raw units.
+
+#### 5) Inference
+
+If heteroskedasticity is present (common in micro), use robust SE (HC3).
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Check positivity**
+- count how many observations would be dropped by logging.
+
+2) **Residual diagnostics**
+- plot residuals vs fitted; heteroskedasticity is common.
+
+3) **Functional form sensitivity**
+- compare log–log to level-level or log-level if meaningful.
+
+#### 7) Interpretation + reporting
+
+Report:
+- how you handled zeros,
+- whether coefficients are interpreted as elasticities,
+- robust SE choice.
+
+#### Exercises
+
+- [ ] Fit a log–log regression and interpret $\\beta$ as an elasticity in words.
+- [ ] Compare to a level-level regression; explain how interpretation changes.
+- [ ] Demonstrate the “small change” approximation numerically for one observation.

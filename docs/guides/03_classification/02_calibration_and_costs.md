@@ -23,6 +23,11 @@ This classification module predicts **next-quarter technical recession** from ma
 - **Brier score**: mean squared error of probabilities (lower is better).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -55,111 +60,209 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: Probabilities, Metrics, and Thresholds
+### Core Classification: probabilities, losses, and decision thresholds
 
-In this project, classification is about predicting recession risk as a probability.
+In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
 
-#### Logistic regression mechanics
-Logistic regression models probabilities via log-odds:
+#### 1) Intuition (plain English)
 
-$$
-\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
-$$
+Binary labels (recession vs not) hide uncertainty.
+The useful object is the probability:
+- “Given data today, how likely is a recession next quarter?”
 
-Then:
+Probabilities let you:
+- compare risk over time,
+- set thresholds based on costs,
+- evaluate calibration (whether 30% means ~30% in reality).
 
-$$
- p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
-$$
+#### 2) Notation + setup (define symbols)
 
-#### Metrics you should treat as standard
-- ROC-AUC: ranking quality across thresholds
-- PR-AUC: often more informative when positives are rare
-- Brier score (or log loss): probability quality
+Let:
+- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $x_i$ be features,
+- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
 
-#### Thresholding is a decision rule
-> **Definition:** A **threshold** converts probabilities into labels.
-
-Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
-Pick thresholds based on:
-- decision costs
-- desired recall/precision tradeoff
-- calibration quality
-
-### Deep Dive: Calibration, Brier Score, and Decision Thresholds
-
-In classification, you often want probabilities, not just labels.
-
-> **Definition:** A model is **calibrated** if events predicted with probability 0.3 happen about 30% of the time.
-
-#### Brier score (math)
-> **Definition:** The **Brier score** is a proper scoring rule for probability forecasts.
-
-For binary outcomes $y_i \in \{0,1\}$ and predicted probabilities $p_i$:
+Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\mathrm{Brier} = \frac{1}{n} \sum_{i=1}^n (p_i - y_i)^2
+\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
 $$
 
-Lower is better.
+Equivalently:
 
-#### Why calibration matters for recession risk
-A recession probability model is only useful if you can make decisions from its probabilities:
-- allocate risk
-- run stress tests
-- change thresholds based on costs
+$$
+p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
+$$
 
-If probabilities are not calibrated, "30%" and "70%" are not meaningful signals.
+**What each term means**
+- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- coefficients move probabilities through the log-odds scale.
 
-#### Calibration curve (reliability diagram)
-A calibration curve groups predictions into bins and compares:
-- average predicted probability in the bin
-- actual fraction of positives in the bin
+#### 3) Assumptions (and what “probability model” means)
 
-If the curve follows the diagonal, calibration is good.
+Logistic regression assumes:
+- a linear relationship in log-odds,
+- observations are conditionally independent given $x$ (often violated in time series),
+- no perfect multicollinearity in features.
 
-#### Python demo: calibration and Brier (commented)
-```python
-import numpy as np
-from sklearn.calibration import calibration_curve
-from sklearn.metrics import brier_score_loss
+Even if the model is misspecified, it can still be useful for ranking risk.
+But calibration can suffer, so we measure it.
 
-# y_true: 0/1 outcomes
-# y_prob: predicted probabilities
+#### 4) Estimation mechanics (how the model is fit)
 
-# Example placeholders:
-# y_true = np.array([...])
-# y_prob = np.array([...])
+Logistic regression is typically fit by maximum likelihood:
+- choose $\\beta$ to maximize the probability of the observed labels.
 
-# Brier score
-# print('brier:', brier_score_loss(y_true, y_prob))
+The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
-# Calibration curve
-# prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
-# print(prob_pred)
-# print(prob_true)
-```
+$$
+\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+$$
 
-#### Thresholds and decision costs
-> **Definition:** A **decision threshold** converts probabilities to class labels (e.g., predict recession if p >= 0.4).
+In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
 
-A good threshold depends on costs:
-- false positives (crying wolf)
-- false negatives (missing a recession)
+#### 5) Inference vs prediction
 
-A common pattern:
-1. define a cost ratio (how bad is FN vs FP?)
-2. choose threshold to minimize expected cost
+- `statsmodels` gives standard errors and p-values (inference framing).
+- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
 
-#### Debug checklist
-1. Always compute base rate (how rare is the positive class?).
-2. Report PR-AUC and Brier score (not just accuracy).
-3. Compare calibrated vs uncalibrated models.
-4. Re-check calibration across eras (walk-forward).
+In this project:
+- prioritize time-aware out-of-sample evaluation,
+- treat inference outputs as descriptive unless you have identification.
 
-#### Project touchpoints (where you will use these)
-- `src/evaluation.py` computes classification metrics including ROC-AUC, PR-AUC, and Brier score.
-- The calibration notebook asks you to plot a reliability diagram and pick a threshold based on explicit costs.
+#### 6) Metrics (what to measure and why)
+
+At minimum, treat these as standard:
+
+- **ROC-AUC:** ranking performance (threshold-free).
+- **PR-AUC:** often more informative when positives are rare.
+- **Brier score:** mean squared error of probabilities:
+$$
+\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+$$
+- **Calibration plots:** do predicted probabilities match observed frequencies?
+
+#### 7) Thresholding is a decision rule (not a model property)
+
+A threshold $\\tau$ converts probability to a hard label:
+$$
+\\hat y_i = 1[p_i \\ge \\tau].
+$$
+
+Choosing $\\tau$ should reflect costs:
+- false positives (crying wolf),
+- false negatives (missing recessions).
+
+#### 8) Diagnostics + robustness (minimum set)
+
+1) **Time-aware evaluation**
+- use a time split or walk-forward; avoid random splits for forecasting tasks.
+
+2) **Calibration**
+- plot predicted vs observed probabilities; compute Brier score.
+
+3) **Threshold sensitivity**
+- show how precision/recall changes with threshold.
+
+4) **Feature stability**
+- check whether model performance is stable over subperiods (structural change).
+
+#### 9) Interpretation + reporting
+
+Report:
+- horizon (what “next quarter” means),
+- split method and dates,
+- probability calibration (not just accuracy),
+- threshold choice rationale.
+
+**What this does NOT mean**
+- AUC does not tell you if probabilities are calibrated.
+- A good backtest does not guarantee future performance in a new regime.
+
+#### Exercises
+
+- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
+- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
+- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
+- [ ] Compare random-split vs time-split AUC and explain the difference.
+
+### Deep Dive: Calibration and Brier score (probabilities you can trust)
+
+Calibration is the difference between “good ranking” and “usable probabilities.”
+
+#### 1) Intuition (plain English)
+
+If a model says “30% recession probability” many times, then about 30% of those cases should actually be recessions.
+If not, the model is miscalibrated (over- or under-confident).
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $p_i$ be predicted probability,
+- $y_i \\in \\{0,1\\}$ be the realized label.
+
+Brier score:
+
+$$
+\\text{Brier} = \\frac{1}{n}\\sum_{i=1}^{n} (p_i - y_i)^2.
+$$
+
+**What it measures**
+- probability mean squared error (lower is better).
+
+Calibration curve:
+- bin predictions into groups (e.g., 0.0–0.1, 0.1–0.2, …),
+- compare average predicted probability vs empirical frequency in each bin.
+
+#### 3) Assumptions
+
+Calibration assessment assumes:
+- evaluation is out-of-sample (time split / walk-forward),
+- enough data in bins (small samples produce noisy curves),
+- label definition is stable.
+
+#### 4) Estimation mechanics: why calibration can fail
+
+Even if a classifier ranks well, probabilities can be miscalibrated due to:
+- regularization strength,
+- class imbalance,
+- dataset shift (new regime),
+- model misspecification.
+
+Calibration methods:
+- Platt scaling (logistic calibration),
+- isotonic regression.
+
+These should be fit on validation data, not on the test set.
+
+#### 5) Inference: decisions require calibrated probabilities
+
+If you use probabilities for decisions (alerts, risk management), calibration matters more than AUC.
+AUC only checks ranking, not absolute probability accuracy.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Calibration curve + Brier**
+- always pair a curve with a scalar metric.
+
+2) **Subperiod calibration**
+- check calibration separately in different eras (structural change).
+
+3) **Threshold sensitivity**
+- miscalibration can shift optimal thresholds across time.
+
+#### 7) Interpretation + reporting
+
+Report:
+- Brier score,
+- calibration plot (with bin counts),
+- whether calibration was improved with post-processing (and how).
+
+#### Exercises
+
+- [ ] Produce a calibration curve and identify whether the model is over- or under-confident.
+- [ ] Compute Brier score and compare to a baseline (constant probability = prevalence).
+- [ ] Fit a calibration method on validation data and re-check calibration on test data.
 
 ### Project Code Map
 - `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)

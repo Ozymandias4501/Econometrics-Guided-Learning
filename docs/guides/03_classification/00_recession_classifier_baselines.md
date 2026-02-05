@@ -23,6 +23,11 @@ This classification module predicts **next-quarter technical recession** from ma
 - **Brier score**: mean squared error of probabilities (lower is better).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -55,89 +60,223 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: Probabilities, Metrics, and Thresholds
+### Core Classification: probabilities, losses, and decision thresholds
 
-In this project, classification is about predicting recession risk as a probability.
+In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
 
-#### Logistic regression mechanics
-Logistic regression models probabilities via log-odds:
+#### 1) Intuition (plain English)
+
+Binary labels (recession vs not) hide uncertainty.
+The useful object is the probability:
+- “Given data today, how likely is a recession next quarter?”
+
+Probabilities let you:
+- compare risk over time,
+- set thresholds based on costs,
+- evaluate calibration (whether 30% means ~30% in reality).
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $x_i$ be features,
+- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+
+Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
 $$
 
-Then:
+Equivalently:
 
 $$
- p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
 $$
 
-#### Metrics you should treat as standard
-- ROC-AUC: ranking quality across thresholds
-- PR-AUC: often more informative when positives are rare
-- Brier score (or log loss): probability quality
+**What each term means**
+- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- coefficients move probabilities through the log-odds scale.
 
-#### Thresholding is a decision rule
-> **Definition:** A **threshold** converts probabilities into labels.
+#### 3) Assumptions (and what “probability model” means)
 
-Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
-Pick thresholds based on:
-- decision costs
-- desired recall/precision tradeoff
-- calibration quality
+Logistic regression assumes:
+- a linear relationship in log-odds,
+- observations are conditionally independent given $x$ (often violated in time series),
+- no perfect multicollinearity in features.
 
-### Deep Dive: Class Imbalance and Why Accuracy Lies
+Even if the model is misspecified, it can still be useful for ranking risk.
+But calibration can suffer, so we measure it.
 
-Recessions are rare. That makes recession prediction an imbalanced classification problem.
+#### 4) Estimation mechanics (how the model is fit)
 
-#### Key terms (defined)
-> **Definition:** The **base rate** is the prevalence of the positive class (fraction of recession quarters).
+Logistic regression is typically fit by maximum likelihood:
+- choose $\\beta$ to maximize the probability of the observed labels.
 
-> **Definition:** **Imbalanced data** means one class is much rarer than the other.
+The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
-> **Definition:** **Accuracy** is $(TP + TN) / (TP + TN + FP + FN)$.
+$$
+\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+$$
 
-> **Definition:** **Precision** is $TP / (TP + FP)$.
+In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
 
-> **Definition:** **Recall** is $TP / (TP + FN)$.
+#### 5) Inference vs prediction
 
-Where $TP, TN, FP, FN$ are the confusion-matrix counts.
+- `statsmodels` gives standard errors and p-values (inference framing).
+- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
 
-#### The accuracy trap
-If recessions happen 10% of the time, predicting "no recession" always gives 90% accuracy.
-That model is useless.
+In this project:
+- prioritize time-aware out-of-sample evaluation,
+- treat inference outputs as descriptive unless you have identification.
 
-#### Metrics you should always report
-- PR-AUC (rare-event focus)
-- ROC-AUC (ranking)
-- Brier score or log loss (probability quality)
+#### 6) Metrics (what to measure and why)
 
-#### Python demo: why PR-AUC can be more honest than ROC-AUC
-```python
-import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score
+At minimum, treat these as standard:
 
-rng = np.random.default_rng(0)
+- **ROC-AUC:** ranking performance (threshold-free).
+- **PR-AUC:** often more informative when positives are rare.
+- **Brier score:** mean squared error of probabilities:
+$$
+\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+$$
+- **Calibration plots:** do predicted probabilities match observed frequencies?
 
-# 10% positives
-n = 500
-y = rng.binomial(1, 0.1, size=n)
+#### 7) Thresholding is a decision rule (not a model property)
 
-# A weak signal score
-score = 0.2 * y + rng.normal(scale=1.0, size=n)
+A threshold $\\tau$ converts probability to a hard label:
+$$
+\\hat y_i = 1[p_i \\ge \\tau].
+$$
 
-print('ROC-AUC:', roc_auc_score(y, score))
-print('PR-AUC :', average_precision_score(y, score))
-```
+Choosing $\\tau$ should reflect costs:
+- false positives (crying wolf),
+- false negatives (missing recessions).
 
-#### Baselines you should compute
-- Majority class baseline
-- Persistence baseline (predict next = current)
-- Simple heuristic baseline (economic rule-of-thumb)
+#### 8) Diagnostics + robustness (minimum set)
 
-#### Decision framing
-Ultimately you will pick a threshold and make decisions.
-Define costs for false positives vs false negatives.
+1) **Time-aware evaluation**
+- use a time split or walk-forward; avoid random splits for forecasting tasks.
+
+2) **Calibration**
+- plot predicted vs observed probabilities; compute Brier score.
+
+3) **Threshold sensitivity**
+- show how precision/recall changes with threshold.
+
+4) **Feature stability**
+- check whether model performance is stable over subperiods (structural change).
+
+#### 9) Interpretation + reporting
+
+Report:
+- horizon (what “next quarter” means),
+- split method and dates,
+- probability calibration (not just accuracy),
+- threshold choice rationale.
+
+**What this does NOT mean**
+- AUC does not tell you if probabilities are calibrated.
+- A good backtest does not guarantee future performance in a new regime.
+
+#### Exercises
+
+- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
+- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
+- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
+- [ ] Compare random-split vs time-split AUC and explain the difference.
+
+### Deep Dive: Class imbalance and metrics (why accuracy is misleading)
+
+Recessions are rare. Rare events require different evaluation habits.
+
+#### 1) Intuition (plain English)
+
+If 95% of quarters are “no recession,” a dumb model that always predicts “no recession” has 95% accuracy.
+That accuracy is useless.
+
+So we use metrics that focus on:
+- ranking risk (AUC),
+- detecting positives (recall),
+- avoiding false alarms (precision),
+- probability quality (Brier/log loss).
+
+#### 2) Notation + setup (define symbols)
+
+Confusion matrix terms:
+- TP: true positives
+- FP: false positives
+- TN: true negatives
+- FN: false negatives
+
+Key metrics:
+
+$$
+\\text{Precision} = \\frac{TP}{TP + FP}
+\\qquad
+\\text{Recall} = \\frac{TP}{TP + FN}
+$$
+
+$$
+\\text{F1} = 2 \\cdot \\frac{\\text{Precision}\\cdot \\text{Recall}}{\\text{Precision}+\\text{Recall}}
+$$
+
+Baseline (prevalence):
+$$
+\\pi = \\Pr(y=1).
+$$
+
+#### 3) Assumptions (what metrics assume)
+
+Metrics assume:
+- you evaluate on future-like data (time-aware splits),
+- labels are correctly aligned to horizon,
+- the positive class definition is stable.
+
+#### 4) Estimation mechanics: ranking vs thresholding
+
+Two different tasks:
+- **ranking:** can the model rank high-risk periods above low-risk periods? (ROC-AUC, PR-AUC)
+- **decisions:** choose a threshold $\\tau$ and act (precision/recall at $\\tau$)
+
+PR-AUC is often more informative than ROC-AUC when positives are rare.
+
+#### 5) Inference: cost is part of evaluation
+
+A threshold is not a statistical property; it is a decision rule.
+Choosing it requires a cost story:
+- false negatives (missed recessions) vs false positives (false alarms).
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Report prevalence**
+- always report the positive rate in the test period.
+
+2) **Use PR curves**
+- PR curves are sensitive to imbalance and directly reflect precision/recall trade-offs.
+
+3) **Threshold sweep**
+- show metrics across thresholds; do not report a single arbitrary threshold.
+
+4) **Error analysis**
+- inspect false positives and false negatives; are they clustered in certain regimes?
+
+#### 7) Interpretation + reporting
+
+Report:
+- ROC-AUC + PR-AUC,
+- at least one thresholded operating point (precision/recall),
+- and how threshold was chosen.
+
+**What this does NOT mean**
+- a high accuracy can be meaningless under imbalance,
+- AUC does not tell you calibration.
+
+#### Exercises
+
+- [ ] Compute accuracy, precision, recall for a baseline “always negative” classifier; interpret.
+- [ ] Plot ROC and PR curves and explain why PR is more informative here.
+- [ ] Choose a threshold based on a cost story and report the resulting confusion matrix.
 
 ### Project Code Map
 - `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)

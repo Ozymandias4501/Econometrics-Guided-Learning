@@ -20,6 +20,11 @@ This data module builds the datasets used throughout the project: a macro panel 
 - **Quarter-end timestamp**: representing a quarter by its final date to make merges unambiguous.
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -49,76 +54,202 @@ target_next_q = recession.shift(-1)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Data: Build Datasets You Can Trust
+### Core Data: build datasets you can trust (schema, timing, reproducibility)
 
-Modeling is downstream of data.
-If you do not trust your data processing, you cannot trust your model output.
+Good modeling is downstream of good data. In econometrics, “good data” means more than “no missing values”:
+it means the dataset matches the real timing and measurement of the economic problem.
 
-#### The three layers of a real data pipeline
-> **Definition:** **Raw data** is the closest representation of what the source returned.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Processed data** is cleaned and aligned for analysis.
+Most downstream mistakes trace back to one of these upstream issues:
+- mixing frequencies incorrectly (monthly vs quarterly),
+- misaligning timestamps (month-start vs month-end),
+- using revised data as if it were known in real time,
+- silently changing transformations (growth rate vs level) mid-project.
 
-> **Definition:** A **modeling table** is the final table with features and targets aligned and ready for splitting.
+**Story example:** You merge monthly unemployment to quarterly GDP growth.
+If you accidentally align the *end-of-quarter* unemployment with *start-of-quarter* GDP, you change the meaning of “what was known when.”
 
-#### Timing is part of the schema
-When you build features, you are also defining "what was known when".
-That is why frequency alignment and target shifting are first-class topics in this project.
+#### 2) Notation + setup (define symbols)
 
-#### A practical habit
-Keep a simple data dictionary as you go:
-- what is each column?
-- what are its units?
-- what frequency is it observed?
-- what transformations did you apply?
+We will use the “time + horizon” language throughout the repo:
+- $t$: time index (month/quarter/year),
+- $X_t$: features available at time $t$,
+- $y_{t+h}$: outcome/label defined $h$ periods ahead.
 
-### Deep Dive: Frequency Alignment (Daily/Monthly/Quarterly)
+Data pipeline layers (repo convention):
 
-Economic indicators arrive at different frequencies:
-- GDP is quarterly.
-- CPI/unemployment are monthly.
-- Yield curve spreads can be daily.
+1) **Raw data** (`data/raw/`)
+- closest representation of the source response (API output, raw CSV)
+- should be cacheable and re-creatable
 
-To build a single modeling table, you must choose a timeline and convert everything onto it.
+2) **Processed data** (`data/processed/`)
+- cleaned, aligned frequencies, derived columns
+- “analysis-ready” but not necessarily “model-ready”
 
-#### Key terms (defined)
-> **Definition:** **Resampling** converts a time series to a new frequency (e.g., daily -> monthly).
+3) **Modeling table**
+- final table where:
+  - features are past-only,
+  - labels are shifted to the forecast horizon,
+  - missingness from lags/rolls is handled,
+  - you can split without leakage.
 
-> **Definition:** **Aggregation** combines many observations into one (mean/last/sum).
+#### 3) Assumptions (and why we state them explicitly)
 
-> **Definition:** **Forward-fill (ffill)** carries the last known value forward until updated.
+Every dataset embeds assumptions:
+- measurement units (percent vs fraction),
+- seasonal adjustment,
+- timing conventions (month-end, quarter-end),
+- whether revisions matter (real-time vs revised),
+- whether the sample composition changes over time.
 
-> **Definition:** A **quarter-end timestamp** represents the quarter by its final date (used for merges).
+You cannot remove assumptions; you can only make them explicit and test sensitivity.
 
-#### Why month-end is a pragmatic choice
-- Many macro series are monthly.
-- Daily series can be summarized to month-end (`last`) or month-average (`mean`).
-- Month-end timestamps make quarterly aggregation easier.
+#### 4) Mechanics: the minimum reliable pipeline
 
-#### Python demo: daily -> month-end (last vs mean)
-```python
-import numpy as np
-import pandas as pd
+**(a) Ingest + cache**
+- Always cache API responses to disk.
+- Your code should be able to re-run without changing results.
 
-idx = pd.date_range('2020-01-01', periods=120, freq='D')
+**(b) Parse + type**
+- Parse dates, set a proper index (DatetimeIndex for macro; MultiIndex for panels).
+- Coerce numeric columns to numeric types (watch out for strings).
 
-# Toy daily series
-x_daily = pd.Series(np.random.default_rng(0).normal(size=len(idx)).cumsum(), index=idx)
+**(c) Align frequency**
+- Resample to a common timeline (month-end, quarter-end).
+- Decide and document whether you use `.last()` or `.mean()` (interpretation differs).
 
-# Two common summaries
-x_me_last = x_daily.resample('ME').last()
-x_me_mean = x_daily.resample('ME').mean()
-```
+**(d) Create derived variables**
+- growth rates, log differences, rolling windows, lag features.
+- each transform changes interpretation; keep a small “data dictionary.”
 
-#### Forward-fill (what it assumes)
-Forward-fill assumes the last published value remains "true" until updated.
-This is often reasonable for slow-moving series, but can hide missingness or create fake stability.
+**(e) Build the modeling table**
+- define labels (e.g., next-quarter recession),
+- shift targets forward and features backward (lags),
+- drop missing rows created by lags/rolls.
 
-#### Debug checks
-1. Index is datetime, sorted, unique.
-2. After resampling, frequency looks right (ME for monthly, QE for quarterly).
-3. Joins do not introduce unexpected NaNs.
-4. You can explain why you chose mean vs last.
+#### 5) Inference and data (why timing affects standard errors)
+
+Even inference topics (SE, p-values) depend on data structure:
+- time series residuals are autocorrelated → HAC SE,
+- panels share shocks within groups → clustered SE.
+
+So “data” is not just a preprocessing step; it determines the correct inference method.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Schema + units check**
+- print `df.dtypes`, confirm units (percent vs fraction), and inspect summary stats.
+
+2) **Index + frequency check**
+- confirm sorted index, expected frequency, and no duplicate timestamps.
+
+3) **Missingness check**
+- print missingness per column before/after merges and transforms.
+
+4) **Timing check**
+- for a few rows, manually verify that features come from the past relative to the label.
+
+5) **Sensitivity check**
+- re-run a result using an alternative alignment (mean vs last) and see if conclusions change.
+
+#### 7) Interpretation + reporting
+
+When you present a result downstream, always include:
+- which dataset version you used (processed vs sample),
+- the frequency and timestamp convention,
+- key transformations (diff, logdiff, growth rates),
+- any known limitations (revisions, breaks).
+
+**What this does NOT mean**
+- “More features” does not equal “better data.”
+- A perfectly clean dataset can still be conceptually wrong if timing is wrong.
+
+#### Exercises
+
+- [ ] For one dataset, write a 5-line data dictionary (column meaning + units + frequency).
+- [ ] Demonstrate how `.last()` vs `.mean()` changes a resampled series and interpret the difference.
+- [ ] Pick one merge/join and verify alignment by printing a few timestamps and values.
+- [ ] Show one example where a shift direction would create leakage, and explain why.
+
+### Deep Dive: Resampling + alignment — making mixed-frequency data mean what you think it means
+
+Economics data often arrives at different frequencies (daily, monthly, quarterly) and with different timestamp conventions. Alignment is part of the econometric specification.
+
+#### 1) Intuition (plain English)
+
+If you merge time series incorrectly, you can create:
+- artificial lead/lag relationships,
+- leakage (future information),
+- wrong interpretations (“end of quarter” vs “average of quarter”).
+
+**Story example:** GDP is quarterly, unemployment is monthly.  
+Is “quarterly unemployment” the average unemployment *during* the quarter, or the unemployment rate *at the end* of the quarter? Those are different variables.
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $x_t^{(M)}$ be a monthly series,
+- $y_q^{(Q)}$ be a quarterly series.
+
+Resampling defines a function that maps monthly values inside quarter $q$ into a quarterly feature:
+
+$$
+\\tilde x_q = g\\left(\\{x_t^{(M)} : t \\in q\\}\\right).
+$$
+
+Common choices:
+- $g=\\text{mean}$ (quarter average),
+- $g=\\text{last}$ (end-of-quarter value).
+
+#### 3) Assumptions (what your resampling choice implies)
+
+Choosing `.mean()` assumes:
+- the quarter’s “typical” level matters.
+
+Choosing `.last()` assumes:
+- the quarter-end level is what matters (or is what was known at quarter-end).
+
+Neither is universally correct; you must choose based on measurement and use case.
+
+#### 4) Mechanics: practical alignment steps
+
+1) Ensure you have a proper DatetimeIndex and sorting.
+2) Resample lower-frequency series to match higher frequency *or vice versa* with an explicit rule.
+3) Join on the aligned index.
+4) Inspect missingness and boundaries after the join.
+
+#### 5) Inference: alignment affects serial correlation and effective sample size
+
+Aggregation changes time-series dependence:
+- averaging smooths noise and can increase persistence,
+- end-of-period values can be more volatile.
+
+So alignment also affects inference (HAC choices, stationarity checks).
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Plot before/after resampling**
+- confirm the resampled series looks like what you intended.
+
+2) **Check timestamp conventions**
+- month-end vs month-start; quarter-end vs quarter-start.
+
+3) **Compare mean vs last**
+- run both and see if key results are sensitive.
+
+#### 7) Interpretation + reporting
+
+Always state:
+- the resampling rule (mean/last/sum),
+- the timestamp convention,
+- and the intended economic interpretation.
+
+#### Exercises
+
+- [ ] Resample a monthly series to quarterly using `.mean()` and `.last()`; plot both.
+- [ ] Merge with a quarterly target and verify no unexpected missingness appears.
+- [ ] Choose one resampling rule and defend it in 5 sentences for your modeling goal.
 
 ### Project Code Map
 - `src/fred_api.py`: FRED client (`fetch_series_meta`, `fetch_series_observations`, `observations_to_frame`)

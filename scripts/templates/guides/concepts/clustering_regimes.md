@@ -1,51 +1,87 @@
-### Deep Dive: Clustering as Regime Discovery
+### Deep Dive: Clustering regimes — grouping time periods into “states of the economy”
 
-Clustering groups time periods with similar indicator patterns.
-You can treat clusters as candidate "macro regimes" and compare them to recession labels.
+Clustering is a descriptive tool for finding patterns/regimes in multivariate macro data.
 
-#### Key terms (defined)
-> **Definition:** **Clustering** groups observations so points in the same cluster are similar.
+#### 1) Intuition (plain English)
 
-> **Definition:** **k-means** finds k centroids and assigns each point to the closest centroid.
+Instead of predicting recession directly, you can ask:
+- “Do the indicators naturally cluster into a few recurring patterns?”
 
-> **Definition:** **Inertia** is the k-means objective (within-cluster sum of squares). It always decreases with k.
+These clusters can correspond to:
+- expansions,
+- recessions,
+- high-inflation regimes,
+- crisis periods.
 
-> **Definition:** The **silhouette score** measures separation between clusters (higher is better).
+But clusters are hypotheses, not causal regime proofs.
 
-#### k-means objective (math)
-k-means solves:
+#### 2) Notation + setup (define symbols)
+
+Let $x_t \\in \\mathbb{R}^p$ be the feature vector at time $t$.
+K-means clustering chooses:
+- cluster centers $\\mu_1,\\dots,\\mu_K$,
+- assignments $c_t \\in \\{1,\\dots,K\\}$,
+to minimize:
 
 $$
-\min_{C_1,\ldots,C_k} \sum_{j=1}^k \sum_{i \in C_j} ||x_i - \mu_j||^2
+\\sum_{t=1}^{n} \\|x_t - \\mu_{c_t}\\|_2^2.
 $$
 
-- $\mu_j$ is the centroid of cluster j.
-- Distance depends on feature scale, so standardization matters.
+**What each term means**
+- $K$: number of clusters (chosen by you).
+- distance: usually Euclidean → scaling matters.
 
-#### Python demo: k-means + silhouette (commented)
-```python
-import numpy as np
+#### 3) Assumptions (and pitfalls)
 
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
+Clustering assumes:
+- a distance metric that reflects meaningful similarity,
+- stable scaling across features (standardize),
+- roughly “spherical” clusters for k-means.
 
-rng = np.random.default_rng(0)
+Pitfalls:
+- nonstationarity can dominate distance (clusters become time periods),
+- correlated features can distort distances,
+- k-means can be sensitive to initialization.
 
-# Toy feature matrix
-X = rng.normal(size=(200, 4))
+#### 4) Estimation mechanics
 
-# Standardize before k-means
-X_scaled = StandardScaler().fit_transform(X)
+Practical steps:
+1) standardize features,
+2) choose $K$ candidates (e.g., 2–6),
+3) fit clustering with multiple random seeds,
+4) label clusters by inspecting indicator means and time periods.
 
-for k in [2, 3, 4, 5]:
-    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X_scaled)
-    sil = silhouette_score(X_scaled, km.labels_)
-    print(k, 'inertia', km.inertia_, 'sil', sil)
-```
+#### 5) Inference: use stability, not p-values
 
-#### Interpretation playbook
-1. Standardize features.
-2. Choose k using elbow + silhouette + interpretability.
-3. Inspect cluster centroids in original units (undo scaling) for meaning.
-4. Compare cluster assignments to recession labels.
+Assess uncertainty by:
+- stability across seeds,
+- stability across subperiods,
+- sensitivity to $K$.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Silhouette / inertia trends**
+- do you see diminishing returns as $K$ increases?
+
+2) **Cluster size sanity**
+- tiny clusters may be outliers, not regimes.
+
+3) **Temporal coherence**
+- do clusters appear in contiguous time blocks or random scatter? (both can be informative)
+
+4) **Stability**
+- re-fit with different seeds/subsamples and compare assignments.
+
+#### 7) Interpretation + reporting
+
+Report:
+- preprocessing (standardization, transformations),
+- chosen $K$ and how selected,
+- stability evidence,
+- cluster summaries (means of indicators).
+
+#### Exercises
+
+- [ ] Fit k-means for K=2..6 and plot inertia/silhouette; choose K with justification.
+- [ ] Compare cluster assignments to recession shading and interpret alignment/mismatches.
+- [ ] Re-fit with a different seed and measure assignment stability.

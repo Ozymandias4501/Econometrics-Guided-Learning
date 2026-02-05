@@ -1,48 +1,84 @@
-### Deep Dive: Monthly -> Quarterly Features (No-Leakage Engineering)
+### Deep Dive: Quarterly feature engineering — lags, changes, and rolling windows
 
-Your target is quarterly, but many predictors are monthly/daily.
-You must transform predictors into quarterly features that were available at the time.
+Feature engineering on macro panels is largely about **timing discipline**.
 
-#### Key terms (defined)
-> **Definition:** **Aggregation** summarizes higher-frequency data into lower-frequency data (monthly -> quarterly).
+#### 1) Intuition (plain English)
 
-> **Definition:** A **lag** uses past values as features (e.g., $x_{t-1}$).
+In macro forecasting, the most useful features are often:
+- lags (what happened recently),
+- changes (growth rates),
+- rolling summaries (recent averages/volatility).
 
-> **Definition:** The **prediction horizon** is how far ahead you predict (here: next quarter).
+But every transform can introduce leakage if done incorrectly.
 
-#### Two common quarterly feature definitions
-- Quarter-average: mean of monthly values inside the quarter.
-- Quarter-end: last available value in the quarter.
+#### 2) Notation + setup (define symbols)
 
-Both can be defensible. The goal is to choose intentionally and document it.
+Let $x_t$ be a quarterly series.
 
-#### Leakage risk: "inside the target quarter"
-Be explicit about the timestamp meaning.
-- If you predict recession_{t+1} using quarter t features, features can use info up to the end of quarter t.
-- If you want a mid-quarter prediction (nowcasting), you need partial-quarter features.
+Common transforms:
 
-#### Python demo: quarterly aggregation + lags (commented)
-```python
-import pandas as pd
+- Lag:
+$$
+x_{t-1}
+$$
 
-panel_monthly = pd.read_csv('data/sample/panel_monthly_sample.csv', index_col=0, parse_dates=True)
+- Difference:
+$$
+\\Delta x_t = x_t - x_{t-1}
+$$
 
-# 1) Aggregate
-q_mean = panel_monthly.resample('QE').mean()
-q_last = panel_monthly.resample('QE').last()
+- Percent change (approx):
+$$
+\\%\\Delta x_t \\approx \\frac{x_t - x_{t-1}}{x_{t-1}}
+$$
 
-# 2) Choose one representation (or keep both with prefixes)
-q = q_mean.add_prefix('mean_')
+- Rolling mean over $k$ quarters (past-only):
+$$
+\\overline{x}_{t,k} = \\frac{1}{k}\\sum_{j=0}^{k-1} x_{t-j}
+$$
 
-# 3) Add lags (past-only)
-q['mean_UNRATE_lag1'] = q['mean_UNRATE'].shift(1)
-q['mean_UNRATE_lag2'] = q['mean_UNRATE'].shift(2)
+#### 3) Assumptions
 
-# 4) Drop rows created by lagging
-q = q.dropna()
-```
+These transforms assume:
+- the series is measured comparably over time,
+- timestamps reflect when values are “known,”
+- rolling windows use past data only (no centering).
 
-#### Debug checks for leakage
-1. All shifts should be non-negative (past-only): `shift(+k)`.
-2. Target is shifted the correct direction (`shift(-1)` for next period label).
-3. After dropping NaNs, the final table has aligned indices for X and y.
+#### 4) Mechanics: practical feature-building rules
+
+1) Build features in a copy of the DataFrame and keep column naming consistent.
+2) After creating lags/rolls, `dropna()` to get a clean modeling table.
+3) Always validate that a lag feature at time $t$ uses data from $t-1$ (not $t+1$).
+
+#### 5) Inference: transforms change dependence
+
+Differencing can reduce nonstationarity but can increase noise.
+Rolling means smooth noise but can increase persistence.
+
+So transforms affect:
+- stationarity tests,
+- SE choices (HAC),
+- model stability.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Spot-check rows**
+- print a few timestamps and verify lag alignment manually.
+
+2) **Compare transforms**
+- levels vs differences vs growth rates; do relationships change?
+
+3) **Overfitting guard**
+- more features increase variance; use time-aware evaluation.
+
+#### 7) Interpretation + reporting
+
+When reporting features, always specify:
+- “lag 1 quarter,”
+- “12-quarter rolling mean,” etc.
+
+#### Exercises
+
+- [ ] Create lag and rolling features for two macro indicators and verify alignment by printing rows.
+- [ ] Compare a model using levels vs differences; interpret the change.
+- [ ] Create a leakage feature intentionally (shift the wrong way) and show how it inflates performance.

@@ -1,107 +1,119 @@
-### Deep Dive: HAC / Newey-West Standard Errors (Time-Series Inference)
+### Deep Dive: HAC / Newey–West standard errors (time-series inference)
 
-Time series often violate the classic OLS assumptions.
+HAC (heteroskedasticity-and-autocorrelation consistent) standard errors are the minimum correction for many time-series regressions.
 
-> **Definition:** **Autocorrelation** means errors are correlated over time: $\mathrm{Cov}(\varepsilon_t, \varepsilon_{t-k}) \ne 0$.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Heteroskedasticity** means error variance changes over time: $\mathrm{Var}(\varepsilon_t)$ is not constant.
+Time series residuals are rarely independent:
+- shocks persist (serial correlation),
+- variance changes across regimes (heteroskedasticity).
 
-OLS coefficient estimates can remain the same, but the uncertainty (standard errors) can be wrong.
+If you use naive OLS SE, you often understate uncertainty and overstate “significance.”
 
-#### What OLS estimates vs what OLS assumes
-OLS coefficients:
+#### 2) Notation + setup (define symbols)
 
-$$
-\hat\beta = (X'X)^{-1}X'y
-$$
-
-Under the simplest assumptions (homoskedastic, uncorrelated errors), the covariance of $\hat\beta$ is:
+Consider a time-series regression:
 
 $$
-\widehat{\mathrm{Var}}(\hat\beta) = \hat\sigma^2 (X'X)^{-1}
+y_t = x_t'\\beta + u_t, \\quad t = 1,\\dots,T.
 $$
 
-But if errors are autocorrelated and/or heteroskedastic, this variance estimate is not reliable.
-
-#### HAC intuition (sandwich estimator)
-HAC uses a "sandwich" form:
-
+Stacking:
 $$
-\widehat{\mathrm{Var}}_{HAC}(\hat\beta) = (X'X)^{-1} \; (X'\widehat{\Omega}X) \; (X'X)^{-1}
+\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{u}.
 $$
 
-- The "bread" is $(X'X)^{-1}$.
-- The "meat" is an estimate of the error covariance structure, including lagged autocovariances.
-
-Newey-West is a common HAC estimator that downweights higher lags.
-
-One way to think about the "meat" term is:
-- compute residuals $\hat\varepsilon_t$
-- estimate autocovariances of $\hat\varepsilon_t$ up to a maximum lag $L$
-- combine them with weights $w_k$ (Newey-West commonly uses Bartlett weights)
-
-You will often see formulas like:
-
+Classical OLS SE assume:
 $$
-\widehat{\Omega}_{NW} = \Gamma_0 + \\sum_{k=1}^{L} w_k (\\Gamma_k + \\Gamma_k')
+\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\sigma^2 I_T.
 $$
 
-Where:
-- $\\Gamma_k$ estimates the lag-$k$ covariance contribution
-- $w_k = 1 - \\frac{k}{L+1}$ (Bartlett) downweights higher lags
+But in time series, we often have:
+- $\\mathrm{Var}(u_t)$ changes over time (heteroskedasticity),
+- $\\mathrm{Cov}(u_t, u_{t-k}) \\neq 0$ for some lags $k$ (autocorrelation).
 
-#### What changes and what does not
-- Coefficients $\hat\beta$ do **not** change.
-- Standard errors, t-stats, p-values, and confidence intervals **do** change.
+#### 3) Estimation mechanics: coefficients vs uncertainty
 
-#### Python demo: AR(1) errors make naive SE too small (commented)
+OLS coefficients still equal:
+$$
+\\hat\\beta = (X'X)^{-1}X'y.
+$$
+
+HAC changes only the variance estimate:
+
+$$
+\\widehat{\\mathrm{Var}}_{HAC}(\\hat\\beta)
+= (X'X)^{-1} \\left(X'\\hat\\Omega X\\right) (X'X)^{-1}.
+$$
+
+**What each term means**
+- $\\hat\\Omega$ estimates error covariance across time (including lagged autocovariances).
+
+#### 4) Newey–West: a common HAC choice
+
+Newey–West constructs $\\hat\\Omega$ by combining residual autocovariances up to a maximum lag $L$:
+
+$$
+\\hat\\Omega_{NW} = \\hat\\Gamma_0 + \\sum_{k=1}^{L} w_k (\\hat\\Gamma_k + \\hat\\Gamma_k'),
+\\quad w_k = 1 - \\frac{k}{L+1}.
+$$
+
+**What each term means**
+- $\\hat\\Gamma_0$: contemporaneous covariance term.
+- $\\hat\\Gamma_k$: lag-$k$ covariance contribution.
+- $w_k$: Bartlett weights downweight higher lags.
+- $L$: maximum lag included (tuning choice).
+
+#### 5) Choosing `maxlags` (why it’s a sensitivity parameter)
+
+There is no universally correct $L$.
+Reasonable habits:
+- quarterly data: try 1, 2, 4,
+- monthly data: try 3, 6, 12,
+- report sensitivity if inference changes.
+
+If results flip sign/significance dramatically across plausible $L$, treat inference as fragile.
+
+#### 6) Mapping to code (statsmodels)
+
+In `statsmodels`:
+- fit OLS normally,
+- request HAC covariance:
+
 ```python
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-
-rng = np.random.default_rng(0)
-
-# Simulate a regression with autocorrelated errors
-n = 200
-x = rng.normal(size=n)
-
-eps = np.zeros(n)
-for t in range(1, n):
-    # AR(1) structure: today's error depends on yesterday's
-    eps[t] = 0.8 * eps[t-1] + rng.normal(scale=1.0)
-
-y = 1.0 + 0.5 * x + eps
-
-X = sm.add_constant(pd.DataFrame({'x': x}))
-res = sm.OLS(y, X).fit()
-
-# HAC with maxlags=4 (common to try for quarterly)
 res_hac = res.get_robustcov_results(cov_type='HAC', cov_kwds={'maxlags': 4})
-
-print('coef:', res.params.to_dict())
-print('naive SE:', res.bse.to_dict())
-print('HAC SE  :', res_hac.bse)
 ```
 
-#### Choosing `maxlags`
-There is no perfect choice.
-- Quarterly data: common to try 1, 2, 4.
-- Monthly data: common to try 3, 6, 12.
+#### 7) Diagnostics + robustness (minimum set)
 
-Practical approach:
-- try a small set of maxlags
-- report sensitivity
-- if inference flips wildly, treat the result as fragile
+1) **Residual autocorrelation**
+- inspect ACF/PACF or Durbin–Watson style diagnostics.
 
-#### Project touchpoints (where HAC shows up in this repo)
-- `src/econometrics.py` wraps this as `fit_ols_hac(df, y_col=..., x_cols=..., maxlags=...)`.
-- Regression notebooks compare naive OLS SE to HAC SE and ask you to report sensitivity to `maxlags`.
+2) **HAC sensitivity**
+- try several `maxlags` values; report if conclusions change.
 
-#### Practical macro warning
-In macro time series, p-values can be misleading due to:
-- nonstationarity
-- structural breaks
-- small sample sizes (quarterly data has few points)
+3) **Stationarity checks**
+- nonstationarity can create spurious inference even with HAC.
 
-Use HAC as a minimum correction, then focus on stability and out-of-sample checks.
+4) **Stability**
+- fit on subperiods or rolling windows; do coefficients drift?
+
+#### 8) Interpretation + reporting
+
+HAC SE are a correction for time dependence in errors.
+They do **not**:
+- fix omitted variables,
+- fix nonstationarity,
+- identify causal effects.
+
+Report:
+- coefficient + HAC SE (and chosen `maxlags`),
+- a short statement about why HAC is needed (autocorrelation evidence),
+- stability/sensitivity checks when possible.
+
+#### Exercises
+
+- [ ] Fit a time-series regression and compute naive SE and HAC SE; compare.
+- [ ] Vary `maxlags` across a small set and report sensitivity of your main CI.
+- [ ] Simulate AR(1) errors and show that naive SE are too small relative to HAC.
+- [ ] Write 5 sentences: “When HAC is appropriate” vs “when HAC is not enough.”

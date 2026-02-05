@@ -1,90 +1,89 @@
-### Deep Dive: Regularization (Ridge vs Lasso)
+### Deep Dive: Ridge vs lasso — stabilizing models when features are many/correlated
 
-Regularization adds a penalty to reduce overfitting and stabilize coefficients.
+Regularization is a core tool when you have many predictors, multicollinearity, or limited sample sizes.
 
-> **Definition:** **Regularization** modifies the training objective to discourage overly complex models (often large coefficients).
+#### 1) Intuition (plain English)
 
-#### The bias/variance tradeoff (why regularization can help)
-- OLS can have low bias but high variance (coefficients jump around across samples), especially with correlated predictors.
-- Regularization intentionally introduces some bias to reduce variance.
+OLS chooses coefficients to fit the training data as closely as possible.
+With many correlated features, OLS can produce:
+- large, unstable coefficients,
+- high variance (overfitting),
+- fragile inference.
 
-#### Objectives (math)
-Let $y$ be your target and $X$ your feature matrix.
+Regularization trades a bit of bias for much lower variance.
 
-OLS minimizes:
+#### 2) Notation + setup (define symbols)
 
-$$
-\min_{\beta} \; ||y - X\beta||_2^2
-$$
-
-Ridge (L2) minimizes:
+OLS objective:
 
 $$
-\min_{\beta} \; ||y - X\beta||_2^2 + \alpha ||\beta||_2^2
+\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2.
 $$
 
-Lasso (L1) minimizes:
+Ridge (L2) objective:
 
 $$
-\min_{\beta} \; ||y - X\beta||_2^2 + \alpha ||\beta||_1
+\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2 + \\lambda \\|\\beta\\|_2^2.
 $$
 
-- $||\beta||_2^2 = \sum_j \beta_j^2$
-- $||\beta||_1 = \sum_j |\beta_j|$
+Lasso (L1) objective:
 
-#### What changes and what does not
-- As $\alpha$ increases, coefficients shrink.
-- Ridge typically shrinks all coefficients toward 0.
-- Lasso can drive some coefficients exactly to 0 (feature selection).
+$$
+\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2 + \\lambda \\|\\beta\\|_1.
+$$
 
-#### Why standardization matters
-> **Definition:** **Standardization** rescales features to mean 0 and standard deviation 1.
+**What each term means**
+- $\\lambda \\ge 0$ controls penalty strength.
+- L2 shrinks coefficients smoothly; L1 can set some coefficients exactly to 0 (feature selection).
 
-Regularization penalties depend on coefficient size. If features are on different scales, the penalty is applied unevenly.
-Always use `StandardScaler` before ridge/lasso.
+#### 3) Assumptions and practical requirements
 
-#### Python demo: ridge vs lasso (commented)
-```python
-import numpy as np
+Regularization is sensitive to feature scale:
+- you should standardize features before ridge/lasso so the penalty is comparable across variables.
 
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
+Regularization changes the estimand:
+- coefficients are no longer the OLS estimand,
+- classical p-values/CI are not straightforward after model selection.
 
-rng = np.random.default_rng(0)
+#### 4) Estimation mechanics
 
-# Create correlated predictors
-n = 300
-x1 = rng.normal(size=n)
-x2 = 0.98 * x1 + rng.normal(scale=0.2, size=n)
-X = np.column_stack([x1, x2])
+Ridge has a closed-form solution:
 
-# Target depends on x1
+$$
+\\hat\\beta_{ridge} = (X'X + \\lambda I)^{-1} X'y.
+$$
 
-y = 1.0 + 2.0 * x1 + rng.normal(scale=1.0, size=n)
+Lasso does not have a simple closed form; software uses optimization (coordinate descent).
 
-# OLS (no penalty)
-ols = LinearRegression().fit(X, y)
+#### 5) Inference: focus on prediction + stability
 
-# Ridge + scaling
-ridge = Pipeline([
-    ('scaler', StandardScaler()),
-    ('model', Ridge(alpha=5.0)),
-]).fit(X, y)
+In this project, regularization is used primarily for:
+- improving out-of-sample prediction,
+- stabilizing coefficients,
+- reducing variance in macro settings.
 
-# Lasso + scaling
-lasso = Pipeline([
-    ('scaler', StandardScaler()),
-    ('model', Lasso(alpha=0.1, max_iter=10000)),
-]).fit(X, y)
+Treat inference (p-values) after lasso with caution; selection changes distribution.
 
-print('ols  coef:', ols.coef_)
-print('ridge coef:', ridge.named_steps['model'].coef_)
-print('lasso coef:', lasso.named_steps['model'].coef_)
-```
+#### 6) Diagnostics + robustness (minimum set)
 
-#### Interpretation cautions
-- Regularized coefficients are biased by design.
-- They can be excellent for prediction and stability.
-- Do not interpret lasso-selected features as "the true causes".
-- In correlated macro data, lasso may pick one variable from a group and ignore equally good substitutes.
+1) **Cross-validation for $\\lambda$**
+- use time-aware CV for forecasting tasks.
+
+2) **Coefficient paths**
+- inspect how coefficients shrink as $\\lambda$ increases.
+
+3) **Stability across folds**
+- do selected features change dramatically across time folds? That suggests instability.
+
+#### 7) Interpretation + reporting
+
+Report:
+- how $\\lambda$ was chosen,
+- whether features were standardized,
+- out-of-sample metrics and stability.
+
+#### Exercises
+
+- [ ] Fit ridge and lasso with standardized features; compare out-of-sample performance.
+- [ ] Plot coefficient paths vs $\\lambda$ and interpret shrinkage.
+- [ ] Compare OLS vs ridge coefficients when features are collinear; explain why ridge is more stable.

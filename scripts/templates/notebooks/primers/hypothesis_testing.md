@@ -1,90 +1,57 @@
-## Primer: Hypothesis Testing (p-values, t-tests, and Confidence Intervals)
+## Primer: Hypothesis testing (p-values, t-stats, confidence intervals)
 
-You will see p-values, t-statistics, and confidence intervals in regression output (especially `statsmodels`).
-This primer gives you the minimum you need to avoid the most common misunderstandings.
+You will see p-values, t-statistics, and confidence intervals in regression output (especially `statsmodels`). This primer gives you the minimum to interpret them correctly.
 
-### Definitions (in plain language)
-- **Hypothesis**: a claim about an unknown population quantity (a parameter).
-- **Null hypothesis** $H_0$: the "default" claim (often “no effect”).
-- **Alternative hypothesis** $H_1$: the claim you consider if the data looks inconsistent with $H_0$.
-- **Test statistic**: a number computed from data that measures how surprising the data is under $H_0$.
-- **p-value**: the probability (under the assumptions of the null model) of seeing a test statistic at least as extreme as you observed.
-- **Significance level** $\alpha$: a pre-chosen cutoff (commonly 0.05) used to decide whether to reject $H_0$.
+### The objects (plain language)
+
+- **Null hypothesis** $H_0$: the default claim (often “no effect”).
+- **Alternative** $H_1$: the claim you consider if the data looks inconsistent with $H_0$.
+- **Test statistic**: “how far” your estimate is from the null, in uncertainty units.
+- **p-value**: probability (under the null *and model assumptions*) of seeing a test statistic at least as extreme as observed.
+- **Confidence interval (CI)**: a range of parameter values consistent with the data under assumptions.
 
 ### What a p-value is NOT
-- It is **not** the probability $H_0$ is true.
-- It is **not** the probability your model is correct.
-- It is **not** a measure of economic importance.
 
-### Type I / Type II errors and power
-- **Type I error (false positive)**: rejecting $H_0$ when $H_0$ is true. Rough probability $\approx \alpha$ under assumptions.
-- **Type II error (false negative)**: failing to reject $H_0$ when $H_1$ is true.
-- **Power**: $1 - P(\text{Type II error})$. Power increases with larger samples and larger true effects.
+- Not the probability $H_0$ is true.
+- Not the probability the model is correct.
+- Not a measure of economic importance.
 
 ### Regression t-test intuition
-In OLS regression we estimate coefficients $\hat\beta$. A common test is:
-- $H_0: \beta_j = 0$ (no linear association between $x_j$ and $y$ holding other features fixed)
 
-The **t-statistic** is:
+In OLS, a common test is $H_0: \\beta_j = 0$.
 
 $$
-t_j = \frac{\hat\beta_j - 0}{\widehat{SE}(\hat\beta_j)}
+t_j = \\frac{\\hat\\beta_j}{\\widehat{SE}(\\hat\\beta_j)}
 $$
 
-Interpretation (roughly):
-- if $|t_j|$ is large, $\hat\beta_j$ is far from 0 relative to its uncertainty estimate
-- if $|t_j|$ is small, the data is compatible with $\beta_j$ being near 0 (given assumptions)
+If you change your SE estimator (HC3/HAC/cluster), you change $\\widehat{SE}$ and therefore the p-value, even if the coefficient stays the same.
 
-### Confidence intervals (CI) connect to hypothesis tests
-A 95% CI is usually reported as:
+### Expected output / what you should look at in `res.summary()`
 
-$$
-\hat\beta_j \pm t_{0.975}\cdot \widehat{SE}(\hat\beta_j)
-$$
+- `coef`: effect size (in model units)
+- `std err`: uncertainty
+- CI columns: magnitude + uncertainty together
 
-If the 95% CI does not include 0, the two-sided p-value is typically < 0.05.
+### Common pitfalls in this project
 
-### Python demo (toy): one-sample t-test and a regression coefficient test
-This is not your project data; it is purely to make the objects concrete.
+- Macro time series often have autocorrelation → naive SE too small → use HAC when interpreting p-values.
+- Multiple testing/spec-search can produce small p-values by chance.
+- Predictive success ≠ causal interpretation.
+
+### Tiny demo (toy; not project data)
 
 ```python
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from scipy import stats
 
 rng = np.random.default_rng(0)
-
-# 1) One-sample t-test: is the mean of x equal to 0?
-x = rng.normal(loc=0.2, scale=1.0, size=200)
-t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)
-print("t-test t:", t_stat, "p:", p_val)
-
-# 2) Regression t-test: is the slope on x equal to 0?
 n = 300
-x2 = rng.normal(size=n)
-eps = rng.normal(scale=1.0, size=n)
-y = 1.0 + 0.5 * x2 + eps
+x = rng.normal(size=n)
+y = 1.0 + 0.5 * x + rng.normal(scale=1.0, size=n)
 
-df = pd.DataFrame({"y": y, "x": x2})
+df = pd.DataFrame({"y": y, "x": x})
 X = sm.add_constant(df[["x"]])
 res = sm.OLS(df["y"], X).fit()
-
-# The summary includes coef, SE, t, p, and CI
 print(res.summary())
-
-# Manual t-stat for slope (matches summary output)
-beta_hat = res.params["x"]
-se_hat = res.bse["x"]
-print("manual t:", beta_hat / se_hat)
 ```
-
-### Common ways hypothesis testing goes wrong in ML + macro
-- **Multiple testing**: you try many features/specifications; some will look “significant” by chance.
-- **Violating assumptions**: autocorrelation and heteroskedasticity can make naive SE too small.
-- **Confusing predictive success with causal claims**: a coefficient can predict well without being causal.
-
-Practical guidance for this project:
-- Report effect sizes + uncertainty, not just “significant / not significant.”
-- For macro time series, prefer robust SE (HAC/Newey-West) when interpreting p-values.
-- For predictive tasks, always complement p-values with out-of-sample evaluation.

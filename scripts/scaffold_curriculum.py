@@ -131,6 +131,7 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
 
     # Defaults (used if a notebook doesn't have a concrete file deliverable).
     deliverables: list[str] = []
+    prereqs: list[str] = []
     success: list[str] = [
         "You can explain what you built and why each step exists.",
         "You can run your work end-to-end without undefined variables.",
@@ -139,10 +140,20 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         "Running cells top-to-bottom without reading the instructions.",
         "Leaving `...` placeholders in code cells.",
     ]
+    quick_fixes: list[str] = [
+        "If you see `ModuleNotFoundError`, re-run the bootstrap cell and restart the kernel; make sure `PROJECT_ROOT` is the repo root.",
+        "If a `data/processed/*` file is missing, either run the matching build script (see guide) or use the notebook’s `data/sample/*` fallback.",
+        "If results look “too good,” suspect leakage; re-check shifts, rolling windows, and time splits.",
+        "If a model errors, check dtypes (`astype(float)`) and missingness (`dropna()` on required columns).",
+    ]
 
     why = "This notebook builds a core piece of the project."
 
     if category == "00_foundations":
+        prereqs = [
+            "Comfort with basic Python + pandas (reading CSVs, making plots).",
+            "Willingness to write short interpretation notes as you go.",
+        ]
         why = (
             "Foundations notebooks build the intuition that prevents the most common mistakes in economic ML:\n"
             "- leaking future information,\n"
@@ -155,6 +166,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "01_data":
+        prereqs = [
+            "Completed Part 00 (foundations) or equivalent time-series basics.",
+            "FRED API key set (`FRED_API_KEY`) for real data (sample data works offline).",
+        ]
         why = (
             "Data notebooks build the datasets used everywhere else. If these steps are wrong, every model result is suspect.\n"
             "You will practice:\n"
@@ -168,6 +183,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "02_regression":
+        prereqs = [
+            "Completed Parts 00–01 (foundations + data).",
+            "Basic algebra comfort (reading coefficient tables, units).",
+        ]
         why = (
             "Regression is the bridge between statistics and ML. You will learn:\n"
             "- single-factor vs multi-factor interpretation,\n"
@@ -180,6 +199,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "03_classification":
+        prereqs = [
+            "Completed Part 02 (regression basics) or equivalent.",
+            "Comfort interpreting probabilities and trade-offs (false positives vs false negatives).",
+        ]
         why = (
             "Classification notebooks turn the recession label into a **probability model**.\n"
             "You will learn how to evaluate rare-event prediction and how to choose thresholds intentionally.\n"
@@ -190,6 +213,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "04_unsupervised":
+        prereqs = [
+            "Completed Part 01 (macro panel) or equivalent.",
+            "Comfort with standardization and basic linear algebra intuition (variance, distance).",
+        ]
         why = (
             "Unsupervised notebooks help you understand macro structure:\n"
             "- latent factors (PCA),\n"
@@ -202,6 +229,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "05_model_ops":
+        prereqs = [
+            "Completed earlier modeling notebooks (regression/classification).",
+            "Comfort running scripts and inspecting files under `outputs/`.",
+        ]
         why = (
             "Model ops notebooks turn your work into reproducible runs with saved artifacts.\n"
             "The goal is: someone else can run your pipeline and see the same metrics.\n"
@@ -212,6 +243,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "06_capstone":
+        prereqs = [
+            "Completed (or at least attempted) Parts 00–05.",
+            "Willingness to write a report with assumptions + limitations.",
+        ]
         why = (
             "Capstone notebooks integrate everything:\n"
             "- data pipeline,\n"
@@ -222,6 +257,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         )
 
     if category == "07_causal":
+        prereqs = [
+            "Completed Part 02 (regression + robust SE).",
+            "Basic familiarity with panels (same unit over time) and the idea of identification assumptions.",
+        ]
         why = (
             "Causal notebooks focus on **identification**: what would have to be true for a coefficient to represent a causal effect.\n"
             "You will practice:\n"
@@ -237,6 +276,10 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         ]
 
     if category == "08_time_series_econ":
+        prereqs = [
+            "Completed Part 01 macro panel notebooks (or have `panel_monthly.csv` / sample available).",
+            "Comfort with differencing/log transforms and reading time series plots.",
+        ]
         why = (
             "Time-series econometrics notebooks build the classical toolkit you need before trusting macro regressions:\n"
             "- stationarity + unit roots,\n"
@@ -279,6 +322,9 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         "## Why This Notebook Matters\n"
         f"{why}\n"
         "\n"
+        "## Prerequisites (Quick Self-Check)\n"
+        f"{bullets(prereqs)}\n"
+        "\n"
         "## What You Will Produce\n"
         f"{deliverable_text}\n"
         "\n"
@@ -287,6 +333,9 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         "\n"
         "## Common Pitfalls\n"
         f"{bullets(pitfalls)}\n"
+        "\n"
+        "## Quick Fixes (When You Get Stuck)\n"
+        f"{bullets(quick_fixes)}\n"
         "\n"
         "## Matching Guide\n"
         f"- `{guide_path}`\n"
@@ -1645,10 +1694,13 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
         md(notebook_front_matter(stem, category, guide_path=guide_path)),
         md(
             "## How To Use This Notebook\n"
-            "- This notebook is hands-on. Most code cells are incomplete on purpose.\n"
-            "- Complete each TODO, then run the cell.\n"
-            f"- Use the matching guide (`{guide_path}`) for deep explanations and alternative examples.\n"
-            "- Write short interpretation notes as you go (what changed, why it matters).\n"
+            "- Work section-by-section; don’t skip the markdown.\n"
+            "- Most code cells are incomplete on purpose: replace TODOs and `...`, then run.\n"
+            "- After each section, write 2–4 sentences answering the interpretation prompts (what changed, why it matters).\n"
+            "- Prefer `data/processed/*` if you have built the real datasets; otherwise use the bundled `data/sample/*` fallbacks.\n"
+            "- Use the **Checkpoint (Self-Check)** section to catch mistakes early.\n"
+            "- Use **Solutions (Reference)** only to unblock yourself; then re-implement without looking.\n"
+            f"- Use the matching guide (`{guide_path}`) for the math, assumptions, and deeper context.\n"
         ),
         md(
             "<a id=\"environment-bootstrap\"></a>\n"
@@ -3737,6 +3789,20 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Choose years + variables')}\"></a>\n"
                 "## Choose years + variables\n\n"
+                "### Background\n"
+                "This project treats a dataset config as a **contract**:\n"
+                "- which years are included,\n"
+                "- which variables are fetched,\n"
+                "- and which geography level the rows represent.\n\n"
+                "ACS variable names look like codes (e.g., `B19013_001E`). That is normal.\n"
+                "Your job is to keep a small “data dictionary” as you go: what each code measures and what the units are.\n\n"
+                "### What you should see\n"
+                "- `years` is a list of years (default: 2014–2022).\n"
+                "- `acs_vars` is a list of ACS variable codes.\n"
+                "- `geo_for`/`geo_in` describe a county-within-state query.\n\n"
+                "### Interpretation prompts\n"
+                "- Pick 2 ACS variables and write (in words) what they measure.\n"
+                "- Which variables will be numerators vs denominators for rates?\n\n"
                 "### Goal\n"
                 "Load a default panel config (`configs/census_panel.yaml`) and inspect:\n"
                 "- years\n"
@@ -3761,6 +3827,18 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Fetch/cache ACS tables')}\"></a>\n"
                 "## Fetch/cache ACS tables\n\n"
+                "### Background\n"
+                "In applied work, you almost never want to hit an API repeatedly during experiments.\n"
+                "So we cache raw pulls under `data/raw/` and build a clean panel under `data/processed/`.\n\n"
+                "This notebook is offline-first:\n"
+                "- if cached raw CSVs exist, we load them,\n"
+                "- otherwise we fall back to the bundled sample panel.\n\n"
+                "### What you should see\n"
+                "- Either `frames` is non-empty (cached raw CSVs found), or you see a message that the sample panel is used.\n"
+                "- `panel_raw` contains county rows with columns like `state`, `county`, and ACS variables.\n\n"
+                "### Interpretation prompts\n"
+                "- Where on disk is the cache for a given year stored?\n"
+                "- What would you change in the config to add/remove variables?\n\n"
                 "### Goal\n"
                 "For each year, load a cached raw CSV if available; otherwise fetch from the Census API.\n\n"
                 "Offline default:\n"
@@ -3803,6 +3881,19 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Build panel + FIPS')}\"></a>\n"
                 "## Build panel + FIPS\n\n"
+                "### Background\n"
+                "Panel methods require stable unit identifiers.\n"
+                "For U.S. counties, a standard identifier is **FIPS**:\n"
+                "- 2-digit state code + 3-digit county code.\n\n"
+                "We also build key derived outcomes as rates so later regressions have consistent units.\n\n"
+                "### What you should see\n"
+                "- `fips` is a 5-character string.\n"
+                "- `year` is an integer.\n"
+                "- `poverty_rate` and `unemployment_rate` are usually between 0 and 1.\n"
+                "- the DataFrame has a MultiIndex `('fips','year')` and is sorted.\n\n"
+                "### Interpretation prompts\n"
+                "- Why do we `zfill` the state/county codes?\n"
+                "- If a rate is outside [0, 1], what data issues could cause it?\n\n"
                 "### Goal\n"
                 "Create stable identifiers and derived rates:\n"
                 "- `fips` = state (2-digit) + county (3-digit)\n"
@@ -3835,6 +3926,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Save processed panel')}\"></a>\n"
                 "## Save processed panel\n\n"
+                "### Background\n"
+                "This file is the handoff between the data pipeline and the causal notebooks.\n"
+                "Once you write `data/processed/census_county_panel.csv`, later notebooks can run without rebuilding the panel.\n\n"
+                "### What you should see\n"
+                "- a new file at `data/processed/census_county_panel.csv`.\n"
+                "- reloading the file produces a non-empty DataFrame.\n\n"
+                "### Interpretation prompts\n"
+                "- What columns are essential for later FE/DiD notebooks?\n"
+                "- What would you add to the panel if you wanted a richer causal story?\n\n"
                 "### Goal\n"
                 "Write a panel dataset to `data/processed/census_county_panel.csv`.\n"
             ),
@@ -3866,6 +3966,20 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Load panel and define variables')}\"></a>\n"
                 "## Load panel and define variables\n\n"
+                "### Background\n"
+                "Panel regressions expect a clear unit index (county) and time index (year).\n"
+                "Before modeling, we build a **small, typed modeling table**:\n"
+                "- confirm `fips` and `year`,\n"
+                "- set a MultiIndex,\n"
+                "- create a few interpretable transforms (like logs).\n\n"
+                "Log transforms are common for heavy-tailed variables (income, rent) because they reduce scale and make multiplicative differences more linear.\n\n"
+                "### What you should see\n"
+                "- the DataFrame is indexed by `('fips','year')`.\n"
+                "- `log_income` and `log_rent` are finite (no -inf/inf).\n"
+                "- summary stats look plausible (rates roughly in [0,1]).\n\n"
+                "### Interpretation prompts\n"
+                "- Why might `log_income` be easier to interpret than raw income?\n"
+                "- What does a 0.01 change in `poverty_rate` represent?\n\n"
                 "### Goal\n"
                 "Load the county-year panel and build a small modeling table.\n"
             ),
@@ -3893,6 +4007,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Pooled OLS baseline')}\"></a>\n"
                 "## Pooled OLS baseline\n\n"
+                "### Background\n"
+                "Pooled OLS treats each row as an independent observation and ignores that rows come from the same county over time.\n"
+                "It is a useful baseline, but it can be misleading when counties differ in unobserved, time-invariant ways (baseline poverty, institutions, geography).\n\n"
+                "### What you should see\n"
+                "- a `statsmodels` summary table.\n"
+                "- coefficients with HC3 robust SE.\n\n"
+                "### Interpretation prompts\n"
+                "- Interpret the sign and units of one coefficient in 2–4 sentences.\n"
+                "- List one plausible omitted variable that differs across counties and could confound this pooled relationship.\n\n"
                 "### Goal\n"
                 "Fit a pooled model that ignores FE.\n"
             ),
@@ -3913,6 +4036,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Two-way fixed effects')}\"></a>\n"
                 "## Two-way fixed effects\n\n"
+                "### Background\n"
+                "Two-way fixed effects (TWFE) compares counties to themselves over time (county FE) while removing year-wide shocks (year FE).\n"
+                "This can reduce bias from time-invariant county differences.\n\n"
+                "### What you should see\n"
+                "- a `PanelOLS` summary.\n"
+                "- coefficients that may differ from pooled OLS (because identification uses within-county changes).\n\n"
+                "### Interpretation prompts\n"
+                "- Compare pooled vs TWFE: did the coefficient move? What story could explain the change?\n"
+                "- What variation identifies $\\beta$ in TWFE (within county, across time)?\n\n"
                 "### Goal\n"
                 "Estimate a TWFE model:\n"
                 "- county FE (entity)\n"
@@ -3934,6 +4066,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Clustered standard errors')}\"></a>\n"
                 "## Clustered standard errors\n\n"
+                "### Background\n"
+                "Even with TWFE, inference can be too optimistic if errors are correlated within groups.\n"
+                "A common choice here is clustering by state because counties in the same state share policies and shocks.\n\n"
+                "### What you should see\n"
+                "- a table comparing robust vs clustered standard errors.\n"
+                "- clustered SE are often larger (not guaranteed, but common).\n\n"
+                "### Interpretation prompts\n"
+                "- Which SE would you report for a state-level policy story and why?\n"
+                "- How many clusters do you have (unique states), and why does that matter?\n\n"
                 "### Goal\n"
                 "Re-fit TWFE with clustered SE.\n\n"
                 "Typical clustering choice here:\n"
@@ -3971,6 +4112,20 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Synthetic adoption + treatment')}\"></a>\n"
                 "## Synthetic adoption + treatment\n\n"
+                "### Background\n"
+                "A real DiD design needs a real policy change and careful context.\n"
+                "Here we use a **synthetic adoption schedule** so you can focus on mechanics:\n"
+                "- how to build treatment indicators,\n"
+                "- how to think about identification (parallel trends),\n"
+                "- and how to diagnose pre-trends.\n\n"
+                "We also create a **semi-synthetic outcome** by injecting a known post-treatment effect into a real outcome.\n"
+                "That gives you a ground truth target for checking the estimator.\n\n"
+                "### What you should see\n"
+                "- `treated` equals 1 only for treated states in post-adoption years.\n"
+                "- `poverty_rate_semi` differs from `poverty_rate_real` by about `true_effect` when treated.\n\n"
+                "### Interpretation prompts\n"
+                "- In one sentence, define the causal question this notebook is pretending to answer.\n"
+                "- What assumption would be needed for the TWFE DiD coefficient to be causal on the real outcome?\n\n"
                 "### Goal\n"
                 "Define a deterministic adoption year by state and build:\n"
                 "- `treated_it`\n"
@@ -4008,6 +4163,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('TWFE DiD')}\"></a>\n"
                 "## TWFE DiD\n\n"
+                "### Background\n"
+                "The simplest multi-period DiD estimator is a TWFE regression with a treatment indicator.\n"
+                "Under parallel trends (and related assumptions), the coefficient on `treated` can be interpreted as an average treatment effect.\n\n"
+                "### What you should see\n"
+                "- On the semi-synthetic outcome, the estimated `treated` coefficient should be in the neighborhood of `true_effect`.\n"
+                "- Standard errors should be clustered by state (treatment assignment/shocks).\n\n"
+                "### Interpretation prompts\n"
+                "- Compare the estimate to `true_effect`. Is it close? If not, why might it differ (small sample, noise, design)?\n"
+                "- Write the parallel trends assumption in words for this setting.\n\n"
                 "### Goal\n"
                 "Estimate the effect of treatment with TWFE DiD:\n"
                 "- county FE\n"
@@ -4035,6 +4199,17 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Event study (leads/lags)')}\"></a>\n"
                 "## Event study (leads/lags)\n\n"
+                "### Background\n"
+                "An event study replaces a single post indicator with a set of lead/lag indicators.\n"
+                "This lets you:\n"
+                "- visualize dynamics after adoption, and\n"
+                "- test for pre-trends using lead coefficients.\n\n"
+                "### What you should see\n"
+                "- lead coefficients (k<0) near 0 on the semi-synthetic outcome.\n"
+                "- post coefficients (k>=0) around the injected effect.\n\n"
+                "### Interpretation prompts\n"
+                "- Which lead coefficients would worry you most, and why?\n"
+                "- Explain what the base period means (why one event-time dummy is omitted).\n\n"
                 "### Goal\n"
                 "Estimate dynamic effects around adoption and inspect pre-trends.\n"
             ),
@@ -4085,6 +4260,17 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Diagnostics: pre-trends + placebo')}\"></a>\n"
                 "## Diagnostics: pre-trends + placebo\n\n"
+                "### Background\n"
+                "DiD is only as credible as its diagnostics.\n"
+                "In real research, this is where most of the work lives:\n"
+                "- are treated and control trending similarly before treatment?\n"
+                "- are results robust to reasonable specification changes?\n"
+                "- do placebo tests behave as expected?\n\n"
+                "### What you should see\n"
+                "- a short diagnostic result (table/plot) and a written interpretation.\n\n"
+                "### Interpretation prompts\n"
+                "- If the placebo finds a large effect, what does that suggest about the design?\n"
+                "- Why is the real outcome analysis explicitly **not** a real policy evaluation here?\n\n"
                 "### Goal\n"
                 "Run at least one falsification / diagnostic.\n\n"
                 "Suggestions:\n"
@@ -4110,6 +4296,18 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Simulate endogeneity')}\"></a>\n"
                 "## Simulate endogeneity\n\n"
+                "### Background\n"
+                "Endogeneity means your regressor $x$ is correlated with the error term.\n"
+                "That breaks the core OLS condition $E[u\\mid X]=0$ and typically biases OLS.\n\n"
+                "We simulate endogeneity by constructing a hidden confounder $u$ that affects both $x$ and $y$.\n"
+                "We then construct an instrument $z$ that shifts $x$ but (by design) does not directly shift $y$.\n\n"
+                "### What you should see\n"
+                "- `x` is correlated with the confounder-driven error component.\n"
+                "- `z` is correlated with `x` (relevance).\n"
+                "- `z` is not directly in the structural equation for `y` (exclusion in this synthetic setup).\n\n"
+                "### Interpretation prompts\n"
+                "- In one sentence, explain why OLS is biased here.\n"
+                "- Write the relevance and exclusion conditions in words for this simulation.\n\n"
                 "### Goal\n"
                 "Create data where:\n"
                 "- x is correlated with the error term (endogenous)\n"
@@ -4143,6 +4341,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('OLS vs 2SLS')}\"></a>\n"
                 "## OLS vs 2SLS\n\n"
+                "### Background\n"
+                "OLS uses all variation in $x$, including the endogenous part correlated with the error.\n"
+                "2SLS replaces $x$ with the part predicted by $z$ (instrumented variation).\n\n"
+                "### What you should see\n"
+                "- OLS estimate differs from `beta_true` (bias).\n"
+                "- IV/2SLS estimate is closer to `beta_true` (in this synthetic world).\n\n"
+                "### Interpretation prompts\n"
+                "- Which direction is the OLS bias and why (link it to how you constructed the confounder)?\n"
+                "- Why does IV move the estimate toward the truth in this setup?\n\n"
                 "### Goal\n"
                 "Compare naive OLS (biased) to IV/2SLS.\n"
             ),
@@ -4163,6 +4370,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('First-stage + weak IV checks')}\"></a>\n"
                 "## First-stage + weak IV checks\n\n"
+                "### Background\n"
+                "A valid instrument must be relevant.\n"
+                "If $z$ barely predicts $x$, 2SLS can be unstable and misleading (weak instruments).\n\n"
+                "### What you should see\n"
+                "- a first-stage relationship where `z` helps explain `x`.\n"
+                "- a discussion of instrument strength (even informally).\n\n"
+                "### Interpretation prompts\n"
+                "- What would happen to 2SLS if `z` were only weakly related to `x`?\n"
+                "- Which parts of IV validity are testable from the data, and which are not?\n\n"
                 "### Goal\n"
                 "Inspect the first stage and discuss instrument strength.\n"
             ),
@@ -4197,6 +4413,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Load macro series')}\"></a>\n"
                 "## Load macro series\n\n"
+                "### Background\n"
+                "Stationarity analysis is only meaningful if your time index is correct.\n"
+                "So the first task is: load a clean monthly panel with a proper `DatetimeIndex`.\n\n"
+                "### What you should see\n"
+                "- a DataFrame indexed by dates (monthly).\n"
+                "- key macro columns like CPI, unemployment, production.\n\n"
+                "### Interpretation prompts\n"
+                "- Which of these series looks trending in levels?\n"
+                "- Which series might be closer to stationary already (in levels)?\n\n"
                 "### Goal\n"
                 "Load the macro monthly panel.\n"
             ),
@@ -4215,6 +4440,18 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Transformations')}\"></a>\n"
                 "## Transformations\n\n"
+                "### Background\n"
+                "Many macro series are nonstationary in levels.\n"
+                "Common fixes are:\n"
+                "- differences (change),\n"
+                "- percent changes (growth rates),\n"
+                "- log-differences (approx growth rates for positive series).\n\n"
+                "### What you should see\n"
+                "- transformed columns with fewer trends.\n"
+                "- a smaller DataFrame after `dropna()` (because differencing creates missing first row).\n\n"
+                "### Interpretation prompts\n"
+                "- Why might log-differences be preferred for production indexes?\n"
+                "- What information do you lose when you difference?\n\n"
                 "### Goal\n"
                 "Create stationary-ish transformations (diff, pct change, log diff).\n"
             ),
@@ -4236,6 +4473,17 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('ADF/KPSS tests')}\"></a>\n"
                 "## ADF/KPSS tests\n\n"
+                "### Background\n"
+                "ADF and KPSS are complementary diagnostics:\n"
+                "- ADF null: unit root (nonstationary)\n"
+                "- KPSS null: stationary\n\n"
+                "No single p-value is a proof. Use tests alongside plots and economic context.\n\n"
+                "### What you should see\n"
+                "- different p-values for level vs differenced series.\n"
+                "- clearer stationarity evidence after transformation.\n\n"
+                "### Interpretation prompts\n"
+                "- In words: what does a small ADF p-value suggest?\n"
+                "- In words: what does a small KPSS p-value suggest?\n\n"
                 "### Goal\n"
                 "Run stationarity diagnostics on levels vs transformed series.\n"
             ),
@@ -4257,6 +4505,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Spurious regression demo')}\"></a>\n"
                 "## Spurious regression demo\n\n"
+                "### Background\n"
+                "A classic macro trap is regressing one trending series on another.\n"
+                "You can get a high $R^2$ and significant coefficients even when the relationship is meaningless.\n\n"
+                "### What you should see\n"
+                "- the levels regression often has a higher $R^2$ than the differences regression.\n"
+                "- this demonstrates why stationarity checks are a prerequisite for inference.\n\n"
+                "### Interpretation prompts\n"
+                "- Why can $R^2$ be high in a spurious regression?\n"
+                "- What would you do next if you *needed* a meaningful long-run relationship? (hint: cointegration)\n\n"
                 "### Goal\n"
                 "Show how levels-on-levels regressions can look good for the wrong reasons.\n"
             ),
@@ -4289,6 +4546,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Construct cointegrated pair')}\"></a>\n"
                 "## Construct cointegrated pair\n\n"
+                "### Background\n"
+                "Cointegration is the key exception to the “levels regressions are spurious” warning.\n"
+                "Two series can be nonstationary individually but have a stable long-run relationship.\n\n"
+                "### What you should see\n"
+                "- `x` and `y` trend over time.\n"
+                "- `y - x` should look roughly stationary (because we simulated cointegration).\n\n"
+                "### Interpretation prompts\n"
+                "- In one sentence: what does it mean for two series to be cointegrated?\n"
+                "- Why do we simulate first before applying to real macro series?\n\n"
                 "### Goal\n"
                 "Construct a pair of series that are individually nonstationary but cointegrated.\n"
             ),
@@ -4309,6 +4575,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Engle-Granger test')}\"></a>\n"
                 "## Engle-Granger test\n\n"
+                "### Background\n"
+                "The Engle–Granger approach:\n"
+                "1) regress $y$ on $x$ in levels,\n"
+                "2) test whether the residual is stationary.\n\n"
+                "### What you should see\n"
+                "- a cointegration test p-value (often small in this simulated example).\n\n"
+                "### Interpretation prompts\n"
+                "- What is the null hypothesis in the cointegration test?\n"
+                "- If the p-value were large, what would that suggest?\n\n"
                 "### Goal\n"
                 "Run a cointegration test and interpret the p-value carefully.\n"
             ),
@@ -4321,6 +4596,16 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Error correction model')}\"></a>\n"
                 "## Error correction model\n\n"
+                "### Background\n"
+                "An ECM links:\n"
+                "- short-run changes ($\\Delta y_t$)\n"
+                "- to long-run disequilibrium (lagged residual from the levels relationship).\n\n"
+                "### What you should see\n"
+                "- an estimated coefficient on `u_lag1` (often negative in a stable cointegrated system).\n"
+                "- interpretation as “speed of adjustment.”\n\n"
+                "### Interpretation prompts\n"
+                "- What does the sign of the error-correction coefficient mean?\n"
+                "- Why do we use the lagged residual rather than the current residual?\n\n"
                 "### Goal\n"
                 "Fit an ECM:\n"
                 "- short-run changes depend on long-run disequilibrium (lagged residual)\n"
@@ -4364,6 +4649,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Build stationary dataset')}\"></a>\n"
                 "## Build stationary dataset\n\n"
+                "### Background\n"
+                "VARs generally require stable (stationary-ish) inputs.\n"
+                "A common first pass is to difference level series.\n\n"
+                "### What you should see\n"
+                "- a DataFrame of transformed series (no missing values).\n"
+                "- columns are numeric floats.\n\n"
+                "### Interpretation prompts\n"
+                "- What does differencing do to trends and to noise?\n"
+                "- Which series might require log-differencing rather than differencing?\n\n"
                 "### Goal\n"
                 "Build a small stationary-ish dataset to fit a VAR.\n"
             ),
@@ -4379,6 +4673,16 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Fit VAR + choose lags')}\"></a>\n"
                 "## Fit VAR + choose lags\n\n"
+                "### Background\n"
+                "VAR lag length is a bias–variance decision:\n"
+                "- too few lags → leftover autocorrelation and misspecification,\n"
+                "- too many lags → unstable estimates and low degrees of freedom.\n\n"
+                "### What you should see\n"
+                "- a chosen lag order (`res.k_ar`).\n"
+                "- a model summary with coefficients for lagged terms.\n\n"
+                "### Interpretation prompts\n"
+                "- Why might AIC choose more lags than BIC?\n"
+                "- What diagnostic would you check if you suspect too few lags?\n\n"
                 "### Goal\n"
                 "Fit a VAR and choose lags using an information criterion.\n"
             ),
@@ -4392,6 +4696,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('Granger causality')}\"></a>\n"
                 "## Granger causality\n\n"
+                "### Background\n"
+                "Granger causality asks a forecasting question:\n"
+                "- do lagged values of $x$ help predict $y$ beyond lagged $y$?\n\n"
+                "It is not structural causality.\n\n"
+                "### What you should see\n"
+                "- a test output summary for one direction (e.g., FEDFUNDS → UNRATE).\n\n"
+                "### Interpretation prompts\n"
+                "- Rewrite the Granger test result as a forecasting statement (not a causal one).\n"
+                "- Why can a third variable create apparent Granger relationships?\n\n"
                 "### Goal\n"
                 "Run at least one Granger causality test.\n\n"
                 "Reminder: this is predictive causality, not structural causality.\n"
@@ -4404,6 +4717,15 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             md(
                 f"<a id=\"{slugify('IRFs + forecasting')}\"></a>\n"
                 "## IRFs + forecasting\n\n"
+                "### Background\n"
+                "Impulse responses trace how a one-time shock propagates through the VAR dynamics.\n"
+                "Orthogonalized IRFs (Cholesky) impose an identification choice via variable ordering.\n\n"
+                "### What you should see\n"
+                "- an IRF plot over the chosen horizon.\n"
+                "- qualitative responses that decay if the VAR is stable.\n\n"
+                "### Interpretation prompts\n"
+                "- How does changing the variable ordering change the meaning of the shock?\n"
+                "- Which IRF responses would you view as economically plausible vs suspicious?\n\n"
                 "### Goal\n"
                 "Compute and plot impulse responses.\n\n"
                 "Caution:\n"

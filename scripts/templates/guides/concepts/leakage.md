@@ -1,28 +1,60 @@
-### Deep Dive: Leakage (What It Is, How It Happens, How To Detect It)
+### Deep Dive: Leakage — what it is, how it happens, how to detect it
 
-> **Definition:** **Leakage** happens when your model uses information that would not be available at prediction time.
+Leakage is the fastest way to get “amazing” results that do not survive reality.
 
-Leakage is one of the fastest ways to get "amazing" results that do not survive contact with reality.
+#### 1) Intuition (plain English)
 
-#### Common leakage types (defined)
-> **Definition:** **Target leakage** occurs when a feature is derived from the target (directly or indirectly).
+If the model sees information that would not have been available at the time of prediction, it is not learning; it is cheating.
 
-> **Definition:** **Temporal leakage** occurs when a feature uses future values (wrong shift direction, centered rolling windows, etc.).
+**Story example:** You “predict” next quarter’s recession using an indicator that is published with a delay, but you accidentally align it as if it were known in real time. Your backtest looks great, then fails when you try to use it live.
 
-> **Definition:** **Split leakage** occurs when your split strategy allows future information into training (random splits for forecasting).
+#### 2) Notation + setup (define symbols)
 
-> **Definition:** **Preprocessing leakage** occurs when you fit preprocessing (scaling, imputation) on all data instead of training data only.
+Let:
+- $t$ be the time you make a prediction,
+- $h$ be the forecast horizon,
+- $X_t$ be features available at time $t$,
+- $y_{t+h}$ be the target you want to predict.
 
-#### The core question to ask for every feature
-For each feature $x_t$, ask:
+The core question for every feature is:
 
 $$
-\text{Would I know this value at time } t \text{ when making a prediction for } t+1?
+\\text{Was this feature value knowable at time } t \\text{ when predicting } y_{t+h}?
 $$
 
-If the answer is "no", it is leakage.
+If “no,” it is leakage.
 
-#### Python demo: the classic `shift(-1)` bug (commented)
+#### 3) Common leakage types (defined)
+
+> **Target leakage:** a feature directly/indirectly encodes the target (or future information about it).
+
+> **Temporal leakage:** a feature uses future values (wrong shift direction, centered rolling windows, forward-filled joins).
+
+> **Split leakage:** your train/test strategy allows future information into training (random splits for forecasting).
+
+> **Preprocessing leakage:** preprocessing is fit on the full dataset (test set influences scaling/imputation).
+
+#### 4) Estimation mechanics: how leakage inflates performance
+
+Leakage typically:
+- increases in-sample fit,
+- increases test fit *under the wrong evaluation scheme*,
+- collapses under true time-ordered evaluation or live deployment.
+
+The reason is simple: the model has access to information correlated with the future target that would not exist at prediction time.
+
+#### 5) Inference: leakage also breaks “statistical significance”
+
+If leakage is present:
+- coefficients, p-values, and CI are not meaningful,
+- you are no longer analyzing the intended prediction problem.
+
+So leakage is a first-order validity issue, not a minor bug.
+
+#### 6) Practical code patterns (and anti-patterns)
+
+**(a) The classic `shift(-1)` bug**
+
 ```python
 import numpy as np
 import pandas as pd
@@ -32,17 +64,15 @@ from sklearn.metrics import r2_score
 
 rng = np.random.default_rng(0)
 idx = pd.date_range('2020-01-01', periods=200, freq='D')
-
-# Random-walk-like series
 s = pd.Series(np.cumsum(rng.normal(size=len(idx))), index=idx, name='y')
 
 # Goal: predict tomorrow (t+1)
 target = s.shift(-1)
 
-# Legit feature: yesterday (t-1)
+# Legit: yesterday (t-1)
 x_lag1 = s.shift(1)
 
-# LEAK feature: tomorrow (t+1) - this is literally the target!
+# LEAK: tomorrow (t+1) — this equals the target
 x_leak = s.shift(-1)
 
 df = pd.DataFrame({'target': target, 'x_lag1': x_lag1, 'x_leak': x_leak}).dropna()
@@ -59,58 +89,57 @@ print('R2 legit:', r2_score(test['target'], m_ok.predict(test[['x_lag1']])))
 print('R2 leak :', r2_score(test['target'], m_leak.predict(test[['x_leak']])))
 ```
 
-#### Python demo: rolling-window leakage (centered windows)
-> **Definition:** A **rolling window** summarizes the recent past (e.g., last 12 months). If you center the window, it includes future values.
+**(b) Rolling-window leakage**
+
+Centered rolling windows use future values:
 
 ```python
-# Centered rolling windows leak future information.
-# If you are predicting at time t, a centered window uses values after t.
-
-feature_leaky = s.rolling(window=7, center=True).mean()
-
-# Safer default: center=False (uses past values ending at t)
-feature_ok = s.rolling(window=7, center=False).mean()
+feature_leaky = s.rolling(window=7, center=True).mean()   # BAD for forecasting
+feature_ok = s.rolling(window=7, center=False).mean()     # past-only
 ```
 
-#### Python demo: preprocessing leakage (scalers)
-If you standardize features using the whole dataset, the test set influences the mean/variance.
+**(c) Preprocessing leakage**
+
+Fit scalers/imputers on training only (use pipelines):
 
 ```python
-import numpy as np
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
 
-# Imagine X_train and X_test are separated by time.
-# WRONG: fit scaler on all data
-# scaler = StandardScaler().fit(np.vstack([X_train, X_test]))
-
-# RIGHT: fit scaler on training only
-# scaler = StandardScaler().fit(X_train)
-# X_train_scaled = scaler.transform(X_train)
-# X_test_scaled = scaler.transform(X_test)
+pipe = Pipeline([
+  ("scaler", StandardScaler()),
+  ("clf", LogisticRegression(max_iter=5000)),
+])
 ```
 
-#### Symptoms of leakage (how it looks)
-- Test metrics that are "too good to be true" for the difficulty of the problem.
-- Huge performance gap: random split looks great, time split collapses.
-- A single feature appears to predict perfectly.
+#### 7) Diagnostics + robustness (minimum set)
 
-#### Debug checklist (practical)
-1. Audit every `shift(...)` direction.
-   - `shift(+k)` uses the past.
-   - `shift(-k)` uses the future.
-2. Audit rolling windows.
-   - Avoid `center=True`.
-3. Audit preprocessing.
-   - Fit scalers/imputers on training only.
-   - Use sklearn `Pipeline` to enforce this.
-4. Validate timestamp meaning.
-   - Are your features "known as of" the prediction date?
+1) **Random split vs time split gap**
+- if random split performance is much higher than time split, suspect leakage or regime drift.
 
-#### Project touchpoints (where leakage is prevented or easy to introduce)
-- `src/features.py` explicitly forbids non-positive lags in `add_lag_features` to prevent accidental future leakage.
-- `src/evaluation.py` contains time-aware split helpers (`time_train_test_split_index`, `walk_forward_splits`).
-- Classification notebooks use sklearn `Pipeline` to prevent preprocessing leakage.
+2) **Feature audit**
+- audit every `.shift()` direction and every rolling window.
 
-#### Economics interpretation
-A recession model with leakage will appear to "predict" recessions, but it is usually just reading signals from the future.
-The goal is to predict with only information available at the time.
+3) **Timestamp audit**
+- inspect the meaning of timestamps after merges (month-end vs quarter-end, publication lags).
+
+4) **“Too good to be true” check**
+- if one feature predicts nearly perfectly, investigate it as a leak candidate.
+
+#### 8) Interpretation + reporting
+
+When you present results, state:
+- the forecast horizon,
+- the evaluation scheme (time split / walk-forward),
+- at least one concrete leakage prevention step you took.
+
+**What this does NOT mean**
+- A model that looks great with leakage is not “close”; it is solving a different problem.
+
+#### Exercises
+
+- [ ] Create an intentional leakage feature and show how it inflates performance under a random split.
+- [ ] Fix the leakage and re-evaluate with a time split; write 5 sentences explaining what changed.
+- [ ] List 5 places leakage can enter (shifts, rolls, merges, scaling, target construction).
+- [ ] For one notebook dataset, manually verify (by printing rows) that features are past-only relative to the label.

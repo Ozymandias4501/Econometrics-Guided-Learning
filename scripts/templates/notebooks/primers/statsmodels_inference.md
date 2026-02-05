@@ -1,59 +1,50 @@
-## Primer: statsmodels vs scikit-learn (Inference vs Prediction)
+## Primer: `statsmodels` vs `scikit-learn` (inference vs prediction)
 
-### Two different goals
-- **Prediction (ML):** optimize out-of-sample accuracy.
-- **Inference (econometrics):** interpret coefficients + quantify uncertainty.
+This repo uses both libraries because they serve different goals:
 
-scikit-learn is mostly prediction-focused.
-statsmodels is built for inference (standard errors, p-values, confidence intervals).
+- **Prediction (ML):** optimize out-of-sample accuracy → `scikit-learn`
+- **Inference (econometrics):** interpret coefficients + quantify uncertainty → `statsmodels`
 
-### Minimal statsmodels OLS pattern
+### Minimal `statsmodels` OLS pattern
+
 ```python
 import statsmodels.api as sm
 
-# X: DataFrame of features
-# y: Series target
-
-# Add intercept column
-# Xc = sm.add_constant(X, has_constant='add')
-
-# Fit OLS
-# res = sm.OLS(y, Xc).fit()
-# print(res.summary())
+# X: DataFrame of features, y: Series target
+Xc = sm.add_constant(X, has_constant="add")  # add intercept
+res = sm.OLS(y, Xc).fit()
+print(res.summary())
 ```
 
-### What you're looking at in `res.summary()`
-Typical regression output includes:
-- **coef**: estimated coefficients $\hat\beta$
-- **std err**: estimated standard errors $\widehat{SE}(\hat\beta)$
-- **t**: t-statistic $\hat\beta / \widehat{SE}(\hat\beta)$
-- **P>|t|**: p-value for $H_0: \beta=0$ (under assumptions)
-- **[0.025, 0.975]**: 95% confidence interval for $\beta$
+**Expected output / sanity check**
+- a table with `coef`, `std err`, `t`, `P>|t|`, and a CI column
+- coefficient names match your column names
 
-You can access these programmatically:
+### What you are looking at in `res.summary()`
+
+- **coef**: $\\hat\\beta$ (estimated effect in the model)
+- **std err**: estimated uncertainty $\\widehat{SE}(\\hat\\beta)$
+- **t**: $\\hat\\beta / \\widehat{SE}(\\hat\\beta)$
+- **P>|t|**: p-value for $H_0: \\beta=0$ (conditional on assumptions)
+- **[0.025, 0.975]**: 95% confidence interval
+
+### Robust standard errors (change uncertainty, not coefficients)
 
 ```python
-# res.params        # coefficients (pandas Series)
-# res.bse           # standard errors
-# res.pvalues       # p-values
-# res.conf_int()    # confidence intervals
+# Cross-section heteroskedasticity
+res_hc3 = res.get_robustcov_results(cov_type="HC3")
+
+# Time series autocorrelation + heteroskedasticity
+res_hac = res.get_robustcov_results(cov_type="HAC", cov_kwds={"maxlags": 4})
 ```
 
-### Robust standard errors
-Robust SE change uncertainty estimates, not coefficients.
+### Common pitfalls (and quick fixes)
 
-```python
-# HC3 (cross-section)
-# res_hc3 = res.get_robustcov_results(cov_type='HC3')
-
-# HAC/Newey-West (time series)
-# res_hac = res.get_robustcov_results(cov_type='HAC', cov_kwds={'maxlags': 4})
-```
-
-Why this matters:
-- Cross-sectional data often has **heteroskedasticity** (error variance changes across observations).
-- Time series often has **autocorrelation** (errors correlated over time).
-
-### Practical rule
-- Use sklearn for predictive pipelines and cross-validation.
-- Use statsmodels when you need inference and careful interpretation.
+- **Forgetting the intercept**
+  - Fix: always `add_constant`.
+- **Wrong SE for time series**
+  - Fix: use HAC when residuals are autocorrelated.
+- **Treating p-values as causal proof**
+  - Fix: write the identification assumption; otherwise interpret as association.
+- **Mixing prediction and inference**
+  - Fix: use `sklearn` pipelines + time splits for prediction; use `statsmodels` for coefficient uncertainty.

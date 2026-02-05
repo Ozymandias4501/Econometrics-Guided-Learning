@@ -23,6 +23,11 @@ This classification module predicts **next-quarter technical recession** from ma
 - **Brier score**: mean squared error of probabilities (lower is better).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -55,97 +60,208 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: Probabilities, Metrics, and Thresholds
+### Core Classification: probabilities, losses, and decision thresholds
 
-In this project, classification is about predicting recession risk as a probability.
+In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
 
-#### Logistic regression mechanics
-Logistic regression models probabilities via log-odds:
+#### 1) Intuition (plain English)
+
+Binary labels (recession vs not) hide uncertainty.
+The useful object is the probability:
+- “Given data today, how likely is a recession next quarter?”
+
+Probabilities let you:
+- compare risk over time,
+- set thresholds based on costs,
+- evaluate calibration (whether 30% means ~30% in reality).
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $x_i$ be features,
+- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+
+Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
 $$
 
-Then:
+Equivalently:
 
 $$
- p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
 $$
 
-#### Metrics you should treat as standard
-- ROC-AUC: ranking quality across thresholds
-- PR-AUC: often more informative when positives are rare
-- Brier score (or log loss): probability quality
+**What each term means**
+- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- coefficients move probabilities through the log-odds scale.
 
-#### Thresholding is a decision rule
-> **Definition:** A **threshold** converts probabilities into labels.
+#### 3) Assumptions (and what “probability model” means)
 
-Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
-Pick thresholds based on:
-- decision costs
-- desired recall/precision tradeoff
-- calibration quality
+Logistic regression assumes:
+- a linear relationship in log-odds,
+- observations are conditionally independent given $x$ (often violated in time series),
+- no perfect multicollinearity in features.
 
-### Deep Dive: Tree Models + Feature Importance (What To Trust)
+Even if the model is misspecified, it can still be useful for ranking risk.
+But calibration can suffer, so we measure it.
 
-Tree models can capture non-linear relationships and interactions.
-They can also overfit and they can be misinterpreted.
+#### 4) Estimation mechanics (how the model is fit)
 
-#### Key terms (defined)
-> **Definition:** A **decision tree** predicts by splitting data using feature thresholds.
+Logistic regression is typically fit by maximum likelihood:
+- choose $\\beta$ to maximize the probability of the observed labels.
 
-> **Definition:** A **random forest** averages many trees trained on bootstrapped samples.
+The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
-> **Definition:** **Impurity-based importance** ("Gini importance") measures how much a feature reduces impurity across splits.
+$$
+\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+$$
 
-> **Definition:** **Permutation importance** measures how much performance drops when you shuffle a feature.
+In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
 
-#### Why impurity-based importance can mislead
-Impurity-based importance can be biased toward:
-- features with many possible split points
-- correlated features (importance can be split unpredictably)
+#### 5) Inference vs prediction
 
-Permutation importance is often more reliable for "usefulness" but still has caveats:
-- correlated features can share importance
-- shuffling breaks correlation structure
+- `statsmodels` gives standard errors and p-values (inference framing).
+- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
 
-#### Python demo: impurity vs permutation importance (commented)
-```python
-import numpy as np
+In this project:
+- prioritize time-aware out-of-sample evaluation,
+- treat inference outputs as descriptive unless you have identification.
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
+#### 6) Metrics (what to measure and why)
 
-rng = np.random.default_rng(0)
+At minimum, treat these as standard:
 
-# Two correlated features + one noise feature
-n = 800
-x1 = rng.normal(size=n)
-x2 = 0.9 * x1 + rng.normal(scale=0.5, size=n)
-x3 = rng.normal(size=n)
-X = np.column_stack([x1, x2, x3])
+- **ROC-AUC:** ranking performance (threshold-free).
+- **PR-AUC:** often more informative when positives are rare.
+- **Brier score:** mean squared error of probabilities:
+$$
+\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+$$
+- **Calibration plots:** do predicted probabilities match observed frequencies?
 
-# Outcome depends mostly on x1
-p = 1 / (1 + np.exp(-(0.5 + 1.0 * x1)))
-y = rng.binomial(1, p)
+#### 7) Thresholding is a decision rule (not a model property)
 
-# Split (random here only because this is toy IID data)
-X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0)
+A threshold $\\tau$ converts probability to a hard label:
+$$
+\\hat y_i = 1[p_i \\ge \\tau].
+$$
 
-rf = RandomForestClassifier(n_estimators=300, random_state=0).fit(X_tr, y_tr)
-auc = roc_auc_score(y_te, rf.predict_proba(X_te)[:, 1])
-print('AUC:', auc)
-print('gini importances:', rf.feature_importances_)
+Choosing $\\tau$ should reflect costs:
+- false positives (crying wolf),
+- false negatives (missing recessions).
 
-pi = permutation_importance(rf, X_te, y_te, n_repeats=20, random_state=0, scoring='roc_auc')
-print('perm importances:', pi.importances_mean)
-```
+#### 8) Diagnostics + robustness (minimum set)
 
-#### Interpretation rule
-Treat feature importance as "useful for prediction".
-Do not treat it as causal influence.
+1) **Time-aware evaluation**
+- use a time split or walk-forward; avoid random splits for forecasting tasks.
+
+2) **Calibration**
+- plot predicted vs observed probabilities; compute Brier score.
+
+3) **Threshold sensitivity**
+- show how precision/recall changes with threshold.
+
+4) **Feature stability**
+- check whether model performance is stable over subperiods (structural change).
+
+#### 9) Interpretation + reporting
+
+Report:
+- horizon (what “next quarter” means),
+- split method and dates,
+- probability calibration (not just accuracy),
+- threshold choice rationale.
+
+**What this does NOT mean**
+- AUC does not tell you if probabilities are calibrated.
+- A good backtest does not guarantee future performance in a new regime.
+
+#### Exercises
+
+- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
+- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
+- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
+- [ ] Compare random-split vs time-split AUC and explain the difference.
+
+### Deep Dive: Tree models and feature importance (interpretation pitfalls)
+
+Tree-based models can capture nonlinearities and interactions, but interpretation requires care.
+
+#### 1) Intuition (plain English)
+
+Trees can outperform linear models in prediction, especially when relationships are nonlinear.
+But tree “feature importance” is often misunderstood.
+
+**Story example:** A random forest says a variable is “important.”
+That does not mean changing the variable causes the outcome; it means the variable helps prediction in the fitted model.
+
+#### 2) Notation + setup (define terms)
+
+Tree models partition feature space into regions and predict with averages (regression) or probabilities (classification).
+
+Feature importance measures (common types):
+- **impurity-based importance:** how much splits reduce impurity across the forest,
+- **permutation importance:** how much performance drops when a feature is shuffled.
+
+#### 3) Assumptions
+
+Interpretation assumes:
+- evaluation is leakage-free,
+- features are aligned correctly in time,
+- importance is stable across folds/periods.
+
+Correlated features complicate importance:
+- the model can “spread” importance across correlated predictors.
+
+#### 4) Estimation mechanics (high level)
+
+Impurity-based importance is fast but can be biased toward:
+- variables with many possible split points,
+- noisy continuous features.
+
+Permutation importance is often more reliable:
+- measure baseline performance,
+- shuffle one feature in the test set,
+- measure performance drop.
+
+#### 5) Inference: treat importance as descriptive
+
+Importance does not come with simple p-values.
+Uncertainty can be assessed via:
+- cross-validation variability,
+- bootstrap resampling,
+- permutation distributions.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Out-of-sample importance**
+- compute importance on test/validation data, not training.
+
+2) **Stability across folds/time**
+- if importance changes drastically across periods, interpretation is fragile.
+
+3) **Correlation groups**
+- check whether important variables are part of a correlated cluster; interpret the group, not a single variable.
+
+#### 7) Interpretation + reporting
+
+Report:
+- model type and evaluation scheme,
+- the importance method (impurity vs permutation),
+- stability checks.
+
+**What this does NOT mean**
+- importance is not a causal effect,
+- importance is not the same as “economic significance.”
+
+#### Exercises
+
+- [ ] Compute impurity and permutation importance for the same model; compare and explain differences.
+- [ ] Evaluate importance stability across two time periods.
+- [ ] Identify a correlated feature group and explain why “the most important feature” can be unstable.
 
 ### Project Code Map
 - `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)

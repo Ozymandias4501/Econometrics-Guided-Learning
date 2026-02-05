@@ -1,47 +1,84 @@
-### Deep Dive: Anomaly Detection (Crisis Periods)
+### Deep Dive: Anomaly detection — finding “unusual” macro periods
 
-Anomaly detection flags observations that look unusual relative to the bulk of the data.
-In macro, anomalies often correspond to crises, but not always.
+Anomaly detection flags observations that look unusual relative to typical patterns.
 
-#### Key terms (defined)
-> **Definition:** An **outlier** is an observation far from typical behavior.
+#### 1) Intuition (plain English)
 
-> **Definition:** An **anomaly score** measures "unusualness".
+Crises (2008, 2020) look different in multivariate indicator space.
+Anomaly detection can highlight these periods without a recession label.
 
-> **Definition:** **Isolation Forest** isolates points by random splits; anomalies isolate quickly.
+Use it to:
+- detect outliers,
+- generate hypotheses,
+- build monitoring dashboards.
 
-> **Definition:** **Contamination** is the expected fraction of anomalies (a hyperparameter).
+#### 2) Notation + setup (define symbols)
 
-#### Python demo: Isolation Forest intuition (commented)
-```python
-import numpy as np
+Let $x_t$ be the feature vector at time $t$.
+An anomaly detector produces a score:
+$$
+s_t = s(x_t),
+$$
+where larger (or smaller, depending on convention) means “more anomalous.”
 
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
+Simple baseline: z-score on one feature:
+$$
+z_t = \\frac{x_t - \\bar x}{s}.
+$$
 
-rng = np.random.default_rng(0)
+Multivariate baselines:
+- distance from mean (Mahalanobis distance),
+- isolation forest score,
+- reconstruction error from PCA.
 
-# Mostly normal points
-X_normal = rng.normal(size=(300, 3))
+#### 3) Assumptions
 
-# A few anomalous points
-X_anom = rng.normal(loc=6.0, scale=1.0, size=(10, 3))
+Anomaly detection assumes:
+- features are scaled comparably,
+- “typical” behavior exists and is represented in the data.
 
-X = np.vstack([X_normal, X_anom])
-X = StandardScaler().fit_transform(X)
+Structural breaks can shift what is “normal,” so anomaly thresholds should be treated as time-varying in real monitoring.
 
-iso = IsolationForest(contamination=0.05, random_state=0).fit(X)
+#### 4) Estimation mechanics (high level)
 
-# Higher score => more anomalous
-scores = -iso.score_samples(X)
-print(scores[-10:])
-```
+Common approaches:
+- **PCA reconstruction:** anomalies have large reconstruction error using a few PCs.
+- **Isolation forest:** anomalies are easier to isolate with random splits.
+- **Distance-based:** far from center in standardized space.
 
-#### Interpretation cautions
-- Anomaly does not mean recession.
-- Anomaly means the pattern is rare.
+#### 5) Inference: focus on false positives/negatives
 
-#### Debug checklist
-1. Standardize features.
-2. Sensitivity-check contamination.
-3. Inspect which indicators are extreme in anomalous periods.
+Anomaly detection is not hypothesis testing; it is a scoring/ranking tool.
+Validate by:
+- checking whether known crises score high,
+- inspecting the top anomalies qualitatively.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Known-event sanity**
+- do 2008/2020 periods appear as anomalies?
+
+2) **Feature contribution**
+- which features drive the anomaly score? (inspect deviations)
+
+3) **Threshold sensitivity**
+- how many anomalies do you flag under different thresholds?
+
+4) **Stability**
+- do top anomalies persist if you change feature set or standardization window?
+
+#### 7) Interpretation + reporting
+
+Report:
+- anomaly method and preprocessing,
+- how threshold was chosen,
+- examples of top anomalies and what indicators drove them.
+
+**What this does NOT mean**
+- anomalies are not causal explanations; they are flags.
+
+#### Exercises
+
+- [ ] Fit an anomaly detector and list the top 10 anomalous dates; interpret at least 3.
+- [ ] Compare two methods (PCA reconstruction vs isolation forest) and discuss differences.
+- [ ] Vary the anomaly threshold and report how many periods are flagged.

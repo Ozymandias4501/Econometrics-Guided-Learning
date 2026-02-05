@@ -20,6 +20,11 @@ This data module builds the datasets used throughout the project: a macro panel 
 - **Quarter-end timestamp**: representing a quarter by its final date to make merges unambiguous.
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -49,141 +54,215 @@ target_next_q = recession.shift(-1)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Data: Build Datasets You Can Trust
+### Core Data: build datasets you can trust (schema, timing, reproducibility)
 
-Modeling is downstream of data.
-If you do not trust your data processing, you cannot trust your model output.
+Good modeling is downstream of good data. In econometrics, “good data” means more than “no missing values”:
+it means the dataset matches the real timing and measurement of the economic problem.
 
-#### The three layers of a real data pipeline
-> **Definition:** **Raw data** is the closest representation of what the source returned.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Processed data** is cleaned and aligned for analysis.
+Most downstream mistakes trace back to one of these upstream issues:
+- mixing frequencies incorrectly (monthly vs quarterly),
+- misaligning timestamps (month-start vs month-end),
+- using revised data as if it were known in real time,
+- silently changing transformations (growth rate vs level) mid-project.
 
-> **Definition:** A **modeling table** is the final table with features and targets aligned and ready for splitting.
+**Story example:** You merge monthly unemployment to quarterly GDP growth.
+If you accidentally align the *end-of-quarter* unemployment with *start-of-quarter* GDP, you change the meaning of “what was known when.”
 
-#### Timing is part of the schema
-When you build features, you are also defining "what was known when".
-That is why frequency alignment and target shifting are first-class topics in this project.
+#### 2) Notation + setup (define symbols)
 
-#### A practical habit
-Keep a simple data dictionary as you go:
-- what is each column?
-- what are its units?
-- what frequency is it observed?
-- what transformations did you apply?
+We will use the “time + horizon” language throughout the repo:
+- $t$: time index (month/quarter/year),
+- $X_t$: features available at time $t$,
+- $y_{t+h}$: outcome/label defined $h$ periods ahead.
 
-### Deep Dive: GDP Growth Math + Technical Recession Labels
+Data pipeline layers (repo convention):
 
-GDP is a level series. A recession label requires turning levels into growth rates.
+1) **Raw data** (`data/raw/`)
+- closest representation of the source response (API output, raw CSV)
+- should be cacheable and re-creatable
 
-#### Key terms (defined)
-> **Definition:** A **level** is the raw value of a series (e.g., real GDP in chained dollars).
+2) **Processed data** (`data/processed/`)
+- cleaned, aligned frequencies, derived columns
+- “analysis-ready” but not necessarily “model-ready”
 
-> **Definition:** A **growth rate** is the percent change over a period.
+3) **Modeling table**
+- final table where:
+  - features are past-only,
+  - labels are shifted to the forecast horizon,
+  - missingness from lags/rolls is handled,
+  - you can split without leakage.
 
-> **Definition:** **QoQ** (quarter-over-quarter) compares $GDP_t$ to $GDP_{t-1}$.
+#### 3) Assumptions (and why we state them explicitly)
 
-> **Definition:** **YoY** (year-over-year) compares $GDP_t$ to $GDP_{t-4}$.
+Every dataset embeds assumptions:
+- measurement units (percent vs fraction),
+- seasonal adjustment,
+- timing conventions (month-end, quarter-end),
+- whether revisions matter (real-time vs revised),
+- whether the sample composition changes over time.
 
-> **Definition:** **Annualized QoQ** converts a quarterly growth rate into an annual pace.
+You cannot remove assumptions; you can only make them explicit and test sensitivity.
 
-#### Growth formulas (math)
-QoQ percent growth:
+#### 4) Mechanics: the minimum reliable pipeline
+
+**(a) Ingest + cache**
+- Always cache API responses to disk.
+- Your code should be able to re-run without changing results.
+
+**(b) Parse + type**
+- Parse dates, set a proper index (DatetimeIndex for macro; MultiIndex for panels).
+- Coerce numeric columns to numeric types (watch out for strings).
+
+**(c) Align frequency**
+- Resample to a common timeline (month-end, quarter-end).
+- Decide and document whether you use `.last()` or `.mean()` (interpretation differs).
+
+**(d) Create derived variables**
+- growth rates, log differences, rolling windows, lag features.
+- each transform changes interpretation; keep a small “data dictionary.”
+
+**(e) Build the modeling table**
+- define labels (e.g., next-quarter recession),
+- shift targets forward and features backward (lags),
+- drop missing rows created by lags/rolls.
+
+#### 5) Inference and data (why timing affects standard errors)
+
+Even inference topics (SE, p-values) depend on data structure:
+- time series residuals are autocorrelated → HAC SE,
+- panels share shocks within groups → clustered SE.
+
+So “data” is not just a preprocessing step; it determines the correct inference method.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Schema + units check**
+- print `df.dtypes`, confirm units (percent vs fraction), and inspect summary stats.
+
+2) **Index + frequency check**
+- confirm sorted index, expected frequency, and no duplicate timestamps.
+
+3) **Missingness check**
+- print missingness per column before/after merges and transforms.
+
+4) **Timing check**
+- for a few rows, manually verify that features come from the past relative to the label.
+
+5) **Sensitivity check**
+- re-run a result using an alternative alignment (mean vs last) and see if conclusions change.
+
+#### 7) Interpretation + reporting
+
+When you present a result downstream, always include:
+- which dataset version you used (processed vs sample),
+- the frequency and timestamp convention,
+- key transformations (diff, logdiff, growth rates),
+- any known limitations (revisions, breaks).
+
+**What this does NOT mean**
+- “More features” does not equal “better data.”
+- A perfectly clean dataset can still be conceptually wrong if timing is wrong.
+
+#### Exercises
+
+- [ ] For one dataset, write a 5-line data dictionary (column meaning + units + frequency).
+- [ ] Demonstrate how `.last()` vs `.mean()` changes a resampled series and interpret the difference.
+- [ ] Pick one merge/join and verify alignment by printing a few timestamps and values.
+- [ ] Show one example where a shift direction would create leakage, and explain why.
+
+### Deep Dive: GDP growth + the “technical recession” label (macro target construction)
+
+This repo’s macro tasks rely on a recession label and GDP growth features. Target construction is part of the econometric specification.
+
+#### 1) Intuition (plain English)
+
+Labels are not “given by nature.” You define them.
+
+**Story example:** A binary recession label is a simplification of a complex economic phenomenon.
+The value of the label is not that it is perfect, but that it is:
+- clear,
+- reproducible,
+- aligned to a forecasting horizon.
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $GDP_t$ be real GDP level in quarter $t$.
+
+Quarter-over-quarter (QoQ) growth (simple form):
 
 $$
- g_{qoq,t} = 100 \cdot \left(\frac{GDP_t}{GDP_{t-1}} - 1\right)
+g_t^{qoq} = \\frac{GDP_t - GDP_{t-1}}{GDP_{t-1}}.
 $$
 
-Annualized QoQ percent growth (quarterly compounding):
+Year-over-year (YoY) growth:
 
 $$
- g_{ann,t} = 100 \cdot \left(\left(\frac{GDP_t}{GDP_{t-1}}\right)^4 - 1\right)
+g_t^{yoy} = \\frac{GDP_t - GDP_{t-4}}{GDP_{t-4}}.
 $$
 
-YoY percent growth:
+Technical recession label (common rule of thumb):
+- recession at $t$ if GDP growth is negative for two consecutive quarters:
 
 $$
- g_{yoy,t} = 100 \cdot \left(\frac{GDP_t}{GDP_{t-4}} - 1\right)
+R_t = 1[g_t^{qoq} < 0 \\;\\text{and}\\; g_{t-1}^{qoq} < 0].
 $$
 
-#### Why compute multiple growth measures?
-- QoQ is responsive but noisy.
-- YoY is smoother but slower to react.
-- Annualized QoQ is common in macro reporting.
+**What each term means**
+- QoQ captures short-run movements; YoY smooths seasonal/short-run noise.
+- The “two quarters” rule is a convention, not a structural definition.
 
-> **Definition:** A **log growth rate** uses differences of logs: $\Delta \log(GDP_t) = \log(GDP_t) - \log(GDP_{t-1})$.
-Log growth is often convenient because it approximates percent growth for small changes and makes compounding math cleaner.
+#### 3) Assumptions (and limitations)
 
-#### Technical recession label used in this project
-> **Definition:** A **technical recession** (teaching proxy here) is two consecutive quarters of negative QoQ GDP growth.
+This label assumes:
+- GDP growth is an adequate proxy for recession timing.
 
-Label:
+Limitations:
+- official recession dating (NBER) uses broader information and can differ,
+- GDP revisions can change growth signs ex post,
+- the label is coarse and may miss mild downturns.
 
-$$
- recession_t = \mathbb{1}[g_{qoq,t} < 0 \;\wedge\; g_{qoq,t-1} < 0]
-$$
+#### 4) Mechanics: aligning labels to forecasting horizons
 
-Next-quarter prediction target:
+If you predict “next quarter recession,” you must shift labels:
+- features at time $t$ predict $R_{t+1}$ (or $R_{t+h}$).
 
-$$
- target_{t} = recession_{t+1}
-$$
+That makes timing explicit and reduces leakage risk.
 
-#### Edge cases (what to watch)
-- Missing GDP values will propagate to growth.
-- The first growth observation is undefined (needs a prior quarter).
-- YoY growth needs 4 prior quarters.
+#### 5) Inference: label uncertainty and evaluation
 
-#### Python demo: compute growth + label (commented)
-```python
-import pandas as pd
+Classification metrics depend on label prevalence and definition.
+If you change the label rule, you change:
+- class imbalance,
+- what counts as “false positive/negative,”
+- and the economic meaning of a miss.
 
-# gdp: Series of GDP levels indexed by quarter-end dates
-# gdp = ...
+#### 6) Diagnostics + robustness (minimum set)
 
-# QoQ growth (percent)
-# growth_qoq = 100 * (gdp / gdp.shift(1) - 1)
+1) **Plot GDP growth with recession shading**
+- confirm the label activates where you expect.
 
-# Technical recession label
-# Two consecutive negative quarters:
-# - current quarter growth < 0
-# - previous quarter growth < 0
-# recession = ((growth_qoq < 0) & (growth_qoq.shift(1) < 0)).astype(int)
+2) **Compare to alternative labels**
+- NBER recession indicator (if available), unemployment-based rules, etc.
 
-# Next-quarter target
-# Predict next quarter's label using information as-of this quarter:
-# target_next = recession.shift(-1)
-```
+3) **Sensitivity to growth definition**
+- compare QoQ vs YoY-based recession heuristics.
 
-#### Project touchpoints (where this logic lives in code)
-- `src/macro.py` implements these transforms explicitly:
-  - `gdp_growth_qoq`, `gdp_growth_qoq_annualized`, `gdp_growth_yoy`
-  - `technical_recession_label`
-  - `next_period_target`
+#### 7) Interpretation + reporting
 
-#### Python demo: using the project helper functions (commented)
-```python
-from src import macro
+When you report a model:
+- specify the label definition,
+- specify the forecast horizon,
+- interpret errors in economic terms (missed recession vs false alarm).
 
-# levels: quarterly GDP level series
-# levels = gdp['GDPC1']
+#### Exercises
 
-# Growth variants
-# qoq = macro.gdp_growth_qoq(levels)
-# yoy = macro.gdp_growth_yoy(levels)
-
-# Label + next-period target
-# recession = macro.technical_recession_label(qoq)
-# target = macro.next_period_target(recession)
-```
-
-#### Important limitation
-This is a clean, computable teaching proxy.
-It is not an official recession dating rule.
-
-#### Macro caveat: revisions
-GDP is revised. If you re-fetch later, historical values can change, which can change your computed label.
-This is one reason caching matters.
+- [ ] Compute QoQ and YoY GDP growth and plot them.
+- [ ] Construct the technical recession label and verify the count of recession quarters.
+- [ ] Shift the label to create a one-quarter-ahead target; confirm no leakage.
+- [ ] Compare your label to an alternative (if available) and note differences.
 
 ### Project Code Map
 - `src/fred_api.py`: FRED client (`fetch_series_meta`, `fetch_series_observations`, `observations_to_frame`)

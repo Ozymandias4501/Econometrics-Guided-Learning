@@ -21,6 +21,11 @@ This unsupervised module explores macro structure: factors, regimes, and anomali
 - **Anomaly detection**: flagging unusual points (often crisis periods).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -48,75 +53,178 @@ pca = PCA(n_components=2).fit(X)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Unsupervised Learning: Describe Structure Before Predicting
+### Core Unsupervised Learning: describe structure before predicting
 
-Unsupervised methods help you understand structure in the indicators.
-They do not require a target label.
+Unsupervised methods are tools for *description* rather than *prediction*:
+they help you understand structure in the indicators without a target label.
 
-#### Standardization matters
-Many unsupervised methods rely on distances or variances.
-If one variable has larger units, it dominates.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Standardization** rescales each feature to mean 0 and standard deviation 1.
+In macro and finance, variables move together for many reasons:
+- common shocks,
+- regimes (expansions vs recessions),
+- measurement changes.
 
-#### Interpretation stance
-Treat unsupervised outputs as:
-- descriptions (factors, regimes, anomalies)
-- hypotheses you can investigate
+Unsupervised methods help answer:
+- “Are there a few latent factors driving many series?” (PCA)
+- “Do observations cluster into regimes?” (clustering)
+- “Which periods look unusual?” (anomaly detection)
 
-Avoid treating them as causal explanations.
+These outputs are best treated as hypotheses you can investigate, not as causal explanations.
 
-### Deep Dive: Clustering as Regime Discovery
+#### 2) Notation + setup (define symbols)
 
-Clustering groups time periods with similar indicator patterns.
-You can treat clusters as candidate "macro regimes" and compare them to recession labels.
+Let $X$ be an $n \\times p$ feature matrix:
+- rows: time periods or entities,
+- columns: standardized indicators.
 
-#### Key terms (defined)
-> **Definition:** **Clustering** groups observations so points in the same cluster are similar.
-
-> **Definition:** **k-means** finds k centroids and assigns each point to the closest centroid.
-
-> **Definition:** **Inertia** is the k-means objective (within-cluster sum of squares). It always decreases with k.
-
-> **Definition:** The **silhouette score** measures separation between clusters (higher is better).
-
-#### k-means objective (math)
-k-means solves:
+Standardization is often essential:
 
 $$
-\min_{C_1,\ldots,C_k} \sum_{j=1}^k \sum_{i \in C_j} ||x_i - \mu_j||^2
+\\tilde x_{ij} = \\frac{x_{ij} - \\bar x_j}{s_j}
 $$
 
-- $\mu_j$ is the centroid of cluster j.
-- Distance depends on feature scale, so standardization matters.
+**What each term means**
+- $\\bar x_j$: mean of feature $j$,
+- $s_j$: standard deviation of feature $j$,
+- standardization prevents high-variance features from dominating.
 
-#### Python demo: k-means + silhouette (commented)
-```python
-import numpy as np
+#### 3) Assumptions (and what can go wrong)
 
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
+Unsupervised methods assume:
+- features are comparable after scaling,
+- distance/variance summaries reflect meaningful structure.
 
-rng = np.random.default_rng(0)
+Common failure modes:
+- forgetting to standardize,
+- including strong trends (nonstationarity) so “clusters” become time periods,
+- over-interpreting factors as “the economy’s true drivers.”
 
-# Toy feature matrix
-X = rng.normal(size=(200, 4))
+#### 4) Estimation mechanics (high level)
 
-# Standardize before k-means
-X_scaled = StandardScaler().fit_transform(X)
+- **PCA:** finds orthogonal directions that explain maximal variance.
+- **Clustering (k-means):** partitions observations to minimize within-cluster distances.
+- **Anomaly detection:** flags observations far from the “typical” pattern.
 
-for k in [2, 3, 4, 5]:
-    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X_scaled)
-    sil = silhouette_score(X_scaled, km.labels_)
-    print(k, 'inertia', km.inertia_, 'sil', sil)
-```
+#### 5) Diagnostics + robustness (minimum set)
 
-#### Interpretation playbook
-1. Standardize features.
-2. Choose k using elbow + silhouette + interpretability.
-3. Inspect cluster centroids in original units (undo scaling) for meaning.
-4. Compare cluster assignments to recession labels.
+1) **Standardization check**
+- confirm features have mean ~0 and std ~1 after scaling.
+
+2) **Stability**
+- do PCA loadings or cluster assignments change a lot if you change the sample period?
+
+3) **Interpretability**
+- can you label factors/clusters with economic meaning using external context?
+
+4) **Sensitivity**
+- try different numbers of components/clusters; do conclusions persist?
+
+#### 6) Interpretation + reporting
+
+Report:
+- preprocessing (standardization, transformations),
+- chosen hyperparameters (k, number of PCs),
+- stability checks.
+
+**What this does NOT mean**
+- Clusters are not proof of causal regimes.
+- PCA components are not “true” economic factors; they are variance summaries.
+
+#### Exercises
+
+- [ ] Standardize a feature matrix and verify means/stds.
+- [ ] Fit PCA and interpret the top component using loadings.
+- [ ] Cluster the dataset and compare cluster periods to known recessions.
+- [ ] Try two different k values and explain how clustering changes.
+
+### Deep Dive: Clustering regimes — grouping time periods into “states of the economy”
+
+Clustering is a descriptive tool for finding patterns/regimes in multivariate macro data.
+
+#### 1) Intuition (plain English)
+
+Instead of predicting recession directly, you can ask:
+- “Do the indicators naturally cluster into a few recurring patterns?”
+
+These clusters can correspond to:
+- expansions,
+- recessions,
+- high-inflation regimes,
+- crisis periods.
+
+But clusters are hypotheses, not causal regime proofs.
+
+#### 2) Notation + setup (define symbols)
+
+Let $x_t \\in \\mathbb{R}^p$ be the feature vector at time $t$.
+K-means clustering chooses:
+- cluster centers $\\mu_1,\\dots,\\mu_K$,
+- assignments $c_t \\in \\{1,\\dots,K\\}$,
+to minimize:
+
+$$
+\\sum_{t=1}^{n} \\|x_t - \\mu_{c_t}\\|_2^2.
+$$
+
+**What each term means**
+- $K$: number of clusters (chosen by you).
+- distance: usually Euclidean → scaling matters.
+
+#### 3) Assumptions (and pitfalls)
+
+Clustering assumes:
+- a distance metric that reflects meaningful similarity,
+- stable scaling across features (standardize),
+- roughly “spherical” clusters for k-means.
+
+Pitfalls:
+- nonstationarity can dominate distance (clusters become time periods),
+- correlated features can distort distances,
+- k-means can be sensitive to initialization.
+
+#### 4) Estimation mechanics
+
+Practical steps:
+1) standardize features,
+2) choose $K$ candidates (e.g., 2–6),
+3) fit clustering with multiple random seeds,
+4) label clusters by inspecting indicator means and time periods.
+
+#### 5) Inference: use stability, not p-values
+
+Assess uncertainty by:
+- stability across seeds,
+- stability across subperiods,
+- sensitivity to $K$.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Silhouette / inertia trends**
+- do you see diminishing returns as $K$ increases?
+
+2) **Cluster size sanity**
+- tiny clusters may be outliers, not regimes.
+
+3) **Temporal coherence**
+- do clusters appear in contiguous time blocks or random scatter? (both can be informative)
+
+4) **Stability**
+- re-fit with different seeds/subsamples and compare assignments.
+
+#### 7) Interpretation + reporting
+
+Report:
+- preprocessing (standardization, transformations),
+- chosen $K$ and how selected,
+- stability evidence,
+- cluster summaries (means of indicators).
+
+#### Exercises
+
+- [ ] Fit k-means for K=2..6 and plot inertia/silhouette; choose K with justification.
+- [ ] Compare cluster assignments to recession shading and interpret alignment/mismatches.
+- [ ] Re-fit with a different seed and measure assignment stability.
 
 ### Project Code Map
 - `src/features.py`: feature engineering helpers (standardization happens in notebooks)

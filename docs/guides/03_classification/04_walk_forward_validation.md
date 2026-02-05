@@ -23,6 +23,11 @@ This classification module predicts **next-quarter technical recession** from ma
 - **Brier score**: mean squared error of probabilities (lower is better).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -55,97 +60,202 @@ clf.fit(X, y)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: Probabilities, Metrics, and Thresholds
+### Core Classification: probabilities, losses, and decision thresholds
 
-In this project, classification is about predicting recession risk as a probability.
+In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
 
-#### Logistic regression mechanics
-Logistic regression models probabilities via log-odds:
+#### 1) Intuition (plain English)
+
+Binary labels (recession vs not) hide uncertainty.
+The useful object is the probability:
+- “Given data today, how likely is a recession next quarter?”
+
+Probabilities let you:
+- compare risk over time,
+- set thresholds based on costs,
+- evaluate calibration (whether 30% means ~30% in reality).
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $x_i$ be features,
+- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+
+Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
 $$
 
-Then:
+Equivalently:
 
 $$
- p = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \cdots)}}
+p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
 $$
 
-#### Metrics you should treat as standard
-- ROC-AUC: ranking quality across thresholds
-- PR-AUC: often more informative when positives are rare
-- Brier score (or log loss): probability quality
+**What each term means**
+- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- coefficients move probabilities through the log-odds scale.
 
-#### Thresholding is a decision rule
-> **Definition:** A **threshold** converts probabilities into labels.
+#### 3) Assumptions (and what “probability model” means)
 
-Default 0.5 is rarely optimal for imbalanced, cost-sensitive problems.
-Pick thresholds based on:
-- decision costs
-- desired recall/precision tradeoff
-- calibration quality
+Logistic regression assumes:
+- a linear relationship in log-odds,
+- observations are conditionally independent given $x$ (often violated in time series),
+- no perfect multicollinearity in features.
 
-### Deep Dive: Walk-Forward Validation (Stability Over Time)
+Even if the model is misspecified, it can still be useful for ranking risk.
+But calibration can suffer, so we measure it.
 
-> **Definition:** **Walk-forward validation** repeatedly trains on the past and tests on the next time block.
+#### 4) Estimation mechanics (how the model is fit)
 
-It answers: "Does my model work across multiple eras, or only in one?"
+Logistic regression is typically fit by maximum likelihood:
+- choose $\\beta$ to maximize the probability of the observed labels.
 
-#### Why walk-forward matters in economics
-Economic relationships shift:
-- policy changes
-- technology shifts
-- measurement changes
-- financial crises
+The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
-A single split can hide fragility.
+$$
+\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+$$
 
-#### Procedure (expanding window)
-Typical expanding-window walk-forward:
-- fold 1: train [0:t1], test [t1:t2]
-- fold 2: train [0:t2], test [t2:t3]
-- ...
+In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
 
-> **Definition:** An **expanding window** keeps all past data in training.
+#### 5) Inference vs prediction
 
-> **Definition:** A **rolling window** uses only the most recent fixed-size window for training.
+- `statsmodels` gives standard errors and p-values (inference framing).
+- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
 
-#### Pseudo-code
-```python
-# for each fold:
-#   train = data[:train_end]
-#   test  = data[train_end:train_end+test_size]
-#   fit model on train
-#   evaluate on test
-#   advance train_end
-```
+In this project:
+- prioritize time-aware out-of-sample evaluation,
+- treat inference outputs as descriptive unless you have identification.
 
-#### Project touchpoints (where walk-forward is implemented)
-- `src/evaluation.py` implements `walk_forward_splits` for fold generation.
-- The walk-forward notebook uses this helper and asks you to plot metrics by era.
+#### 6) Metrics (what to measure and why)
 
-```python
-from src.evaluation import walk_forward_splits
+At minimum, treat these as standard:
 
-# Example: quarterly data with ~120 points
-n = 120
-splits = list(walk_forward_splits(n, initial_train_size=40, test_size=8))
-splits[:3]
-```
+- **ROC-AUC:** ranking performance (threshold-free).
+- **PR-AUC:** often more informative when positives are rare.
+- **Brier score:** mean squared error of probabilities:
+$$
+\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+$$
+- **Calibration plots:** do predicted probabilities match observed frequencies?
 
-#### What to interpret
-- If metrics vary widely across folds, the model is regime-sensitive.
-- If performance collapses in certain periods, analyze what changed:
-  - indicator behavior
-  - label definition
-  - missing data
+#### 7) Thresholding is a decision rule (not a model property)
 
-#### Debug checklist
-1. Ensure each fold trains strictly on the past.
-2. Avoid reusing test periods for tuning.
-3. Plot metrics over time, not just averages.
-4. Keep the feature engineering fixed when comparing across folds.
+A threshold $\\tau$ converts probability to a hard label:
+$$
+\\hat y_i = 1[p_i \\ge \\tau].
+$$
+
+Choosing $\\tau$ should reflect costs:
+- false positives (crying wolf),
+- false negatives (missing recessions).
+
+#### 8) Diagnostics + robustness (minimum set)
+
+1) **Time-aware evaluation**
+- use a time split or walk-forward; avoid random splits for forecasting tasks.
+
+2) **Calibration**
+- plot predicted vs observed probabilities; compute Brier score.
+
+3) **Threshold sensitivity**
+- show how precision/recall changes with threshold.
+
+4) **Feature stability**
+- check whether model performance is stable over subperiods (structural change).
+
+#### 9) Interpretation + reporting
+
+Report:
+- horizon (what “next quarter” means),
+- split method and dates,
+- probability calibration (not just accuracy),
+- threshold choice rationale.
+
+**What this does NOT mean**
+- AUC does not tell you if probabilities are calibrated.
+- A good backtest does not guarantee future performance in a new regime.
+
+#### Exercises
+
+- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
+- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
+- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
+- [ ] Compare random-split vs time-split AUC and explain the difference.
+
+### Deep Dive: Walk-forward validation — repeated “train on past, test on next”
+
+Walk-forward (rolling-origin) validation is the most common evaluation scheme for forecasting.
+
+#### 1) Intuition (plain English)
+
+A single time split answers: “How did I do in one future period?”
+
+Walk-forward answers: “How do I do across many future periods as time moves forward?”
+
+This reduces sensitivity to one arbitrary split boundary and better matches how models are used:
+you re-train as new data arrives.
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $t$ be time,
+- $h$ be forecast horizon,
+- $W$ be a training window length (optional).
+
+A walk-forward scheme produces folds indexed by $m=1,\\dots,M$:
+- Train on $\\{1,\\dots,t_m\\}$ (or last $W$ periods),
+- Test on $t_m+h$ (or a short future window).
+
+#### 3) Assumptions
+
+Walk-forward assumes:
+- you would realistically update the model over time,
+- you respect feature/label timing (no leakage),
+- the evaluation horizon $h$ is fixed and meaningful.
+
+#### 4) Estimation mechanics: what it estimates
+
+Walk-forward estimates expected future error by averaging over many future evaluation points:
+
+$$
+\\widehat{\\mathrm{Err}} = \\frac{1}{M} \\sum_{m=1}^{M} \\ell(\\hat y_{t_m+h}, y_{t_m+h}).
+$$
+
+This is closer to the real “live” error than a random split.
+
+#### 5) Inference and uncertainty
+
+Because folds are time-ordered, fold errors can be correlated.
+Treat fold-to-fold variability as descriptive, not as independent draws.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Plot fold errors over time**
+- do errors spike in recessions or structural breaks?
+
+2) **Compare expanding vs rolling windows**
+- expanding: more data, potentially stale regimes.
+- rolling: focuses on recent regime, higher variance.
+
+3) **Check stability across horizons**
+- repeat for $h=1$ vs $h=2$ if relevant.
+
+#### 7) Interpretation + reporting
+
+Report:
+- how you constructed folds (expanding/rolling),
+- window length (if rolling),
+- metrics averaged across folds and variation across time.
+
+#### Exercises
+
+- [ ] Implement walk-forward splits and compute fold-by-fold metrics; plot them over time.
+- [ ] Compare expanding vs rolling training windows and interpret the trade-off.
+- [ ] Identify a period where the model fails and propose a hypothesis (regime change? missing feature?).
 
 ### Project Code Map
 - `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)

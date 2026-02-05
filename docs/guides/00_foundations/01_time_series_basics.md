@@ -20,6 +20,11 @@ This foundations module builds core intuition you will reuse in every later note
 - **Multicollinearity**: predictors are highly correlated; coefficients can become unstable.
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -56,171 +61,266 @@ This notebook introduces the two most important ideas for economic ML:
 1) time-aware evaluation, and
 2) leakage prevention.
 
-### Core Foundations: The Ideas You Will Reuse Everywhere
+### Core Foundations: Time, Evaluation, and Leakage (the rules you never stop using)
 
-This project is built around a simple principle:
+This project treats “foundations” as more than warm-up material. They are the rules that keep every later result honest.
 
-> **Definition:** A good model result is one that would still hold up if you had to use the model in the real world.
+#### 1) Intuition (plain English): what problem are we solving?
 
-To get there, you need correct evaluation and correct data timing.
+Most mistakes in applied econometrics + ML come from confusing these three questions:
 
-#### Time series vs cross-sectional (defined)
-> **Definition:** A **time series** is indexed by time; ordering matters.
+1) **What did we know at the time of prediction/decision?** (timing)
+2) **What are we trying to predict/estimate?** (target/estimand)
+3) **How do we know the result would hold in the future or in another sample?** (evaluation/generalization)
 
-> **Definition:** **Cross-sectional** data compares many units at one time; ordering is not temporal.
+**Story example:** You build a recession probability model using macro indicators.
+- If you accidentally include information from the future (even indirectly), the model will look amazing on paper and fail in reality.
+- If you evaluate with random splits, you are testing a different problem (IID classification) than the one you actually face (time-ordered forecasting).
 
-Many ML defaults assume IID (independent and identically distributed) samples. Time series data is rarely IID.
+#### 2) Notation + setup (define symbols)
 
-#### What "leakage" really means
-Leakage is not just a bug. It is a violation of the prediction setting.
-If you are predicting the future, your features must be available in the past.
+Time index:
+- $t = 1,\\dots,T$ indexes time (months/quarters).
 
-#### What "generalization" means in time series
-In forecasting, generalization means:
-- you train on one historical period
-- you perform well in a later period
+Forecast horizon:
+- $h \\ge 1$ is how far ahead you predict.
 
-That is much harder than random-split generalization because the data generating process can change.
+Features and target:
+- $X_t$ is the feature vector available at time $t$.
+- $y_{t+h}$ is the future value you want to predict (or a label defined using future data).
 
-#### A practical habit
-For every dataset row at time t, write a one-line statement:
-- "At time t, we know X, and we are trying to predict Y at time t+h."
-
-If you cannot state that clearly, it is very easy to leak information.
-
-### Deep Dive: Train/Test Splits for Time Series
-
-> **Definition:** A **train/test split** separates data into (1) a training set used to fit the model and (2) a test set used only for evaluation.
-
-> **Definition:** A **time split** is a train/test split that respects chronology: training uses earlier time periods, testing uses later time periods.
-
-> **Definition:** A **random split** mixes past and future in both train and test. For forecasting problems, this usually creates overly optimistic results.
-
-#### Why time splits matter (intuition)
-Economic data is time-ordered. Many things can change over time:
-- policy regimes
-- measurement definitions and revisions
-- structural breaks (relationships change)
-
-A model that looks good under random splits can fail when deployed because deployment always looks like: train on the past, predict the future.
-
-#### The forecasting question you are actually answering
-If your target is at time $t+1$ and your features are at time $t$, the real question is:
+The forecasting problem is:
 
 $$
-\text{How well can we predict } y_{t+1} \text{ using information available at time } t?
+\\text{learn a function } f \\text{ such that } \\hat y_{t+h} = f(X_t).
 $$
 
-A random split answers a different question: "How well can we interpolate across mixed time periods?" That is not what you want.
+**What each term means**
+- $X_t$: information available at time $t$ (must be “past-only”).
+- $y_{t+h}$: the thing you want to know in the future.
+- $f$: your model (linear regression, logistic regression, random forest, …).
 
-#### Python demo: random split vs time split (commented)
-```python
-import numpy as np
-import pandas as pd
+#### 3) Assumptions (and why time breaks ML defaults)
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from sklearn.linear_model import LinearRegression
+Many ML defaults assume **IID** data: independent and identically distributed samples.
+Time series often violate both:
+- observations are correlated over time,
+- the data-generating process can drift (regime changes, structural breaks).
 
-# Make a toy time series where time ordering matters.
-# We simulate something like an AR(1) process.
+Practical implications:
+- random train/test splits are usually invalid for forecasting,
+- you must use time-aware splits and leakage checks.
 
-rng = np.random.default_rng(0)
-idx = pd.date_range('2010-01-01', periods=400, freq='D')
+#### 4) Estimation mechanics: evaluation is part of the method
 
-y = np.zeros(len(idx))
-for t in range(1, len(y)):
-    y[t] = 0.9 * y[t-1] + rng.normal(scale=1.0)
+When you evaluate a model, you are estimating its future performance.
+If the evaluation scheme does not match the real timing of the task, the estimate is biased.
 
-s = pd.Series(y, index=idx, name='y')
+**Time-aware evaluation patterns**
+- **Holdout (time split):** train on early period, test on later period.
+- **Walk-forward / rolling origin:** re-train as time advances and evaluate sequentially.
 
-# Build a "legit" lag feature: yesterday's value.
-df = pd.DataFrame({'y': s, 'y_lag1': s.shift(1)}).dropna()
-X = df[['y_lag1']].to_numpy()
-y_arr = df['y'].to_numpy()
-
-# 1) Random split (NOT recommended for time series)
-X_tr, X_te, y_tr, y_te = train_test_split(X, y_arr, test_size=0.2, shuffle=True, random_state=0)
-m = LinearRegression().fit(X_tr, y_tr)
-rmse_rand = mean_squared_error(y_te, m.predict(X_te), squared=False)
-
-# 2) Time split (recommended)
-split = int(len(df) * 0.8)
-X_tr2, X_te2 = X[:split], X[split:]
-y_tr2, y_te2 = y_arr[:split], y_arr[split:]
-
-m2 = LinearRegression().fit(X_tr2, y_tr2)
-rmse_time = mean_squared_error(y_te2, m2.predict(X_te2), squared=False)
-
-print('RMSE random:', rmse_rand)
-print('RMSE time  :', rmse_time)
-```
-
-#### What to look for in results
-- If random split is much better than time split, suspect that time structure matters (or that leakage exists elsewhere).
-- If both are similar, the series may be close to stationary and the feature set may be simple.
-
-#### Walk-forward validation (stronger than a single split)
-> **Definition:** **Walk-forward validation** evaluates a model across multiple chronological folds. It answers: "Does this model work across multiple eras or only in one?"
-
-Typical pattern:
-- train on early period
-- test on next block
-- move forward and repeat
-
-**Python demo: walk-forward split indices (project-adjacent)**
-```python
-from src.evaluation import walk_forward_splits
-
-# n = number of time points (quarters or months)
-n = 120
-
-splits = list(walk_forward_splits(n, initial_train_size=60, test_size=12))
-print('num folds:', len(splits))
-print('first split:', splits[0])
-print('last split :', splits[-1])
-```
-
-#### Debug checklist
-1. Confirm your index is sorted and unique.
-2. Confirm no feature uses future information (see leakage guide section).
-3. Confirm your test period is strictly after your training period.
-4. If tuning hyperparameters, do not tune on the final test period (use a validation scheme).
-
-#### Project touchpoints (where this shows up in code)
-- In notebooks: you should split time series chronologically before fitting any model.
-- In code: `src/evaluation.py` includes `time_train_test_split_index` and `walk_forward_splits`.
-
-#### Economics interpretation
-A time split is not just a technical detail. It is the difference between:
-- "This model can describe patterns in the full dataset"
-- "This model can predict the future using only information available at the time"
-
-### Deep Dive: Leakage (What It Is, How It Happens, How To Detect It)
-
-> **Definition:** **Leakage** happens when your model uses information that would not be available at prediction time.
-
-Leakage is one of the fastest ways to get "amazing" results that do not survive contact with reality.
-
-#### Common leakage types (defined)
-> **Definition:** **Target leakage** occurs when a feature is derived from the target (directly or indirectly).
-
-> **Definition:** **Temporal leakage** occurs when a feature uses future values (wrong shift direction, centered rolling windows, etc.).
-
-> **Definition:** **Split leakage** occurs when your split strategy allows future information into training (random splits for forecasting).
-
-> **Definition:** **Preprocessing leakage** occurs when you fit preprocessing (scaling, imputation) on all data instead of training data only.
-
-#### The core question to ask for every feature
-For each feature $x_t$, ask:
+If you use a walk-forward scheme, conceptually you are estimating:
 
 $$
-\text{Would I know this value at time } t \text{ when making a prediction for } t+1?
+\\text{future error} \\approx \\frac{1}{M} \\sum_{m=1}^{M} \\ell(\\hat y_{t_m+h}, y_{t_m+h})
 $$
 
-If the answer is "no", it is leakage.
+where:
+- $\\ell$ is a loss function (squared error, log loss, …),
+- $t_m$ are evaluation times in the future relative to training.
 
-#### Python demo: the classic `shift(-1)` bug (commented)
+#### 5) Leakage (the #1 silent killer)
+
+> **Definition:** **Leakage** happens when features contain information that would not have been available at the time of prediction.
+
+Leakage examples:
+- using $y_{t+h}$ (or a function of it) in $X_t$,
+- using “centered” rolling windows that include future values,
+- merging datasets with mismatched timestamps so the future leaks into the past,
+- standardizing using full-sample mean/variance before splitting.
+
+**Why leakage is so dangerous**
+- it makes models look much better than they are,
+- it leads to confident but wrong decisions,
+- it is often subtle and not caught by unit tests.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Timing statement (write it down)**
+- “At time $t$ we know $X_t$ and we predict $y_{t+h}$.”
+- If you cannot say this clearly, leakage risk is high.
+
+2) **Index sanity**
+- check index type (DatetimeIndex), sorting, monotonicity.
+
+3) **Shift sanity**
+- after creating lags/targets, confirm the direction:
+  - lags use `.shift(+k)` (past),
+  - targets for forecasting are often `.shift(-h)` (future).
+
+4) **Train/test boundary check**
+- print the last train date and first test date; confirm no overlap.
+
+#### 7) Interpretation + reporting
+
+When you report results in this repo, always include:
+- the prediction horizon $h$,
+- the split scheme (time split or walk-forward),
+- at least one metric appropriate for the task,
+- a leakage check (what you did to prevent it).
+
+**What this does NOT mean**
+- A high in-sample $R^2$ is not evidence of real forecasting power.
+- Random-split accuracy is not forecasting accuracy.
+
+<details>
+<summary>Optional: why time series “generalization” is harder</summary>
+
+In forecasting, you train on one historical regime and test on another.
+If the economy changes (policy regime, technology, measurement), relationships can shift.
+That is why stability checks and walk-forward evaluation are emphasized in this project.
+
+</details>
+
+#### Exercises
+
+- [ ] Write the timing statement for one notebook: “At time $t$ I know __ and predict __ at $t+h$.”
+- [ ] Create one intentional leakage feature (future shift) and show how it inflates test performance.
+- [ ] Compare random-split vs time-split evaluation on the same dataset; explain the difference.
+- [ ] List 3 places leakage can enter during feature engineering (lags, rolling windows, scaling, joins).
+
+### Deep Dive: Time splits — evaluation that matches forecasting reality
+
+Time-aware splitting is not optional in forecasting tasks; it defines what “generalization” means.
+
+#### 1) Intuition (plain English)
+
+If you predict the future, you must train on the past and test on the future.
+Random splits answer a different question: “Can I interpolate within a mixed pool of time periods?”
+
+**Story example:** If you train on 2008 and test on 2006 (random split), you are letting crisis-era patterns help predict pre-crisis data—an unrealistic advantage.
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- data be ordered by time $t=1,\\dots,T$,
+- training window be $t \\le t_{train}$,
+- test window be $t > t_{train}$.
+
+A basic time split is:
+- Train: $\\{1,\\dots,t_{train}\\}$
+- Test: $\\{t_{train}+1,\\dots,T\\}$
+
+#### 3) Assumptions (what time splits assume)
+
+Time splits assume:
+- you can use historical data to learn relationships relevant for the future,
+- the feature/label timing is correctly defined (no leakage),
+- you accept that regimes can change (so performance can vary).
+
+#### 4) Estimation mechanics: why random splits overestimate performance
+
+Random splits mix early and late periods in both train and test.
+That creates two problems:
+- **information leakage via time correlation** (nearby periods are similar),
+- **regime mixing** (train sees future regimes).
+
+So the test metric can be biased upward relative to true forecasting performance.
+
+#### 5) Inference: splits affect uncertainty
+
+Even if you do inference (p-values), time dependence matters:
+- serial correlation inflates effective sample size if ignored,
+- time splits help reveal whether relationships are stable across eras.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Report split dates**
+- always print the last train date and first test date.
+
+2) **Try multiple cut points**
+- if performance depends heavily on one boundary, results are unstable.
+
+3) **Plot train vs test distributions**
+- shifts in feature distributions indicate regime drift.
+
+4) **Compare to walk-forward**
+- walk-forward validation often gives a more realistic error estimate.
+
+#### 7) Interpretation + reporting
+
+Report:
+- split scheme (single holdout vs multiple folds),
+- dates and horizon,
+- metrics on the test period (and ideally multiple periods).
+
+**What this does NOT mean**
+- One lucky split is not proof of generalization.
+
+#### Exercises
+
+- [ ] Evaluate the same model with a random split and a time split; compare and explain the gap.
+- [ ] Move the split boundary forward/backward by a few years and report stability.
+- [ ] Plot feature distributions in train vs test; identify at least one shifted feature.
+
+### Deep Dive: Leakage — what it is, how it happens, how to detect it
+
+Leakage is the fastest way to get “amazing” results that do not survive reality.
+
+#### 1) Intuition (plain English)
+
+If the model sees information that would not have been available at the time of prediction, it is not learning; it is cheating.
+
+**Story example:** You “predict” next quarter’s recession using an indicator that is published with a delay, but you accidentally align it as if it were known in real time. Your backtest looks great, then fails when you try to use it live.
+
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $t$ be the time you make a prediction,
+- $h$ be the forecast horizon,
+- $X_t$ be features available at time $t$,
+- $y_{t+h}$ be the target you want to predict.
+
+The core question for every feature is:
+
+$$
+\\text{Was this feature value knowable at time } t \\text{ when predicting } y_{t+h}?
+$$
+
+If “no,” it is leakage.
+
+#### 3) Common leakage types (defined)
+
+> **Target leakage:** a feature directly/indirectly encodes the target (or future information about it).
+
+> **Temporal leakage:** a feature uses future values (wrong shift direction, centered rolling windows, forward-filled joins).
+
+> **Split leakage:** your train/test strategy allows future information into training (random splits for forecasting).
+
+> **Preprocessing leakage:** preprocessing is fit on the full dataset (test set influences scaling/imputation).
+
+#### 4) Estimation mechanics: how leakage inflates performance
+
+Leakage typically:
+- increases in-sample fit,
+- increases test fit *under the wrong evaluation scheme*,
+- collapses under true time-ordered evaluation or live deployment.
+
+The reason is simple: the model has access to information correlated with the future target that would not exist at prediction time.
+
+#### 5) Inference: leakage also breaks “statistical significance”
+
+If leakage is present:
+- coefficients, p-values, and CI are not meaningful,
+- you are no longer analyzing the intended prediction problem.
+
+So leakage is a first-order validity issue, not a minor bug.
+
+#### 6) Practical code patterns (and anti-patterns)
+
+**(a) The classic `shift(-1)` bug**
+
 ```python
 import numpy as np
 import pandas as pd
@@ -230,17 +330,15 @@ from sklearn.metrics import r2_score
 
 rng = np.random.default_rng(0)
 idx = pd.date_range('2020-01-01', periods=200, freq='D')
-
-# Random-walk-like series
 s = pd.Series(np.cumsum(rng.normal(size=len(idx))), index=idx, name='y')
 
 # Goal: predict tomorrow (t+1)
 target = s.shift(-1)
 
-# Legit feature: yesterday (t-1)
+# Legit: yesterday (t-1)
 x_lag1 = s.shift(1)
 
-# LEAK feature: tomorrow (t+1) - this is literally the target!
+# LEAK: tomorrow (t+1) — this equals the target
 x_leak = s.shift(-1)
 
 df = pd.DataFrame({'target': target, 'x_lag1': x_lag1, 'x_leak': x_leak}).dropna()
@@ -257,61 +355,60 @@ print('R2 legit:', r2_score(test['target'], m_ok.predict(test[['x_lag1']])))
 print('R2 leak :', r2_score(test['target'], m_leak.predict(test[['x_leak']])))
 ```
 
-#### Python demo: rolling-window leakage (centered windows)
-> **Definition:** A **rolling window** summarizes the recent past (e.g., last 12 months). If you center the window, it includes future values.
+**(b) Rolling-window leakage**
+
+Centered rolling windows use future values:
 
 ```python
-# Centered rolling windows leak future information.
-# If you are predicting at time t, a centered window uses values after t.
-
-feature_leaky = s.rolling(window=7, center=True).mean()
-
-# Safer default: center=False (uses past values ending at t)
-feature_ok = s.rolling(window=7, center=False).mean()
+feature_leaky = s.rolling(window=7, center=True).mean()   # BAD for forecasting
+feature_ok = s.rolling(window=7, center=False).mean()     # past-only
 ```
 
-#### Python demo: preprocessing leakage (scalers)
-If you standardize features using the whole dataset, the test set influences the mean/variance.
+**(c) Preprocessing leakage**
+
+Fit scalers/imputers on training only (use pipelines):
 
 ```python
-import numpy as np
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
 
-# Imagine X_train and X_test are separated by time.
-# WRONG: fit scaler on all data
-# scaler = StandardScaler().fit(np.vstack([X_train, X_test]))
-
-# RIGHT: fit scaler on training only
-# scaler = StandardScaler().fit(X_train)
-# X_train_scaled = scaler.transform(X_train)
-# X_test_scaled = scaler.transform(X_test)
+pipe = Pipeline([
+  ("scaler", StandardScaler()),
+  ("clf", LogisticRegression(max_iter=5000)),
+])
 ```
 
-#### Symptoms of leakage (how it looks)
-- Test metrics that are "too good to be true" for the difficulty of the problem.
-- Huge performance gap: random split looks great, time split collapses.
-- A single feature appears to predict perfectly.
+#### 7) Diagnostics + robustness (minimum set)
 
-#### Debug checklist (practical)
-1. Audit every `shift(...)` direction.
-   - `shift(+k)` uses the past.
-   - `shift(-k)` uses the future.
-2. Audit rolling windows.
-   - Avoid `center=True`.
-3. Audit preprocessing.
-   - Fit scalers/imputers on training only.
-   - Use sklearn `Pipeline` to enforce this.
-4. Validate timestamp meaning.
-   - Are your features "known as of" the prediction date?
+1) **Random split vs time split gap**
+- if random split performance is much higher than time split, suspect leakage or regime drift.
 
-#### Project touchpoints (where leakage is prevented or easy to introduce)
-- `src/features.py` explicitly forbids non-positive lags in `add_lag_features` to prevent accidental future leakage.
-- `src/evaluation.py` contains time-aware split helpers (`time_train_test_split_index`, `walk_forward_splits`).
-- Classification notebooks use sklearn `Pipeline` to prevent preprocessing leakage.
+2) **Feature audit**
+- audit every `.shift()` direction and every rolling window.
 
-#### Economics interpretation
-A recession model with leakage will appear to "predict" recessions, but it is usually just reading signals from the future.
-The goal is to predict with only information available at the time.
+3) **Timestamp audit**
+- inspect the meaning of timestamps after merges (month-end vs quarter-end, publication lags).
+
+4) **“Too good to be true” check**
+- if one feature predicts nearly perfectly, investigate it as a leak candidate.
+
+#### 8) Interpretation + reporting
+
+When you present results, state:
+- the forecast horizon,
+- the evaluation scheme (time split / walk-forward),
+- at least one concrete leakage prevention step you took.
+
+**What this does NOT mean**
+- A model that looks great with leakage is not “close”; it is solving a different problem.
+
+#### Exercises
+
+- [ ] Create an intentional leakage feature and show how it inflates performance under a random split.
+- [ ] Fix the leakage and re-evaluate with a time split; write 5 sentences explaining what changed.
+- [ ] List 5 places leakage can enter (shifts, rolls, merges, scaling, target construction).
+- [ ] For one notebook dataset, manually verify (by printing rows) that features are past-only relative to the label.
 
 ### Project Code Map
 - `scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)

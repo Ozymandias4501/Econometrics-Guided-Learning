@@ -21,6 +21,11 @@ This module covers classical time-series econometrics: stationarity, cointegrati
 - **IRF**: impulse response function (shock propagation over time).
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -52,59 +57,341 @@ adf_rw_p, adf_st_p
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Stationarity and Unit Roots (ADF/KPSS)
+### Stationarity and Unit Roots: why levels-on-levels can lie
 
-> **Definition:** A time series is **stationary** if its statistical properties (mean/variance/autocovariance) are stable over time.
+Classical time-series econometrics starts with one question:
 
-Many macro series in levels are not stationary (they trend).
+> **Is this series stable enough over time that our regression assumptions make sense?**
 
-#### Unit root intuition
-A unit root process behaves like a random walk:
-- shocks accumulate,
-- the series does not “mean revert” in levels.
+#### 1) Intuition (plain English)
 
-#### Why this matters: spurious regression
-Regressing one trending series on another can produce:
+Many macro series in **levels** trend upward over decades (GDP, price level, money supply).
+If two series both trend, they can look strongly related even when one does not cause the other.
+
+**Story example:** GDP and total credit both trend up.
+A regression “GDP on credit” in levels can produce a high $R^2$ even if the relationship is spurious.
+
+Stationarity is the formal way to ask:
+- “Do shocks die out (mean reversion)?” or
+- “Do shocks accumulate forever (random walk)?”
+
+#### 2) Notation + setup (define symbols)
+
+Let $\\{y_t\\}_{t=1}^T$ be a time series.
+
+Key population objects:
+- mean: $\\mu = \\mathbb{E}[y_t]$
+- variance: $\\gamma_0 = \\mathrm{Var}(y_t)$
+- autocovariance at lag $k$:
+$$
+\\gamma_k = \\mathrm{Cov}(y_t, y_{t-k}).
+$$
+
+**Weak (covariance) stationarity** means:
+1) $\\mathbb{E}[y_t]$ is constant over time,
+2) $\\mathrm{Var}(y_t)$ is constant over time,
+3) $\\mathrm{Cov}(y_t, y_{t-k})$ depends only on $k$, not on $t$.
+
+**Strict stationarity** is stronger (the full joint distribution is time-invariant). In practice, weak stationarity is the common working definition for linear models.
+
+#### 3) I(0) vs I(1) (integrated processes)
+
+Econometrics often classifies series by how many differences are needed to make them “stationary-ish”:
+
+- $y_t$ is **I(0)** if it is stationary (in levels).
+- $y_t$ is **I(1)** if $\\Delta y_t = y_t - y_{t-1}$ is I(0).
+
+Typical examples:
+- growth rates, inflation rates, spreads: often closer to I(0),
+- price levels, GDP levels: often closer to I(1).
+
+#### 4) Unit roots via AR(1) intuition
+
+Consider an AR(1):
+
+$$
+y_t = \\rho y_{t-1} + \\varepsilon_t,
+\\qquad
+\\varepsilon_t \\sim (0, \\sigma^2).
+$$
+
+**What each term means**
+- $\\rho$: persistence parameter.
+- $\\varepsilon_t$: innovation (new shock at time $t$).
+
+Cases:
+- If $|\\rho| < 1$, the process is stationary and shocks decay (mean reversion).
+- If $\\rho = 1$, you have a **unit root** (random walk-like behavior).
+
+Random walk:
+$$
+y_t = y_{t-1} + \\varepsilon_t
+\\quad \\Rightarrow \\quad
+y_t = y_0 + \\sum_{s=1}^{t} \\varepsilon_s.
+$$
+
+**Key implication**
+- the variance of $y_t$ grows with $t$ (shocks accumulate),
+- the series does not settle around a fixed mean in levels.
+
+Differencing removes the unit root:
+$$
+\\Delta y_t = y_t - y_{t-1} = \\varepsilon_t,
+$$
+which is stationary if innovations are stable.
+
+#### 5) Why this matters: spurious regression
+
+If $x_t$ and $y_t$ are both I(1), then a regression like:
+
+$$
+y_t = \\alpha + \\beta x_t + u_t
+$$
+
+can show:
+- large t-stats,
 - high $R^2$,
-- significant t-stats,
-even when there is no meaningful relationship.
+even if $x_t$ and $y_t$ are unrelated in any causal or structural sense.
 
-#### Common tools
-- **ADF test**: null = unit root (nonstationary)
-- **KPSS test**: null = stationary
+The reason (intuition):
+- both series share trending behavior,
+- residuals can be highly persistent,
+- classic OLS inference assumptions break.
 
-Practical habit:
-- Plot the series.
-- Try differences / growth rates.
-- Use tests as supporting evidence, not as the only decision.
+**Practical rule:** do not treat a levels-on-levels regression as meaningful until you have checked stationarity / cointegration logic.
 
-### VAR and Impulse Responses (IRFs)
+#### 6) ADF test: what it is actually doing
 
-> **Definition:** A **VAR(p)** models each variable as a linear function of $p$ lags of all variables.
+The Augmented Dickey–Fuller test fits a regression of changes on lagged levels:
 
-For a vector $y_t$:
 $$
-y_t = A_1 y_{t-1} + \\dots + A_p y_{t-p} + \\varepsilon_t
+\\Delta y_t = a + bt + \\gamma y_{t-1} + \\sum_{j=1}^{p} \\phi_j \\Delta y_{t-j} + e_t.
 $$
 
-#### When VARs are useful
-- You care about **dynamics** and feedback between variables.
-- You want to study how shocks propagate over time.
+**What each term means**
+- $\\Delta y_t$: change in the series.
+- $a$: intercept (allows non-zero mean).
+- $bt$: trend term (optional).
+- $y_{t-1}$: lagged level (detects unit root).
+- lagged differences: soak up serial correlation in $e_t$.
 
-#### Key decisions
-- **Transformations**: stationarity often requires differencing/log-differencing.
-- **Lag length**: choose with information criteria (AIC/BIC) and sanity checks.
+Null vs alternative (common interpretation):
+- **Null:** unit root (nonstationary) → roughly $\\gamma = 0$ (equivalently $\\rho = 1$).
+- **Alternative:** stationary (mean-reverting) → $\\gamma < 0$ (equivalently $|\\rho|<1$).
 
-#### Granger causality (predictive, not causal)
-> **Definition:** $x$ “Granger-causes” $y$ if past $x$ improves prediction of $y$ beyond past $y$ alone.
+Important: ADF has low power in small samples; “fail to reject” does not mean “definitely a unit root.”
 
-This is about forecasting information, not structural causality.
+#### 7) KPSS test: complementary null
 
-#### Impulse response functions
-IRFs trace the effect of a one-time shock over time.
-In practice, you often use orthogonalized shocks (Cholesky), which means:
-- the **ordering matters**,
-- and the IRF is conditional on that identification choice.
+KPSS flips the null:
+- **Null:** stationary,
+- **Alternative:** unit root / nonstationary.
+
+That’s why people often run ADF and KPSS together:
+- ADF rejects + KPSS fails to reject → evidence for stationarity.
+- ADF fails to reject + KPSS rejects → evidence for nonstationarity.
+- Conflicts happen often → treat tests as diagnostics, not commandments.
+
+#### 8) Mapping to code (statsmodels)
+
+In Python:
+- `statsmodels.tsa.stattools.adfuller(x)` returns a test statistic and a p-value.
+- `statsmodels.tsa.stattools.kpss(x, regression='c' or 'ct')` does the KPSS test.
+
+Practical habits:
+- drop missing values before testing,
+- test both levels and differences,
+- specify whether you include a trend term (economic series often trend).
+
+#### 9) Diagnostics + robustness (minimum set)
+
+1) **Plot the level series**
+- Do you see a clear trend or structural break?
+
+2) **Plot the differenced / growth-rate series**
+- Does it look more stable? Mean-reverting?
+
+3) **ADF + KPSS on both levels and differences**
+- Do results agree? If not, explain why (trend term, breaks, sample size).
+
+4) **ACF/PACF or residual autocorrelation**
+- Persistent residuals suggest misspecification.
+
+#### 10) Interpretation + reporting
+
+When you report stationarity checks:
+- state whether you tested levels and differences,
+- state whether you included a constant/trend,
+- show at least one plot alongside test results.
+
+**What this does NOT mean**
+- A small p-value is not a proof of stationarity in “the real world.”
+- Structural breaks can fool unit-root tests (you can reject/accept for the wrong reason).
+
+#### Exercises
+
+- [ ] Pick one macro series and classify it as “likely I(0)” or “likely I(1)” with a plot-based argument.
+- [ ] Run ADF and KPSS on the level series and on its first difference; interpret the pair.
+- [ ] Demonstrate spurious regression by regressing one random walk on another and reporting $R^2$.
+- [ ] Choose a transformation (difference, log-difference, growth rate) and justify it in 4 sentences.
+
+### VAR + IRF: multivariate dynamics and “shock propagation”
+
+Vector autoregressions (VARs) are a core tool for macro dynamics: they model how multiple variables move together over time.
+
+#### 1) Intuition (plain English)
+
+Unemployment, production, and interest rates influence each other with lags.
+A VAR is a flexible way to model these feedback loops without imposing a full structural model.
+
+An impulse response function (IRF) then answers:
+- “If we hit the system with a one-time shock today, how do variables respond over the next few periods?”
+
+**Story example:** A policy rate shock might raise unemployment over several months and reduce production.
+
+#### 2) Notation + setup (define symbols)
+
+Let $y_t$ be a $k \\times 1$ vector of variables at time $t$:
+$$
+y_t =
+\\begin{bmatrix}
+\\text{UNRATE}_t \\\\
+\\text{FEDFUNDS}_t \\\\
+\\text{INDPRO}_t
+\\end{bmatrix}.
+$$
+
+A VAR($p$) is:
+
+$$
+y_t = c + A_1 y_{t-1} + \\cdots + A_p y_{t-p} + \\varepsilon_t,
+$$
+
+where:
+- $c$ is a $k \\times 1$ intercept vector,
+- $A_j$ are $k \\times k$ coefficient matrices,
+- $\\varepsilon_t$ is a $k \\times 1$ innovation vector with covariance matrix $\\Sigma$.
+
+**What each term means**
+- Each equation predicts one variable using lags of *all* variables.
+- $\\Sigma$ captures contemporaneous correlation among innovations (important for IRFs).
+
+#### 3) Assumptions: stationarity and stability
+
+VAR inference typically assumes the system is stable (stationary).
+Intuition: shocks should not blow up forever.
+
+Formally, stability requires eigenvalues of the companion matrix to lie inside the unit circle.
+Most software reports a stability check.
+
+If your variables are not stationary, common fixes include:
+- differencing / log-differencing,
+- modeling cointegration with a VECM (not covered deeply here),
+- restricting to stationary transformations.
+
+#### 4) Estimation mechanics: OLS equation-by-equation
+
+VAR coefficients can be estimated by OLS for each equation because the regressors are the same across equations.
+
+Define the regressor vector:
+$$
+x_t' = [1, y_{t-1}', \\dots, y_{t-p}'].
+$$
+
+Then each equation is:
+$$
+y_{m,t} = x_t' \\theta_m + e_{m,t},
+\\quad m = 1,\\dots,k,
+$$
+and OLS provides $\\hat\\theta_m$.
+
+**What this means practically**
+- Estimation is straightforward,
+- the hard part is choosing transformations and lag length responsibly.
+
+#### 5) Lag selection: why AIC/BIC are a starting point, not the finish line
+
+Common criteria:
+- AIC tends to choose more lags (better fit, higher variance),
+- BIC tends to choose fewer lags (more parsimonious).
+
+Practical approach:
+- check a range of lags (e.g., 1–8 for monthly),
+- confirm residual autocorrelation is not severe,
+- prefer interpretability and stability over maximizing in-sample fit.
+
+#### 6) Granger causality: predictive content, not structural causality
+
+Variable $x$ “Granger-causes” $y$ if lagged $x$ terms help predict $y$ beyond lagged $y$.
+
+This is a **forecasting** statement:
+- it does not establish causal structure,
+- it can be driven by omitted variables or common shocks.
+
+#### 7) IRFs: from VAR to moving-average (MA) representation
+
+If the VAR is stable, it has an MA form:
+
+$$
+y_t = \\mu + \\sum_{s=0}^{\\infty} \\Psi_s \\varepsilon_{t-s}.
+$$
+
+The matrices $\\Psi_s$ map an innovation today into future outcomes.
+An IRF traces rows/columns of $\\Psi_s$ over horizons $s=0,1,2,\\dots$.
+
+#### 8) Identification: orthogonalized IRFs and why ordering matters
+
+Problem: VAR innovations $\\varepsilon_t$ are often correlated (covariance $\\Sigma$ is not diagonal).
+
+To interpret a “one-unit shock,” you often orthogonalize innovations via a Cholesky factorization:
+$$
+\\Sigma = P P'.
+$$
+
+Define structural shocks $u_t$ with identity covariance:
+$$
+\\varepsilon_t = P u_t,
+\\qquad \\mathrm{Var}(u_t)=I.
+$$
+
+Now a “shock to variable 1” is a shock to $u_{1t}$, which is orthogonal to others.
+
+**Key implication**
+- The Cholesky decomposition depends on the ordering of variables.
+- So orthogonalized IRFs are conditional on that identification assumption.
+
+#### 9) Diagnostics + robustness (minimum set)
+
+1) **Stationarity / stability**
+- Confirm transformations lead to a stable VAR (software stability check).
+
+2) **Residual autocorrelation**
+- If residuals remain autocorrelated, your lag length may be too short.
+
+3) **Ordering sensitivity (for orth IRFs)**
+- Re-order variables and see if qualitative IRF conclusions change.
+
+4) **Out-of-sample forecasting sanity**
+- Even if your goal is IRFs, forecasting performance can reveal misspecification.
+
+#### 10) Interpretation + reporting
+
+When reporting a VAR/IRF analysis:
+- specify transformations,
+- specify lag choice method,
+- specify identification (ordering for Cholesky orth IRFs),
+- report stability checks and diagnostics.
+
+**What this does NOT mean**
+- Granger causality ≠ structural causality.
+- Orthogonalized IRFs ≠ “true policy shocks” unless the identification is defensible.
+
+#### Exercises
+
+- [ ] Fit a VAR on stationary transformations and report the selected lag length.
+- [ ] Run a Granger causality test and interpret it as “predictive content,” not causality.
+- [ ] Plot IRFs under two different variable orderings; compare and explain differences.
+- [ ] Check residual autocorrelation; increase lags and see whether diagnostics improve.
 
 ### Project Code Map
 - `data/sample/panel_monthly_sample.csv`: offline macro panel

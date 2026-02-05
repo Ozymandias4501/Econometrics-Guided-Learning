@@ -1,71 +1,70 @@
-## Primer: pandas Time Series Essentials
+## Primer: pandas time series essentials (indexing, resampling, lags)
 
-### DatetimeIndex
-Most time series work in pandas assumes your DataFrame is indexed by time.
+Most “mysterious bugs” in time series work come from index and alignment mistakes. This primer gives you the minimum patterns to avoid them.
+
+### 1) DatetimeIndex (the first thing to verify)
+
+Most time-series operations assume a `DatetimeIndex`:
 
 ```python
 import pandas as pd
 
-# idx = pd.to_datetime(df['date'])
-# df = df.set_index(idx).sort_index()
-# assert isinstance(df.index, pd.DatetimeIndex)
+df = df.copy()
+df.index = pd.to_datetime(df.index)
+df = df.sort_index()
+assert isinstance(df.index, pd.DatetimeIndex)
 ```
 
-If you see weird behavior (resample errors, merges not aligning), check:
-- `df.index.dtype`
-- `df.index.min(), df.index.max()`
-- `df.index.is_monotonic_increasing`
+**Expected output / sanity checks**
+- `df.index.min(), df.index.max()` look reasonable
+- `df.index.is_monotonic_increasing` is `True`
 
-### Resampling
-> **Goal:** convert one frequency to another.
+### 2) Resampling (frequency alignment)
 
-Common examples:
-- daily -> month-end
-- monthly -> quarter-end
+Resampling converts one frequency to another. Choose the aggregation rule intentionally.
 
 ```python
-# month-end last value
-# df_me_last = df.resample('ME').last()
+# month-end last value (end-of-period)
+df_me_last = df.resample("ME").last()
 
-# month-end mean
-# df_me_mean = df.resample('ME').mean()
+# month-end mean (average-of-period)
+df_me_mean = df.resample("ME").mean()
 
 # quarter-end mean
-# df_q_mean = df.resample('QE').mean()
+df_q_mean = df.resample("QE").mean()
 ```
 
-**Interpretation matters.** For economic series:
-- using `.last()` treats the end-of-period value as “the period’s value”
-- using `.mean()` treats the period average as “the period’s value”
+**Interpretation matters**
+- `.last()` treats end-of-period value as “the period’s value.”
+- `.mean()` treats the period average as “the period’s value.”
 
-Neither is universally correct; you should choose based on measurement and use case.
+### 3) Alignment and merging
 
-### Alignment and merging
-When joining multiple time series, you need to ensure they share:
-- the same index type (`DatetimeIndex`)
-- the same frequency convention (month-end vs month-start; quarter-end vs quarter-start)
+When joining series, always check missingness after the join:
 
 ```python
-# Example: join two series and inspect missingness
-# df = df1.join(df2, how='outer').sort_index()
-# print(df.isna().sum())
+merged = df1.join(df2, how="outer").sort_index()
+print(merged.isna().sum().sort_values(ascending=False).head(10))
 ```
 
-### Lags and rolling windows
-> **Lag:** use past values as features.
+### 4) Lags and rolling windows (watch for leakage!)
 
 ```python
-# lag 1 period
-# df['x_lag1'] = df['x'].shift(1)
+# lag 1 period (past-only)
+df["x_lag1"] = df["x"].shift(1)
 
-# rolling mean (past-only)
-# df['x_roll12'] = df['x'].rolling(12).mean()
+# rolling mean using past values ending at t
+df["x_roll12"] = df["x"].rolling(12).mean()
 ```
 
-### Common gotchas
-- `shift(-1)` uses the future (leakage for forecasting).
-- `rolling(..., center=True)` uses future values.
-- Always `dropna()` after creating lags/rolls to get clean modeling rows.
+**Leakage pitfalls**
+- `shift(-1)` uses the future.
+- `rolling(..., center=True)` uses the future.
 
-One more gotcha:
-- If you resample daily -> monthly and then create lags, your lag is “one month” (not one day). Lags are measured in the current index frequency.
+### 5) A quick workflow you should repeat
+
+1) Set and verify DatetimeIndex.
+2) Resample intentionally (mean vs last).
+3) Join and inspect missingness.
+4) Add lags/rolls (past-only).
+5) `dropna()` to build a clean modeling table.

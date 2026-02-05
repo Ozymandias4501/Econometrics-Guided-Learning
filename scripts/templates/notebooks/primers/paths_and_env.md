@@ -1,60 +1,53 @@
-## Primer: Paths, Files, and Environment Variables
+## Primer: Paths, files, and environment variables (how this repo stays reproducible)
 
-You will see a few patterns repeatedly in this repo.
+You will see a few patterns repeatedly in notebooks and scripts.
 
-### Environment variables
-> **What this is:** Environment variables are key/value settings provided by your shell to your Python process.
+### Environment variables (API keys)
 
-We use them for API keys and configuration defaults.
+Environment variables are key/value settings provided by your shell to Python.
+This repo uses them for API keys:
+- `FRED_API_KEY`
+- `CENSUS_API_KEY` (optional)
 
 ```python
 import os
 
-# Reads an environment variable or returns None
-fred_key = os.getenv('FRED_API_KEY')
-print('FRED key set?', fred_key is not None)
+fred_key = os.getenv("FRED_API_KEY")
+print("FRED key set?", fred_key is not None)
 ```
 
-If you're running from a terminal, you can set a key like this:
+If you set a key in a terminal, restart the Jupyter kernel so Python sees it.
 
-```bash
-export FRED_API_KEY="your_key_here"
-```
+### Paths (why `pathlib.Path` is the default)
 
-Then restart the Jupyter kernel (so Python picks up the new env var).
-
-### Paths (why `pathlib.Path`)
-> **What this is:** A Path is a safe way to build file paths without worrying about OS-specific separators.
+Use `Path` to build OS-safe file paths:
 
 ```python
 from pathlib import Path
 
-p = Path('data') / 'sample' / 'macro_quarterly_sample.csv'
-print(p)
-print('exists?', p.exists())
+p = Path("data") / "sample" / "macro_quarterly_sample.csv"
+print(p, "exists?", p.exists())
 ```
 
-In these notebooks, the bootstrap cell defines:
+### Repo bootstrap variables (defined in every notebook)
+
+The notebook bootstrap cell defines:
 - `PROJECT_ROOT` (repo root)
 - `DATA_DIR`, `RAW_DIR`, `PROCESSED_DIR`, `SAMPLE_DIR`
 
-Prefer those over hard-coding paths.
+Prefer these over hard-coded relative paths.
 
-### Reading and writing CSV files
-```python
-import pandas as pd
+### Sample vs processed data (offline-first)
 
-# Read
-# df = pd.read_csv(p, index_col=0, parse_dates=True)
+Most notebooks follow this pattern:
+1) try `data/processed/*` (real pipeline output)
+2) fall back to `data/sample/*` (small offline dataset)
 
-# Write
-# out = Path('data') / 'processed' / 'my_dataset.csv'
-# out.parent.mkdir(parents=True, exist_ok=True)
-# df.to_csv(out)
-```
+This keeps notebooks runnable without network access.
 
-### Tip
-If you get a "file not found" error:
-- `print(path)` to confirm you're reading what you think you're reading
-- `print(path.exists())` to confirm the file exists
-- if you're using a relative path, confirm your current working directory: `import os; print(os.getcwd())`
+### Common “file not found” fixes
+
+- Print the path and check `.exists()`
+- Print current working directory:
+  - `import os; print(os.getcwd())`
+- Start Jupyter from the repo root (so bootstrap can find `src/` and `docs/`)

@@ -1,74 +1,77 @@
-### Deep Dive: Calibration, Brier Score, and Decision Thresholds
+### Deep Dive: Calibration and Brier score (probabilities you can trust)
 
-In classification, you often want probabilities, not just labels.
+Calibration is the difference between “good ranking” and “usable probabilities.”
 
-> **Definition:** A model is **calibrated** if events predicted with probability 0.3 happen about 30% of the time.
+#### 1) Intuition (plain English)
 
-#### Brier score (math)
-> **Definition:** The **Brier score** is a proper scoring rule for probability forecasts.
+If a model says “30% recession probability” many times, then about 30% of those cases should actually be recessions.
+If not, the model is miscalibrated (over- or under-confident).
 
-For binary outcomes $y_i \in \{0,1\}$ and predicted probabilities $p_i$:
+#### 2) Notation + setup (define symbols)
+
+Let:
+- $p_i$ be predicted probability,
+- $y_i \\in \\{0,1\\}$ be the realized label.
+
+Brier score:
 
 $$
-\mathrm{Brier} = \frac{1}{n} \sum_{i=1}^n (p_i - y_i)^2
+\\text{Brier} = \\frac{1}{n}\\sum_{i=1}^{n} (p_i - y_i)^2.
 $$
 
-Lower is better.
+**What it measures**
+- probability mean squared error (lower is better).
 
-#### Why calibration matters for recession risk
-A recession probability model is only useful if you can make decisions from its probabilities:
-- allocate risk
-- run stress tests
-- change thresholds based on costs
+Calibration curve:
+- bin predictions into groups (e.g., 0.0–0.1, 0.1–0.2, …),
+- compare average predicted probability vs empirical frequency in each bin.
 
-If probabilities are not calibrated, "30%" and "70%" are not meaningful signals.
+#### 3) Assumptions
 
-#### Calibration curve (reliability diagram)
-A calibration curve groups predictions into bins and compares:
-- average predicted probability in the bin
-- actual fraction of positives in the bin
+Calibration assessment assumes:
+- evaluation is out-of-sample (time split / walk-forward),
+- enough data in bins (small samples produce noisy curves),
+- label definition is stable.
 
-If the curve follows the diagonal, calibration is good.
+#### 4) Estimation mechanics: why calibration can fail
 
-#### Python demo: calibration and Brier (commented)
-```python
-import numpy as np
-from sklearn.calibration import calibration_curve
-from sklearn.metrics import brier_score_loss
+Even if a classifier ranks well, probabilities can be miscalibrated due to:
+- regularization strength,
+- class imbalance,
+- dataset shift (new regime),
+- model misspecification.
 
-# y_true: 0/1 outcomes
-# y_prob: predicted probabilities
+Calibration methods:
+- Platt scaling (logistic calibration),
+- isotonic regression.
 
-# Example placeholders:
-# y_true = np.array([...])
-# y_prob = np.array([...])
+These should be fit on validation data, not on the test set.
 
-# Brier score
-# print('brier:', brier_score_loss(y_true, y_prob))
+#### 5) Inference: decisions require calibrated probabilities
 
-# Calibration curve
-# prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=10)
-# print(prob_pred)
-# print(prob_true)
-```
+If you use probabilities for decisions (alerts, risk management), calibration matters more than AUC.
+AUC only checks ranking, not absolute probability accuracy.
 
-#### Thresholds and decision costs
-> **Definition:** A **decision threshold** converts probabilities to class labels (e.g., predict recession if p >= 0.4).
+#### 6) Diagnostics + robustness (minimum set)
 
-A good threshold depends on costs:
-- false positives (crying wolf)
-- false negatives (missing a recession)
+1) **Calibration curve + Brier**
+- always pair a curve with a scalar metric.
 
-A common pattern:
-1. define a cost ratio (how bad is FN vs FP?)
-2. choose threshold to minimize expected cost
+2) **Subperiod calibration**
+- check calibration separately in different eras (structural change).
 
-#### Debug checklist
-1. Always compute base rate (how rare is the positive class?).
-2. Report PR-AUC and Brier score (not just accuracy).
-3. Compare calibrated vs uncalibrated models.
-4. Re-check calibration across eras (walk-forward).
+3) **Threshold sensitivity**
+- miscalibration can shift optimal thresholds across time.
 
-#### Project touchpoints (where you will use these)
-- `src/evaluation.py` computes classification metrics including ROC-AUC, PR-AUC, and Brier score.
-- The calibration notebook asks you to plot a reliability diagram and pick a threshold based on explicit costs.
+#### 7) Interpretation + reporting
+
+Report:
+- Brier score,
+- calibration plot (with bin counts),
+- whether calibration was improved with post-processing (and how).
+
+#### Exercises
+
+- [ ] Produce a calibration curve and identify whether the model is over- or under-confident.
+- [ ] Compute Brier score and compare to a baseline (constant probability = prevalence).
+- [ ] Fit a calibration method on validation data and re-check calibration on test data.

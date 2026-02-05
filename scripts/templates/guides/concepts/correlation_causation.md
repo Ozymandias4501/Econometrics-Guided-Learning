@@ -1,42 +1,95 @@
-### Deep Dive: Correlation vs Causation (What You Can and Cannot Claim)
+### Deep Dive: Correlation vs causation — the question you must not confuse
 
-> **Definition:** **Correlation** means two variables move together.
+Economics is full of correlated variables. Causal inference is about deciding when a relationship is more than correlation.
 
-> **Definition:** **Causation** means changing X would change Y (an intervention claim).
+#### 1) Intuition (plain English)
 
-Correlation is a descriptive property of the observed data.
-Causation is a claim about a data-generating mechanism.
+Correlation answers:
+- “Do $X$ and $Y$ move together?”
 
-#### Why this matters in economics
-Most economic datasets are observational.
-That means you usually have correlations, not controlled experiments.
+Causation answers:
+- “If I intervene and change $X$, does $Y$ change?”
 
-If you interpret a coefficient as causal without a causal design, you can be confidently wrong.
+**Story example (macro):** Interest rates and inflation are correlated.  
+That does not imply raising rates increases inflation; the correlation can reflect policy responses to expected inflation.
 
-#### Python demo: confounding creates correlation (commented)
-```python
-import numpy as np
-import pandas as pd
+#### 2) Notation + setup (define symbols)
 
-rng = np.random.default_rng(0)
+Correlation between random variables $X$ and $Y$:
 
-n = 1000
+$$
+\\rho_{XY} = \\frac{\\mathrm{Cov}(X,Y)}{\\sqrt{\\mathrm{Var}(X)\\mathrm{Var}(Y)}}.
+$$
 
-# z is a confounder that affects both x and y
-z = rng.normal(size=n)
-x = 0.8 * z + rng.normal(scale=1.0, size=n)
-y = 2.0 * z + rng.normal(scale=1.0, size=n)
+**What each term means**
+- $\\mathrm{Cov}(X,Y)$: whether $X$ and $Y$ co-move.
+- correlation is unit-free and lies in $[-1,1]$.
 
-df = pd.DataFrame({'x': x, 'y': y, 'z': z})
+Correlation is symmetric:
+$$
+\\rho_{XY} = \\rho_{YX}.
+$$
+But causal effects are directional.
 
-# x and y are correlated, but the relationship is driven by z
-print(df.corr())
-```
+#### 3) Assumptions (what you need for a causal claim)
 
-#### Practical interpretation
-- "x is correlated with y" is a safe claim.
-- "x causes y" requires identification assumptions (experiments, instruments, diff-in-diff, etc.).
+A causal claim requires an identification strategy:
+- randomization,
+- a natural experiment,
+- a credible quasi-experimental design (DiD/IV/RD),
+- or a structural model with defensible assumptions.
 
-#### In this project
-We focus on prediction and careful interpretation.
-We do not claim causal effects unless explicitly designed.
+Without identification, regression coefficients are best interpreted as conditional associations.
+
+#### 4) Estimation mechanics: how confounding creates correlation without causation
+
+Consider a simple confounding structure:
+- $Z$ causes both $X$ and $Y$.
+
+One possible DGP:
+$$
+X = aZ + \\eta, \\qquad Y = bZ + \\varepsilon.
+$$
+
+Even if $X$ does not cause $Y$, $X$ and $Y$ will be correlated because they share the common cause $Z$.
+
+Regression “controls” can help if you measure the confounder, but:
+- you rarely observe all confounders,
+- controlling for the wrong variables (colliders/mediators) can introduce bias.
+
+#### 5) Inference: significance is not causality
+
+A small p-value means “incompatible with $\\beta=0$ under the model assumptions.”
+It does not mean:
+- the model is correct,
+- the effect is causal,
+- the effect is economically large.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Timing sanity**
+- can $X$ plausibly affect $Y$ given publication/decision timing?
+
+2) **Confounder list**
+- write down plausible common causes of $X$ and $Y$ (before running regressions).
+
+3) **Placebos**
+- test outcomes that should not respond to $X$; “effects” there suggest confounding.
+
+4) **Design upgrade**
+- if you need causality, move from “controls” to FE/DiD/IV where appropriate.
+
+#### 7) Interpretation + reporting
+
+Be explicit about the claim type:
+- predictive association vs causal effect.
+
+**What this does NOT mean**
+- “Controlling for some variables” is not a guarantee of causality.
+
+#### Exercises
+
+- [ ] Write one example where correlation is expected but causality is ambiguous (macro or micro).
+- [ ] Draw a simple confounding story in words (Z→X and Z→Y).
+- [ ] Simulate confounding and show correlation without causation.
+- [ ] Rewrite a regression interpretation paragraph to remove causal language unless justified.

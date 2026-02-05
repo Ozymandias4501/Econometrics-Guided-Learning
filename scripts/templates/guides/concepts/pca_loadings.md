@@ -1,77 +1,110 @@
-### Deep Dive: PCA and Loadings (Turning Many Indicators Into Factors)
+### Deep Dive: PCA and loadings — latent factors in economic indicators
 
-> **Definition:** **Principal Component Analysis (PCA)** finds orthogonal directions (components) that explain the most variance in the data.
+Principal component analysis (PCA) is a standard way to summarize many correlated indicators with a few latent factors.
 
-> **Definition:** A **component** is a linear combination of original variables.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Loadings** are the weights that map original variables into a component.
+Many macro indicators move together because they share common shocks (the “business cycle factor”).
+PCA finds directions in feature space that explain the most variance.
 
-#### Why PCA is useful in macro
-Macro indicators are often correlated (growth, inflation, rates). PCA can:
-- compress many indicators into a few factors
-- reduce multicollinearity
-- create interpretable latent "macro factors"
+Use PCA to:
+- reduce dimensionality,
+- build factor-like summaries,
+- visualize structure.
 
-#### Standardization is not optional
-> **Definition:** **Standardization** rescales features to mean 0 and std 1.
+Treat PCA as descriptive: it finds variance directions, not causal drivers.
 
-Distance/variance depends on units. Without standardization, PCA mostly learns the biggest-unit variable.
+#### 2) Notation + setup (define symbols)
 
-#### The math (high level)
-Let $X$ be a centered (and typically standardized) data matrix.
-PCA finds vectors $w_k$ that maximize:
+Let $X$ be an $n \\times p$ matrix of features:
+- rows: observations (time periods),
+- columns: indicators (standardized).
 
+Standardization:
 $$
-\max_{w_k} \; \mathrm{Var}(X w_k) \quad \text{s.t. } ||w_k||_2 = 1 \text{ and } w_k \perp w_{k'}
-$$
-
-This leads to eigenvectors of the covariance (or correlation) matrix.
-
-#### Interpreting loadings
-A component score is:
-
-$$
-\text{factor}_k = X w_k
+\\tilde X_{ij} = \\frac{X_{ij} - \\bar X_j}{s_j}.
 $$
 
-- Large positive loading means the factor increases when that variable increases.
-- Large negative loading means the factor increases when that variable decreases.
+Sample covariance matrix (for standardized data):
+$$
+S = \\frac{1}{n}\\tilde X'\\tilde X.
+$$
 
-#### Python demo (commented)
-```python
-import numpy as np
-import pandas as pd
+PCA finds eigenvectors of $S$:
+$$
+S w_k = \\lambda_k w_k,
+$$
+with eigenvalues $\\lambda_1 \\ge \\lambda_2 \\ge \\cdots$.
 
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
+PC scores:
+$$
+z_{ik} = \\tilde x_i' w_k,
+$$
+where $\\tilde x_i$ is row $i$ of $\\tilde X$.
 
-# X: DataFrame of macro features
-# X = ...
+**What each term means**
+- $w_k$: loading vector for component $k$ (how indicators combine).
+- $\\lambda_k$: variance explained by component $k$.
+- $z_{ik}$: component score (latent factor value for observation $i$).
 
-# 1) Standardize
-# scaler = StandardScaler().fit(X)
-# X_scaled = scaler.transform(X)
+#### 3) Assumptions (and what can go wrong)
 
-# 2) Fit PCA
-# pca = PCA(n_components=3).fit(X_scaled)
+PCA assumes:
+- scaling makes indicators comparable (standardize!),
+- linear combinations capture meaningful structure.
 
-# 3) Loadings: rows are components, columns are original features
-# loadings = pd.DataFrame(
-#     pca.components_,
-#     columns=X.columns,
-#     index=[f'PC{i+1}' for i in range(pca.n_components_)],
-# )
+Common pitfalls:
+- forgetting to standardize,
+- including strong trends (nonstationarity) so the first PC becomes “time”,
+- over-interpreting components as causal factors.
 
-# 4) Explained variance
-# print(pca.explained_variance_ratio_)
-```
+#### 4) Estimation mechanics (SVD perspective)
 
-#### Interpretation playbook
-1. Inspect explained variance ratio to decide how many PCs matter.
-2. For each PC, list the top positive and negative loadings.
-3. Give the factor a name in economic terms.
-4. Plot the factor through time and compare to known events.
+Most implementations use SVD:
+$$
+\\tilde X = U \\Sigma V'.
+$$
 
-#### Project touchpoints
-- PCA is introduced in the unsupervised notebooks using `sklearn.decomposition.PCA`.
-- You will typically start from `data/processed/panel_monthly.csv` (or `data/sample/panel_monthly_sample.csv`).
+Then:
+- loadings are columns of $V$,
+- explained variance relates to singular values in $\\Sigma$.
+
+#### 5) Inference: uncertainty is about stability, not p-values
+
+PCA does not come with simple p-values for “importance.”
+Instead assess:
+- stability across subperiods,
+- sensitivity to feature sets,
+- interpretability of loadings.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Explained variance (scree plot)**
+- how many components explain most variance?
+
+2) **Loading interpretability**
+- do top loadings match a coherent economic story?
+
+3) **Stability**
+- re-fit PCA on different time windows; do loadings and scores persist?
+
+4) **Reconstruction check**
+- can a few PCs reconstruct key series reasonably?
+
+#### 7) Interpretation + reporting
+
+Report:
+- whether features were standardized,
+- explained variance ratios,
+- top loadings for the first few PCs,
+- and stability checks.
+
+**What this does NOT mean**
+- PCA does not identify causal mechanisms.
+- “First PC” is not automatically “the business cycle” unless evidence supports it.
+
+#### Exercises
+
+- [ ] Fit PCA on standardized macro features and plot the scree plot.
+- [ ] Interpret the first PC using its top 5 loadings.
+- [ ] Re-fit PCA on two subperiods and compare loadings; write 5 sentences on stability.

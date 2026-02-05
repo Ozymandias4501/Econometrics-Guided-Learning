@@ -20,6 +20,11 @@ This data module builds the datasets used throughout the project: a macro panel 
 - **Quarter-end timestamp**: representing a quarter by its final date to make merges unambiguous.
 
 
+### How To Read This Guide
+- Use **Step-by-Step** to understand what you must implement in the notebook.
+- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Then return to the notebook and write a short interpretation note after each section.
+
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
@@ -49,89 +54,210 @@ target_next_q = recession.shift(-1)
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Data: Build Datasets You Can Trust
+### Core Data: build datasets you can trust (schema, timing, reproducibility)
 
-Modeling is downstream of data.
-If you do not trust your data processing, you cannot trust your model output.
+Good modeling is downstream of good data. In econometrics, “good data” means more than “no missing values”:
+it means the dataset matches the real timing and measurement of the economic problem.
 
-#### The three layers of a real data pipeline
-> **Definition:** **Raw data** is the closest representation of what the source returned.
+#### 1) Intuition (plain English)
 
-> **Definition:** **Processed data** is cleaned and aligned for analysis.
+Most downstream mistakes trace back to one of these upstream issues:
+- mixing frequencies incorrectly (monthly vs quarterly),
+- misaligning timestamps (month-start vs month-end),
+- using revised data as if it were known in real time,
+- silently changing transformations (growth rate vs level) mid-project.
 
-> **Definition:** A **modeling table** is the final table with features and targets aligned and ready for splitting.
+**Story example:** You merge monthly unemployment to quarterly GDP growth.
+If you accidentally align the *end-of-quarter* unemployment with *start-of-quarter* GDP, you change the meaning of “what was known when.”
 
-#### Timing is part of the schema
-When you build features, you are also defining "what was known when".
-That is why frequency alignment and target shifting are first-class topics in this project.
+#### 2) Notation + setup (define symbols)
 
-#### A practical habit
-Keep a simple data dictionary as you go:
-- what is each column?
-- what are its units?
-- what frequency is it observed?
-- what transformations did you apply?
+We will use the “time + horizon” language throughout the repo:
+- $t$: time index (month/quarter/year),
+- $X_t$: features available at time $t$,
+- $y_{t+h}$: outcome/label defined $h$ periods ahead.
 
-### Deep Dive: APIs + Caching (How Real-World Data Ingestion Works)
+Data pipeline layers (repo convention):
 
-This project makes you interact with real APIs because data ingestion is where many ML projects fail.
-In practice, you need to understand protocols, schemas, error handling, and reproducibility.
+1) **Raw data** (`data/raw/`)
+- closest representation of the source response (API output, raw CSV)
+- should be cacheable and re-creatable
 
-#### Key terms (defined)
-> **Definition:** An **API (Application Programming Interface)** is a contract for requesting and receiving structured data.
+2) **Processed data** (`data/processed/`)
+- cleaned, aligned frequencies, derived columns
+- “analysis-ready” but not necessarily “model-ready”
 
-> **Definition:** An **endpoint** is a specific API path that returns a particular dataset.
+3) **Modeling table**
+- final table where:
+  - features are past-only,
+  - labels are shifted to the forecast horizon,
+  - missingness from lags/rolls is handled,
+  - you can split without leakage.
 
-> **Definition:** **Query parameters** are inputs you pass to an endpoint (like `series_id=UNRATE`).
+#### 3) Assumptions (and why we state them explicitly)
 
-> **Definition:** A **schema** is the expected structure of the response payload (field names, types).
+Every dataset embeds assumptions:
+- measurement units (percent vs fraction),
+- seasonal adjustment,
+- timing conventions (month-end, quarter-end),
+- whether revisions matter (real-time vs revised),
+- whether the sample composition changes over time.
 
-> **Definition:** A **cache** is a local copy of responses used to avoid repeated calls and make runs reproducible.
+You cannot remove assumptions; you can only make them explicit and test sensitivity.
 
-#### Why caching matters
-- Speed: iterate without waiting on the network.
-- Reproducibility: your results do not change because the API changed or the data was revised.
-- Debuggability: you can inspect raw payloads when parsing fails.
+#### 4) Mechanics: the minimum reliable pipeline
 
-#### Raw vs processed data
-- `data/raw/` should hold cached JSON responses (closest to the API output).
-- `data/processed/` should hold your cleaned, aligned, analysis-ready tables.
+**(a) Ingest + cache**
+- Always cache API responses to disk.
+- Your code should be able to re-run without changing results.
 
-#### Python demo: minimal caching pattern (commented)
-```python
-from __future__ import annotations
+**(b) Parse + type**
+- Parse dates, set a proper index (DatetimeIndex for macro; MultiIndex for panels).
+- Coerce numeric columns to numeric types (watch out for strings).
 
-import json
-from pathlib import Path
-import requests
+**(c) Align frequency**
+- Resample to a common timeline (month-end, quarter-end).
+- Decide and document whether you use `.last()` or `.mean()` (interpretation differs).
 
-def load_or_fetch_json(path: Path, fetch_fn):
-    """Load JSON from disk if present; otherwise fetch and write it."""
-    if path.exists():
-        return json.loads(path.read_text())
+**(d) Create derived variables**
+- growth rates, log differences, rolling windows, lag features.
+- each transform changes interpretation; keep a small “data dictionary.”
 
-    payload = fetch_fn()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload))
-    return payload
+**(e) Build the modeling table**
+- define labels (e.g., next-quarter recession),
+- shift targets forward and features backward (lags),
+- drop missing rows created by lags/rolls.
 
-def fetch_example(url: str, params: dict):
-    """Minimal HTTP GET with a timeout and basic error handling."""
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()  # raises on 4xx/5xx
-    return r.json()
-```
+#### 5) Inference and data (why timing affects standard errors)
 
-#### Debug playbook (when API calls fail)
-1. Print the full URL and params.
-2. Check HTTP status code.
-3. Cache the raw response and debug parsing offline.
-4. Inspect payload keys (`payload.keys()`) and sample rows.
-5. Add defensive parsing (type conversion, missing markers).
+Even inference topics (SE, p-values) depend on data structure:
+- time series residuals are autocorrelated → HAC SE,
+- panels share shocks within groups → clustered SE.
 
-#### Economics caveat: revisions and vintages
-Many macro series are revised (GDP is a classic example). If you re-fetch later, historical values can change.
-Caching avoids silent drift.
+So “data” is not just a preprocessing step; it determines the correct inference method.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Schema + units check**
+- print `df.dtypes`, confirm units (percent vs fraction), and inspect summary stats.
+
+2) **Index + frequency check**
+- confirm sorted index, expected frequency, and no duplicate timestamps.
+
+3) **Missingness check**
+- print missingness per column before/after merges and transforms.
+
+4) **Timing check**
+- for a few rows, manually verify that features come from the past relative to the label.
+
+5) **Sensitivity check**
+- re-run a result using an alternative alignment (mean vs last) and see if conclusions change.
+
+#### 7) Interpretation + reporting
+
+When you present a result downstream, always include:
+- which dataset version you used (processed vs sample),
+- the frequency and timestamp convention,
+- key transformations (diff, logdiff, growth rates),
+- any known limitations (revisions, breaks).
+
+**What this does NOT mean**
+- “More features” does not equal “better data.”
+- A perfectly clean dataset can still be conceptually wrong if timing is wrong.
+
+#### Exercises
+
+- [ ] For one dataset, write a 5-line data dictionary (column meaning + units + frequency).
+- [ ] Demonstrate how `.last()` vs `.mean()` changes a resampled series and interpret the difference.
+- [ ] Pick one merge/join and verify alignment by printing a few timestamps and values.
+- [ ] Show one example where a shift direction would create leakage, and explain why.
+
+### Deep Dive: API caching — reproducible data is part of the method
+
+APIs are convenient, but without caching they can make your analysis non-reproducible.
+
+#### 1) Intuition (plain English)
+
+If you fetch data from an API every time:
+- the API can change,
+- data can be revised,
+- outages/rate limits break your workflow,
+- and you cannot guarantee someone else gets the same dataset.
+
+Caching turns “a query” into “a saved dataset artifact.”
+
+#### 2) Notation + setup (define terms)
+
+Think of your ingestion as a function:
+
+$$
+\\text{data} = F(\\text{endpoint}, \\text{params}).
+$$
+
+Caching adds a persistent mapping:
+
+$$
+\\text{cache\_key} = H(\\text{endpoint}, \\text{params}),
+\\quad
+\\text{cache}[\\text{cache\_key}] = \\text{data}.
+$$
+
+**What each term means**
+- $F$: API fetch function.
+- $H$: hash/key function that uniquely identifies a request.
+- cache: local file storage (JSON/CSV).
+
+#### 3) Assumptions (and what caching does/does not solve)
+
+Caching assumes:
+- you want repeatability for a given request,
+- you can store raw responses (or cleaned versions) locally.
+
+Caching does not solve:
+- conceptual mistakes (wrong variables, wrong frequency),
+- revisions vs real-time availability (you still must decide which you want).
+
+#### 4) Mechanics: what to cache (and why)
+
+Best practice in this repo:
+- cache **raw responses** (so parsing is reproducible),
+- also write **processed datasets** (so notebooks can run without re-fetching).
+
+Cache naming should encode:
+- dataset name,
+- parameters,
+- and time range (if applicable).
+
+#### 5) Inference: reproducibility affects credibility
+
+Inference is not just math; it is also:
+- “Can someone reproduce the exact table/figure?”
+- “Can we trace a result to a specific dataset version?”
+
+Caching is therefore part of scientific validity.
+
+#### 6) Diagnostics + robustness (minimum set)
+
+1) **Cache hit/miss logging**
+- print whether you loaded from disk or fetched from API.
+
+2) **Schema checks**
+- validate columns and dtypes after loading cached data.
+
+3) **Re-run consistency**
+- run the build pipeline twice and confirm identical processed outputs.
+
+#### 7) Interpretation + reporting
+
+When presenting results, state:
+- whether data came from cached raw responses or fresh API calls,
+- and where the cached artifacts live.
+
+#### Exercises
+
+- [ ] Run a dataset build twice; confirm the second run uses cached raw data.
+- [ ] Delete one cached file and confirm the pipeline re-fetches and re-caches it.
+- [ ] Add one schema assertion (expected columns) after loading cached data.
 
 ### Project Code Map
 - `scripts/fetch_census.py`: CLI fetch for Census/ACS

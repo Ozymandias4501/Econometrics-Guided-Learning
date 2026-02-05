@@ -1,112 +1,91 @@
-### Deep Dive: GDP Growth Math + Technical Recession Labels
+### Deep Dive: GDP growth + the “technical recession” label (macro target construction)
 
-GDP is a level series. A recession label requires turning levels into growth rates.
+This repo’s macro tasks rely on a recession label and GDP growth features. Target construction is part of the econometric specification.
 
-#### Key terms (defined)
-> **Definition:** A **level** is the raw value of a series (e.g., real GDP in chained dollars).
+#### 1) Intuition (plain English)
 
-> **Definition:** A **growth rate** is the percent change over a period.
+Labels are not “given by nature.” You define them.
 
-> **Definition:** **QoQ** (quarter-over-quarter) compares $GDP_t$ to $GDP_{t-1}$.
+**Story example:** A binary recession label is a simplification of a complex economic phenomenon.
+The value of the label is not that it is perfect, but that it is:
+- clear,
+- reproducible,
+- aligned to a forecasting horizon.
 
-> **Definition:** **YoY** (year-over-year) compares $GDP_t$ to $GDP_{t-4}$.
+#### 2) Notation + setup (define symbols)
 
-> **Definition:** **Annualized QoQ** converts a quarterly growth rate into an annual pace.
+Let:
+- $GDP_t$ be real GDP level in quarter $t$.
 
-#### Growth formulas (math)
-QoQ percent growth:
-
-$$
- g_{qoq,t} = 100 \cdot \left(\frac{GDP_t}{GDP_{t-1}} - 1\right)
-$$
-
-Annualized QoQ percent growth (quarterly compounding):
+Quarter-over-quarter (QoQ) growth (simple form):
 
 $$
- g_{ann,t} = 100 \cdot \left(\left(\frac{GDP_t}{GDP_{t-1}}\right)^4 - 1\right)
+g_t^{qoq} = \\frac{GDP_t - GDP_{t-1}}{GDP_{t-1}}.
 $$
 
-YoY percent growth:
+Year-over-year (YoY) growth:
 
 $$
- g_{yoy,t} = 100 \cdot \left(\frac{GDP_t}{GDP_{t-4}} - 1\right)
+g_t^{yoy} = \\frac{GDP_t - GDP_{t-4}}{GDP_{t-4}}.
 $$
 
-#### Why compute multiple growth measures?
-- QoQ is responsive but noisy.
-- YoY is smoother but slower to react.
-- Annualized QoQ is common in macro reporting.
-
-> **Definition:** A **log growth rate** uses differences of logs: $\Delta \log(GDP_t) = \log(GDP_t) - \log(GDP_{t-1})$.
-Log growth is often convenient because it approximates percent growth for small changes and makes compounding math cleaner.
-
-#### Technical recession label used in this project
-> **Definition:** A **technical recession** (teaching proxy here) is two consecutive quarters of negative QoQ GDP growth.
-
-Label:
+Technical recession label (common rule of thumb):
+- recession at $t$ if GDP growth is negative for two consecutive quarters:
 
 $$
- recession_t = \mathbb{1}[g_{qoq,t} < 0 \;\wedge\; g_{qoq,t-1} < 0]
+R_t = 1[g_t^{qoq} < 0 \\;\\text{and}\\; g_{t-1}^{qoq} < 0].
 $$
 
-Next-quarter prediction target:
+**What each term means**
+- QoQ captures short-run movements; YoY smooths seasonal/short-run noise.
+- The “two quarters” rule is a convention, not a structural definition.
 
-$$
- target_{t} = recession_{t+1}
-$$
+#### 3) Assumptions (and limitations)
 
-#### Edge cases (what to watch)
-- Missing GDP values will propagate to growth.
-- The first growth observation is undefined (needs a prior quarter).
-- YoY growth needs 4 prior quarters.
+This label assumes:
+- GDP growth is an adequate proxy for recession timing.
 
-#### Python demo: compute growth + label (commented)
-```python
-import pandas as pd
+Limitations:
+- official recession dating (NBER) uses broader information and can differ,
+- GDP revisions can change growth signs ex post,
+- the label is coarse and may miss mild downturns.
 
-# gdp: Series of GDP levels indexed by quarter-end dates
-# gdp = ...
+#### 4) Mechanics: aligning labels to forecasting horizons
 
-# QoQ growth (percent)
-# growth_qoq = 100 * (gdp / gdp.shift(1) - 1)
+If you predict “next quarter recession,” you must shift labels:
+- features at time $t$ predict $R_{t+1}$ (or $R_{t+h}$).
 
-# Technical recession label
-# Two consecutive negative quarters:
-# - current quarter growth < 0
-# - previous quarter growth < 0
-# recession = ((growth_qoq < 0) & (growth_qoq.shift(1) < 0)).astype(int)
+That makes timing explicit and reduces leakage risk.
 
-# Next-quarter target
-# Predict next quarter's label using information as-of this quarter:
-# target_next = recession.shift(-1)
-```
+#### 5) Inference: label uncertainty and evaluation
 
-#### Project touchpoints (where this logic lives in code)
-- `src/macro.py` implements these transforms explicitly:
-  - `gdp_growth_qoq`, `gdp_growth_qoq_annualized`, `gdp_growth_yoy`
-  - `technical_recession_label`
-  - `next_period_target`
+Classification metrics depend on label prevalence and definition.
+If you change the label rule, you change:
+- class imbalance,
+- what counts as “false positive/negative,”
+- and the economic meaning of a miss.
 
-#### Python demo: using the project helper functions (commented)
-```python
-from src import macro
+#### 6) Diagnostics + robustness (minimum set)
 
-# levels: quarterly GDP level series
-# levels = gdp['GDPC1']
+1) **Plot GDP growth with recession shading**
+- confirm the label activates where you expect.
 
-# Growth variants
-# qoq = macro.gdp_growth_qoq(levels)
-# yoy = macro.gdp_growth_yoy(levels)
+2) **Compare to alternative labels**
+- NBER recession indicator (if available), unemployment-based rules, etc.
 
-# Label + next-period target
-# recession = macro.technical_recession_label(qoq)
-# target = macro.next_period_target(recession)
-```
+3) **Sensitivity to growth definition**
+- compare QoQ vs YoY-based recession heuristics.
 
-#### Important limitation
-This is a clean, computable teaching proxy.
-It is not an official recession dating rule.
+#### 7) Interpretation + reporting
 
-#### Macro caveat: revisions
-GDP is revised. If you re-fetch later, historical values can change, which can change your computed label.
-This is one reason caching matters.
+When you report a model:
+- specify the label definition,
+- specify the forecast horizon,
+- interpret errors in economic terms (missed recession vs false alarm).
+
+#### Exercises
+
+- [ ] Compute QoQ and YoY GDP growth and plot them.
+- [ ] Construct the technical recession label and verify the count of recession quarters.
+- [ ] Shift the label to create a one-quarter-ahead target; confirm no leakage.
+- [ ] Compare your label to an alternative (if available) and note differences.
