@@ -1,8 +1,8 @@
 """Scaffold curriculum notebooks and per-notebook guides.
 
 This script writes the tutorial structure described in docs/index.md:
-- 28 notebooks under notebooks/
-- 28 guides under docs/guides/
+- 35 notebooks under notebooks/
+- 35 guides under docs/guides/
 
 It is safe to re-run; it will overwrite files.
 """
@@ -221,6 +221,33 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
             "- report + dashboard.\n"
         )
 
+    if category == "07_causal":
+        why = (
+            "Causal notebooks focus on **identification**: what would have to be true for a coefficient to represent a causal effect.\n"
+            "You will practice:\n"
+            "- building a county-year panel,\n"
+            "- fixed effects (TWFE),\n"
+            "- clustered standard errors,\n"
+            "- DiD + event studies,\n"
+            "- IV/2SLS.\n"
+        )
+        pitfalls += [
+            "Treating regression output as causal without stating identification assumptions.",
+            "Using non-clustered SE when shocks are correlated within groups (e.g., states).",
+        ]
+
+    if category == "08_time_series_econ":
+        why = (
+            "Time-series econometrics notebooks build the classical toolkit you need before trusting macro regressions:\n"
+            "- stationarity + unit roots,\n"
+            "- cointegration + error correction,\n"
+            "- VAR dynamics and impulse responses.\n"
+        )
+        pitfalls += [
+            "Running tests without plotting or transforming the series first.",
+            "Treating impulse responses as structural causality without an identification story.",
+        ]
+
     # Concrete deliverables (where applicable)
     if stem == "01_build_macro_monthly_panel":
         deliverables = ["data/processed/panel_monthly.csv"]
@@ -230,6 +257,8 @@ def notebook_front_matter(stem: str, category: str, *, guide_path: str) -> str:
         deliverables = ["data/processed/macro_quarterly.csv"]
     elif stem == "04_census_api_microdata_fetch":
         deliverables = ["data/processed/census_county_<year>.csv"]
+    elif stem == "00_build_census_county_panel":
+        deliverables = ["data/processed/census_county_panel.csv"]
     elif stem == "02_build_cli_train_predict":
         deliverables = ["outputs/<run_id>/model.joblib", "outputs/<run_id>/metrics.json", "outputs/<run_id>/predictions.csv"]
     elif stem == "01_capstone_workspace":
@@ -340,6 +369,47 @@ def notebook_checkpoint_snippet(stem: str, category: str) -> str:
             "# - reports/capstone_report.md updated\n"
             "# - outputs/<run_id>/ contains model + metrics + predictions\n"
             "# - streamlit app runs and loads artifacts\n"
+            "...\n"
+        )
+
+    if category == "07_causal":
+        expected = {
+            "00_build_census_county_panel": "census_county_panel.csv",
+        }.get(stem)
+
+        hint = (
+            f"# Expected file: data/processed/{expected}\n" if expected else "# Expected output: (see notebook front matter)\n"
+        )
+
+        return (
+            "import pandas as pd\n"
+            "\n"
+            + hint
+            + "# TODO: If you created a panel DataFrame, verify the indexing + core columns.\n"
+            "# Example (adjust variable names):\n"
+            "# assert isinstance(panel.index, pd.MultiIndex)\n"
+            "# assert panel.index.names[:2] == ['fips', 'year']\n"
+            "# assert panel['year'].astype(int).between(1900, 2100).all()\n"
+            "# assert panel['fips'].astype(str).str.len().eq(5).all()\n"
+            "#\n"
+            "# TODO: Write 2-3 sentences:\n"
+            "# - What is the identification assumption for your causal estimate?\n"
+            "# - What diagnostic/falsification did you run?\n"
+            "...\n"
+        )
+
+    if category == "08_time_series_econ":
+        return (
+            "import pandas as pd\n"
+            "\n"
+            "# TODO: Validate your time series table is well-formed.\n"
+            "# Example (adjust variable names):\n"
+            "# assert isinstance(df.index, pd.DatetimeIndex)\n"
+            "# assert df.index.is_monotonic_increasing\n"
+            "# assert df.shape[0] > 30\n"
+            "#\n"
+            "# TODO: If you built transformed series (diff/logdiff), confirm no future leakage.\n"
+            "# Hint: transformations should only use past/current values (shift/diff), never future.\n"
             "...\n"
         )
 
@@ -1140,6 +1210,350 @@ def solution_snippets(stem: str) -> dict[str, str]:
             ),
             "Limitations": (
                 "# Include: GDP revisions, structural breaks, leakage risks, regime shifts.\n"
+            ),
+        }
+
+    # Causal notebooks (panels, DiD, IV)
+    if stem == "00_build_census_county_panel":
+        return {
+            "Choose years + variables": (
+                "import yaml\n"
+                "\n"
+                "cfg = yaml.safe_load((PROJECT_ROOT / 'configs' / 'census_panel.yaml').read_text())\n"
+                "acs = cfg['acs_panel']\n"
+                "years = list(acs['years'])\n"
+                "acs_vars = list(acs['get'])\n"
+                "dataset = acs.get('dataset', 'acs/acs5')\n"
+                "geo_for = acs['geography']['for']\n"
+                "geo_in = acs['geography'].get('in')\n"
+                "\n"
+                "years[:3], acs_vars[:5]\n"
+            ),
+            "Fetch/cache ACS tables": (
+                "import pandas as pd\n"
+                "\n"
+                "# Offline default: load the bundled sample panel.\n"
+                "panel_raw = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "panel_raw.head()\n"
+            ),
+            "Build panel + FIPS": (
+                "import pandas as pd\n"
+                "\n"
+                "df = panel_raw.copy()\n"
+                "df['state'] = df['state'].astype(str).str.zfill(2)\n"
+                "df['county'] = df['county'].astype(str).str.zfill(3)\n"
+                "df['fips'] = df['state'] + df['county']\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "\n"
+                "# Recompute derived rates (safe guards included)\n"
+                "df['unemployment_rate'] = (\n"
+                "    df['B23025_005E'].astype(float) / df['B23025_002E'].replace({0: pd.NA}).astype(float)\n"
+                ").astype(float)\n"
+                "df['poverty_rate'] = (\n"
+                "    df['B17001_002E'].astype(float) / df['B01003_001E'].replace({0: pd.NA}).astype(float)\n"
+                ").astype(float)\n"
+                "\n"
+                "panel = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "panel.head()\n"
+            ),
+            "Save processed panel": (
+                "out_path = PROCESSED_DIR / 'census_county_panel.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "panel.to_csv(out_path, index=True)\n"
+                "\n"
+                "print('wrote', out_path)\n"
+            ),
+        }
+
+    if stem == "01_panel_fixed_effects_clustered_se":
+        return {
+            "Load panel and define variables": (
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "\n"
+                "path = PROCESSED_DIR / 'census_county_panel.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "\n"
+                "df['fips'] = df['fips'].astype(str)\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "df = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "df['log_income'] = np.log(df['B19013_001E'].astype(float))\n"
+                "df['log_rent'] = np.log(df['B25064_001E'].astype(float))\n"
+                "df[['poverty_rate', 'log_income', 'unemployment_rate']].describe()\n"
+            ),
+            "Pooled OLS baseline": (
+                "import statsmodels.api as sm\n"
+                "\n"
+                "tmp = df[['poverty_rate', 'log_income', 'unemployment_rate']].dropna().copy()\n"
+                "y = tmp['poverty_rate'].astype(float)\n"
+                "X = sm.add_constant(tmp[['log_income', 'unemployment_rate']], has_constant='add')\n"
+                "res = sm.OLS(y, X).fit(cov_type='HC3')\n"
+                "print(res.summary())\n"
+            ),
+            "Two-way fixed effects": (
+                "from src.causal import fit_twfe_panel_ols\n"
+                "\n"
+                "res_twfe = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col='poverty_rate',\n"
+                "    x_cols=['log_income', 'unemployment_rate'],\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                ")\n"
+                "print(res_twfe.summary)\n"
+            ),
+            "Clustered standard errors": (
+                "from src.causal import fit_twfe_panel_ols\n"
+                "\n"
+                "res_cluster = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col='poverty_rate',\n"
+                "    x_cols=['log_income', 'unemployment_rate'],\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "\n"
+                "pd.DataFrame({'robust_se': res_twfe.std_errors, 'cluster_se': res_cluster.std_errors})\n"
+            ),
+        }
+
+    if stem == "02_difference_in_differences_event_study":
+        return {
+            "Synthetic adoption + treatment": (
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "\n"
+                "df = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "df['fips'] = df['fips'].astype(str)\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "\n"
+                "states = sorted(df['state'].astype(str).unique())\n"
+                "# Deterministic synthetic adoption schedule\n"
+                "adopt = {states[0]: 2018, states[1]: 2020}  # states[2] is never-treated\n"
+                "\n"
+                "df['adopt_year'] = df['state'].astype(str).map(adopt)\n"
+                "df['ever_treated'] = df['adopt_year'].notna().astype(int)\n"
+                "df['post'] = ((df['year'] >= df['adopt_year']).fillna(False)).astype(int)\n"
+                "df['treated'] = df['ever_treated'] * df['post']\n"
+                "\n"
+                "# Semi-synthetic outcome: add a known post effect.\n"
+                "true_effect = -0.02\n"
+                "df['poverty_rate_real'] = df['poverty_rate'].astype(float)\n"
+                "df['poverty_rate_semi'] = (df['poverty_rate_real'] + true_effect * df['treated']).clip(0, 1)\n"
+                "\n"
+                "df[['state', 'year', 'treated', 'poverty_rate_real', 'poverty_rate_semi']].head()\n"
+            ),
+            "TWFE DiD": (
+                "from src.causal import fit_twfe_panel_ols\n"
+                "\n"
+                "df = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "res = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col='poverty_rate_semi',\n"
+                "    x_cols=['treated'],\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "res.params\n"
+            ),
+            "Event study (leads/lags)": (
+                "import numpy as np\n"
+                "\n"
+                "df_es = df.reset_index(drop=True).copy()\n"
+                "df_es['event_time'] = df_es['year'] - df_es['adopt_year']\n"
+                "\n"
+                "window = list(range(-3, 4))\n"
+                "base = -1\n"
+                "event_cols = []\n"
+                "for k in window:\n"
+                "    if k == base:\n"
+                "        continue\n"
+                "    col = f'event_{k}'\n"
+                "    df_es[col] = ((df_es['ever_treated'] == 1) & (df_es['event_time'] == k)).astype(int)\n"
+                "    event_cols.append(col)\n"
+                "\n"
+                "df_es = df_es.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "res_es = fit_twfe_panel_ols(\n"
+                "    df_es,\n"
+                "    y_col='poverty_rate_semi',\n"
+                "    x_cols=event_cols,\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "\n"
+                "coefs = res_es.params.filter(like='event_')\n"
+                "ses = res_es.std_errors.filter(like='event_')\n"
+                "out = (coefs.to_frame('coef').join(ses.to_frame('se')))\n"
+                "out\n"
+            ),
+            "Diagnostics: pre-trends + placebo": (
+                "# Pre-trends: inspect lead coefficients (event_-3, event_-2).\n"
+                "# Placebo: shift adoption earlier and confirm estimated effect shrinks toward 0.\n"
+            ),
+        }
+
+    if stem == "03_instrumental_variables_2sls":
+        return {
+            "Simulate endogeneity": (
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "\n"
+                "rng = np.random.default_rng(0)\n"
+                "n = 2000\n"
+                "z = rng.normal(size=n)          # instrument\n"
+                "u = rng.normal(size=n)          # unobserved confounder\n"
+                "\n"
+                "x = 0.8*z + 0.8*u + rng.normal(size=n)  # endogenous regressor\n"
+                "eps = 0.8*u + rng.normal(size=n)        # error correlated with x\n"
+                "\n"
+                "beta_true = 1.5\n"
+                "y = beta_true * x + eps\n"
+                "\n"
+                "df = pd.DataFrame({'y': y, 'x': x, 'z': z})\n"
+                "df.head()\n"
+            ),
+            "OLS vs 2SLS": (
+                "import statsmodels.api as sm\n"
+                "from src.causal import fit_iv_2sls\n"
+                "\n"
+                "ols = sm.OLS(df['y'], sm.add_constant(df[['x']], has_constant='add')).fit()\n"
+                "print('OLS beta:', float(ols.params['x']))\n"
+                "\n"
+                "iv = fit_iv_2sls(df, y_col='y', x_endog='x', x_exog=[], z_cols=['z'])\n"
+                "print('IV beta :', float(iv.params['x']))\n"
+            ),
+            "First-stage + weak IV checks": (
+                "# Inspect first stage output (instrument strength):\n"
+                "# iv.first_stage\n"
+            ),
+            "Interpretation + limitations": (
+                "# Write 3-5 sentences on:\n"
+                "# - relevance + exclusion in your simulated setup\n"
+                "# - why IV can fix endogeneity here\n"
+            ),
+        }
+
+    # Time-series econometrics notebooks
+    if stem == "00_stationarity_unit_roots":
+        return {
+            "Load macro series": (
+                "import pandas as pd\n"
+                "\n"
+                "path = PROCESSED_DIR / 'panel_monthly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df = df.dropna().copy()\n"
+                "df.head()\n"
+            ),
+            "Transformations": (
+                "# Example: difference CPI and unemployment\n"
+                "df_t = df[['CPIAUCSL', 'UNRATE']].astype(float).copy()\n"
+                "df_t['dCPI'] = df_t['CPIAUCSL'].diff()\n"
+                "df_t['dUNRATE'] = df_t['UNRATE'].diff()\n"
+                "df_t = df_t.dropna()\n"
+                "df_t.head()\n"
+            ),
+            "ADF/KPSS tests": (
+                "from statsmodels.tsa.stattools import adfuller, kpss\n"
+                "\n"
+                "x = df['CPIAUCSL'].astype(float).dropna()\n"
+                "dx = x.diff().dropna()\n"
+                "\n"
+                "adf_p_level = adfuller(x)[1]\n"
+                "adf_p_diff = adfuller(dx)[1]\n"
+                "kpss_p_level = kpss(x, regression='c', nlags='auto')[1]\n"
+                "kpss_p_diff = kpss(dx, regression='c', nlags='auto')[1]\n"
+                "\n"
+                "{'adf_p_level': adf_p_level, 'adf_p_diff': adf_p_diff, 'kpss_p_level': kpss_p_level, 'kpss_p_diff': kpss_p_diff}\n"
+            ),
+            "Spurious regression demo": (
+                "import statsmodels.api as sm\n"
+                "\n"
+                "# Levels-on-levels can look 'significant' even when dynamics are mis-specified.\n"
+                "tmp = df[['CPIAUCSL', 'INDPRO']].astype(float).dropna()\n"
+                "res_lvl = sm.OLS(tmp['CPIAUCSL'], sm.add_constant(tmp[['INDPRO']], has_constant='add')).fit()\n"
+                "res_diff = sm.OLS(tmp['CPIAUCSL'].diff().dropna(), sm.add_constant(tmp['INDPRO'].diff().dropna(), has_constant='add')).fit()\n"
+                "\n"
+                "(res_lvl.rsquared, res_diff.rsquared)\n"
+            ),
+        }
+
+    if stem == "01_cointegration_error_correction":
+        return {
+            "Construct cointegrated pair": (
+                "import numpy as np\n"
+                "import pandas as pd\n"
+                "\n"
+                "rng = np.random.default_rng(0)\n"
+                "n = 240\n"
+                "idx = pd.date_range('2000-01-31', periods=n, freq='ME')\n"
+                "\n"
+                "x = rng.normal(size=n).cumsum()  # random walk\n"
+                "y = 1.0 * x + rng.normal(scale=0.5, size=n)  # cointegrated with x\n"
+                "\n"
+                "df = pd.DataFrame({'x': x, 'y': y}, index=idx)\n"
+                "df.head()\n"
+            ),
+            "Engle-Granger test": (
+                "from statsmodels.tsa.stattools import coint\n"
+                "\n"
+                "t_stat, p_val, _ = coint(df['y'], df['x'])\n"
+                "{'t': t_stat, 'p': p_val}\n"
+            ),
+            "Error correction model": (
+                "import statsmodels.api as sm\n"
+                "\n"
+                "# Step 1: long-run relationship\n"
+                "lr = sm.OLS(df['y'], sm.add_constant(df[['x']], has_constant='add')).fit()\n"
+                "df['u'] = lr.resid\n"
+                "\n"
+                "# Step 2: ECM\n"
+                "ecm = pd.DataFrame({\n"
+                "    'dy': df['y'].diff(),\n"
+                "    'dx': df['x'].diff(),\n"
+                "    'u_lag1': df['u'].shift(1),\n"
+                "}).dropna()\n"
+                "\n"
+                "res = sm.OLS(ecm['dy'], sm.add_constant(ecm[['dx', 'u_lag1']], has_constant='add')).fit()\n"
+                "res.params\n"
+            ),
+            "Interpretation": "# Explain what the error-correction coefficient implies about mean reversion.\n",
+        }
+
+    if stem == "02_var_impulse_responses":
+        return {
+            "Build stationary dataset": (
+                "import pandas as pd\n"
+                "\n"
+                "panel = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True).dropna()\n"
+                "df = panel[['UNRATE', 'FEDFUNDS', 'INDPRO']].astype(float).diff().dropna()\n"
+                "df.head()\n"
+            ),
+            "Fit VAR + choose lags": (
+                "from statsmodels.tsa.api import VAR\n"
+                "\n"
+                "res = VAR(df).fit(maxlags=8, ic='aic')\n"
+                "res.k_ar\n"
+            ),
+            "Granger causality": (
+                "# Example: do lagged FEDFUNDS help predict UNRATE?\n"
+                "res.test_causality('UNRATE', ['FEDFUNDS']).summary()\n"
+            ),
+            "IRFs + forecasting": (
+                "irf = res.irf(12)\n"
+                "irf.plot(orth=True)\n"
             ),
         }
 
@@ -3308,6 +3722,700 @@ def write_notebook(spec: NotebookSpec, root: Path) -> None:
             ),
         ]
 
+    # Causal inference notebooks
+    if spec.path.endswith("00_build_census_county_panel.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Build a multi-year county dataset suitable for panel methods (FE/DiD).\n\n"
+                "Important framing:\n"
+                "- This is **not** a panel of the same individuals.\n"
+                "- It is repeated cross-sections summarized at the county level.\n"
+                "- Panel methods can still be useful, but interpretation must be careful.\n"
+            ),
+            md(primer("paths_and_env")),
+            md(
+                f"<a id=\"{slugify('Choose years + variables')}\"></a>\n"
+                "## Choose years + variables\n\n"
+                "### Goal\n"
+                "Load a default panel config (`configs/census_panel.yaml`) and inspect:\n"
+                "- years\n"
+                "- ACS variables\n"
+                "- geography\n"
+            ),
+            md("### Your Turn: Load the panel config"),
+            code(
+                "import yaml\n\n"
+                "cfg_path = PROJECT_ROOT / 'configs' / 'census_panel.yaml'\n"
+                "cfg = yaml.safe_load(cfg_path.read_text())\n"
+                "\n"
+                "acs = cfg['acs_panel']\n"
+                "years = list(acs['years'])\n"
+                "dataset = acs.get('dataset', 'acs/acs5')\n"
+                "acs_vars = list(acs['get'])\n"
+                "geo_for = acs['geography']['for']\n"
+                "geo_in = acs['geography'].get('in')\n"
+                "\n"
+                "years[:5], acs_vars\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fetch/cache ACS tables')}\"></a>\n"
+                "## Fetch/cache ACS tables\n\n"
+                "### Goal\n"
+                "For each year, load a cached raw CSV if available; otherwise fetch from the Census API.\n\n"
+                "Offline default:\n"
+                "- If nothing is cached, use `data/sample/census_county_panel_sample.csv`.\n"
+            ),
+            md("### Your Turn: Load cached tables or fall back to sample"),
+            code(
+                "import pandas as pd\n"
+                "from src import census_api\n\n"
+                "raw_dir = RAW_DIR / 'census'\n"
+                "raw_dir.mkdir(parents=True, exist_ok=True)\n"
+                "\n"
+                "frames = []\n"
+                "for year in years:\n"
+                "    p = raw_dir / f'acs_county_{int(year)}.csv'\n"
+                "    if p.exists():\n"
+                "        df_y = pd.read_csv(p)\n"
+                "        frames.append((int(year), df_y))\n"
+                "    else:\n"
+                "        # TODO (optional): fetch and cache.\n"
+                "        # df_y = census_api.fetch_acs(year=int(year), dataset=dataset, get=acs_vars, for_geo=geo_for, in_geo=geo_in)\n"
+                "        # df_y.to_csv(p, index=False)\n"
+                "        # frames.append((int(year), df_y))\n"
+                "        pass\n"
+                "\n"
+                "if not frames:\n"
+                "    print('No cached raw CSVs found. Using bundled sample panel.')\n"
+                "    panel_raw = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "else:\n"
+                "    # Attach year and concatenate\n"
+                "    tmp = []\n"
+                "    for year, df_y in frames:\n"
+                "        df_y = df_y.copy()\n"
+                "        df_y['year'] = year\n"
+                "        tmp.append(df_y)\n"
+                "    panel_raw = pd.concat(tmp, ignore_index=True)\n"
+                "\n"
+                "panel_raw.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Build panel + FIPS')}\"></a>\n"
+                "## Build panel + FIPS\n\n"
+                "### Goal\n"
+                "Create stable identifiers and derived rates:\n"
+                "- `fips` = state (2-digit) + county (3-digit)\n"
+                "- `unemployment_rate`, `poverty_rate`\n"
+            ),
+            md("### Your Turn: Clean geo ids, build fips, derived rates"),
+            code(
+                "import pandas as pd\n\n"
+                "df = panel_raw.copy()\n"
+                "\n"
+                "# Geo ids\n"
+                "df['state'] = df['state'].astype(str).str.zfill(2)\n"
+                "df['county'] = df['county'].astype(str).str.zfill(3)\n"
+                "df['fips'] = df['state'] + df['county']\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "\n"
+                "# Derived rates (safe guards)\n"
+                "df['unemployment_rate'] = (\n"
+                "    df['B23025_005E'].astype(float) / df['B23025_002E'].replace({0: pd.NA}).astype(float)\n"
+                ").astype(float)\n"
+                "df['poverty_rate'] = (\n"
+                "    df['B17001_002E'].astype(float) / df['B01003_001E'].replace({0: pd.NA}).astype(float)\n"
+                ").astype(float)\n"
+                "\n"
+                "# Panel index (PanelOLS-ready)\n"
+                "panel = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "panel[['state', 'county', 'fips', 'year', 'unemployment_rate', 'poverty_rate']].head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Save processed panel')}\"></a>\n"
+                "## Save processed panel\n\n"
+                "### Goal\n"
+                "Write a panel dataset to `data/processed/census_county_panel.csv`.\n"
+            ),
+            md("### Your Turn: Save + reload"),
+            code(
+                "out_path = PROCESSED_DIR / 'census_county_panel.csv'\n"
+                "out_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "panel.to_csv(out_path, index=True)\n"
+                "\n"
+                "print('wrote', out_path)\n"
+                "\n"
+                "# Quick reload\n"
+                "check = pd.read_csv(out_path)\n"
+                "check.head()\n"
+            ),
+        ]
+
+    if spec.path.endswith("01_panel_fixed_effects_clustered_se.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Compare:\n"
+                "- pooled OLS (ignores panel structure)\n"
+                "- two-way fixed effects (county FE + year FE)\n"
+                "- robust vs clustered standard errors\n\n"
+                "This is still not causal by default. FE helps control time-invariant confounding, not everything.\n"
+            ),
+            md(primer("linearmodels_panel_iv")),
+            md(
+                f"<a id=\"{slugify('Load panel and define variables')}\"></a>\n"
+                "## Load panel and define variables\n\n"
+                "### Goal\n"
+                "Load the county-year panel and build a small modeling table.\n"
+            ),
+            md("### Your Turn: Load panel (processed or sample)"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'census_county_panel.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "\n"
+                "# TODO: Ensure fips/year exist and build a MultiIndex\n"
+                "df['fips'] = df['fips'].astype(str)\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "df = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "# Starter transforms\n"
+                "df['log_income'] = np.log(df['B19013_001E'].astype(float))\n"
+                "df['log_rent'] = np.log(df['B25064_001E'].astype(float))\n"
+                "\n"
+                "df[['poverty_rate', 'unemployment_rate', 'log_income', 'log_rent']].describe()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Pooled OLS baseline')}\"></a>\n"
+                "## Pooled OLS baseline\n\n"
+                "### Goal\n"
+                "Fit a pooled model that ignores FE.\n"
+            ),
+            md("### Your Turn: Fit pooled OLS"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "y_col = 'poverty_rate'\n"
+                "x_cols = ['log_income', 'unemployment_rate']\n"
+                "\n"
+                "tmp = df[[y_col] + x_cols].dropna().copy()\n"
+                "y = tmp[y_col].astype(float)\n"
+                "X = sm.add_constant(tmp[x_cols].astype(float), has_constant='add')\n"
+                "\n"
+                "# TODO: Fit and print a summary (HC3 as a baseline)\n"
+                "res_pool = sm.OLS(y, X).fit(cov_type='HC3')\n"
+                "print(res_pool.summary())\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Two-way fixed effects')}\"></a>\n"
+                "## Two-way fixed effects\n\n"
+                "### Goal\n"
+                "Estimate a TWFE model:\n"
+                "- county FE (entity)\n"
+                "- year FE (time)\n"
+            ),
+            md("### Your Turn: Fit TWFE with PanelOLS"),
+            code(
+                "from src.causal import fit_twfe_panel_ols\n\n"
+                "# TODO: Fit TWFE (robust SE)\n"
+                "res_twfe = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col=y_col,\n"
+                "    x_cols=x_cols,\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                ")\n"
+                "print(res_twfe.summary)\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Clustered standard errors')}\"></a>\n"
+                "## Clustered standard errors\n\n"
+                "### Goal\n"
+                "Re-fit TWFE with clustered SE.\n\n"
+                "Typical clustering choice here:\n"
+                "- by state (shared shocks/policies)\n"
+            ),
+            md("### Your Turn: Cluster by state and compare SE"),
+            code(
+                "import pandas as pd\n"
+                "from src.causal import fit_twfe_panel_ols\n\n"
+                "# TODO: Compare robust vs clustered SE\n"
+                "res_cluster = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col=y_col,\n"
+                "    x_cols=x_cols,\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "\n"
+                "pd.DataFrame({'robust_se': res_twfe.std_errors, 'cluster_se': res_cluster.std_errors})\n"
+            ),
+        ]
+
+    if spec.path.endswith("02_difference_in_differences_event_study.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Practice DiD and event studies using:\n"
+                "- a real county-year outcome (poverty rate)\n"
+                "- a **synthetic**, deterministic adoption schedule by state\n"
+                "- a **semi-synthetic** outcome with a known injected treatment effect\n\n"
+                "This is a method exercise, not a real policy evaluation.\n"
+            ),
+            md(primer("linearmodels_panel_iv")),
+            md(
+                f"<a id=\"{slugify('Synthetic adoption + treatment')}\"></a>\n"
+                "## Synthetic adoption + treatment\n\n"
+                "### Goal\n"
+                "Define a deterministic adoption year by state and build:\n"
+                "- `treated_it`\n"
+                "- `poverty_rate_semi` (known post-treatment effect)\n"
+            ),
+            md("### Your Turn: Load panel and create synthetic adoption"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'census_county_panel.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'census_county_panel_sample.csv')\n"
+                "\n"
+                "df['fips'] = df['fips'].astype(str)\n"
+                "df['year'] = df['year'].astype(int)\n"
+                "df['state'] = df['state'].astype(str).str.zfill(2)\n"
+                "\n"
+                "states = sorted(df['state'].unique())\n"
+                "# Deterministic adoption schedule (edit if you want):\n"
+                "adopt = {states[0]: 2018, states[1]: 2020}  # remaining states are never-treated\n"
+                "\n"
+                "df['adopt_year'] = df['state'].map(adopt)\n"
+                "df['ever_treated'] = df['adopt_year'].notna().astype(int)\n"
+                "df['post'] = ((df['year'] >= df['adopt_year']).fillna(False)).astype(int)\n"
+                "df['treated'] = df['ever_treated'] * df['post']\n"
+                "\n"
+                "true_effect = -0.02\n"
+                "df['poverty_rate_real'] = df['poverty_rate'].astype(float)\n"
+                "df['poverty_rate_semi'] = (df['poverty_rate_real'] + true_effect * df['treated']).clip(0, 1)\n"
+                "\n"
+                "df[['state', 'year', 'treated', 'poverty_rate_real', 'poverty_rate_semi']].head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('TWFE DiD')}\"></a>\n"
+                "## TWFE DiD\n\n"
+                "### Goal\n"
+                "Estimate the effect of treatment with TWFE DiD:\n"
+                "- county FE\n"
+                "- year FE\n"
+                "- clustered SE by state (common)\n"
+            ),
+            md("### Your Turn: Fit TWFE DiD"),
+            code(
+                "from src.causal import fit_twfe_panel_ols\n\n"
+                "# Panel index\n"
+                "df = df.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "# TODO: Fit DiD on semi-synthetic outcome\n"
+                "res_did = fit_twfe_panel_ols(\n"
+                "    df,\n"
+                "    y_col='poverty_rate_semi',\n"
+                "    x_cols=['treated'],\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "\n"
+                "res_did.params\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Event study (leads/lags)')}\"></a>\n"
+                "## Event study (leads/lags)\n\n"
+                "### Goal\n"
+                "Estimate dynamic effects around adoption and inspect pre-trends.\n"
+            ),
+            md("### Your Turn: Build leads/lags and fit"),
+            code(
+                "import pandas as pd\n"
+                "import matplotlib.pyplot as plt\n"
+                "\n"
+                "df_es = df.reset_index(drop=True).copy()\n"
+                "df_es['event_time'] = df_es['year'] - df_es['adopt_year']\n"
+                "\n"
+                "window = list(range(-3, 4))\n"
+                "base = -1\n"
+                "event_cols = []\n"
+                "for k in window:\n"
+                "    if k == base:\n"
+                "        continue\n"
+                "    col = f'event_{k}'\n"
+                "    df_es[col] = ((df_es['ever_treated'] == 1) & (df_es['event_time'] == k)).astype(int)\n"
+                "    event_cols.append(col)\n"
+                "\n"
+                "df_es = df_es.set_index(['fips', 'year'], drop=False).sort_index()\n"
+                "\n"
+                "res_es = fit_twfe_panel_ols(\n"
+                "    df_es,\n"
+                "    y_col='poverty_rate_semi',\n"
+                "    x_cols=event_cols,\n"
+                "    entity_effects=True,\n"
+                "    time_effects=True,\n"
+                "    cluster_col='state',\n"
+                ")\n"
+                "\n"
+                "coefs = res_es.params.filter(like='event_')\n"
+                "ses = res_es.std_errors.filter(like='event_')\n"
+                "out = coefs.to_frame('coef').join(ses.to_frame('se'))\n"
+                "out['k'] = out.index.str.replace('event_', '').astype(int)\n"
+                "out = out.sort_values('k')\n"
+                "\n"
+                "# TODO: Plot coefficient path with 95% CI\n"
+                "plt.errorbar(out['k'], out['coef'], yerr=1.96*out['se'], fmt='o-')\n"
+                "plt.axhline(0, color='gray', linestyle='--')\n"
+                "plt.axvline(base, color='gray', linestyle=':')\n"
+                "plt.xlabel('Event time (years relative to adoption)')\n"
+                "plt.ylabel('Effect')\n"
+                "plt.title('Event study (semi-synthetic)')\n"
+                "plt.show()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Diagnostics: pre-trends + placebo')}\"></a>\n"
+                "## Diagnostics: pre-trends + placebo\n\n"
+                "### Goal\n"
+                "Run at least one falsification / diagnostic.\n\n"
+                "Suggestions:\n"
+                "- Pre-trends: are lead coefficients near 0?\n"
+                "- Placebo: shift adoption years earlier for treated states.\n"
+                "- Re-run on the real outcome (`poverty_rate_real`) and reflect on why it is not causal.\n"
+            ),
+            md("### Your Turn: One diagnostic"),
+            code(
+                "# TODO: Implement one diagnostic and summarize what you found.\n"
+                "...\n"
+            ),
+        ]
+
+    if spec.path.endswith("03_instrumental_variables_2sls.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Practice IV/2SLS by simulating a classic endogeneity problem.\n\n"
+                "We do this synthetically so you can see the bias and how IV can fix it under assumptions.\n"
+            ),
+            md(primer("linearmodels_panel_iv")),
+            md(
+                f"<a id=\"{slugify('Simulate endogeneity')}\"></a>\n"
+                "## Simulate endogeneity\n\n"
+                "### Goal\n"
+                "Create data where:\n"
+                "- x is correlated with the error term (endogenous)\n"
+                "- z shifts x but not y directly (instrument)\n"
+            ),
+            md("### Your Turn: Simulate (y, x, z)"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "rng = np.random.default_rng(0)\n"
+                "n = 2000\n"
+                "\n"
+                "# Instrument\n"
+                "z = rng.normal(size=n)\n"
+                "\n"
+                "# Hidden confounder\n"
+                "u = rng.normal(size=n)\n"
+                "\n"
+                "# Endogenous regressor: depends on z and u\n"
+                "x = 0.8*z + 0.8*u + rng.normal(size=n)\n"
+                "\n"
+                "# Error term correlated with u\n"
+                "eps = 0.8*u + rng.normal(size=n)\n"
+                "\n"
+                "beta_true = 1.5\n"
+                "y = beta_true * x + eps\n"
+                "\n"
+                "df = pd.DataFrame({'y': y, 'x': x, 'z': z})\n"
+                "df.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('OLS vs 2SLS')}\"></a>\n"
+                "## OLS vs 2SLS\n\n"
+                "### Goal\n"
+                "Compare naive OLS (biased) to IV/2SLS.\n"
+            ),
+            md("### Your Turn: Fit OLS and 2SLS"),
+            code(
+                "import statsmodels.api as sm\n"
+                "from src.causal import fit_iv_2sls\n\n"
+                "# OLS\n"
+                "ols = sm.OLS(df['y'], sm.add_constant(df[['x']], has_constant='add')).fit()\n"
+                "print('OLS beta:', float(ols.params['x']))\n"
+                "\n"
+                "# 2SLS\n"
+                "iv = fit_iv_2sls(df, y_col='y', x_endog='x', x_exog=[], z_cols=['z'])\n"
+                "print('IV beta :', float(iv.params['x']))\n"
+                "\n"
+                "iv.summary\n"
+            ),
+            md(
+                f"<a id=\"{slugify('First-stage + weak IV checks')}\"></a>\n"
+                "## First-stage + weak IV checks\n\n"
+                "### Goal\n"
+                "Inspect the first stage and discuss instrument strength.\n"
+            ),
+            md("### Your Turn: Inspect first stage"),
+            code(
+                "# TODO: Explore first-stage outputs.\n"
+                "# Hint: `iv.first_stage` is usually informative.\n"
+                "iv.first_stage\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpretation + limitations')}\"></a>\n"
+                "## Interpretation + limitations\n\n"
+                "Write 5-8 sentences on:\n"
+                "- relevance and exclusion in this synthetic setup\n"
+                "- what would break IV in real data\n"
+                "- why IV identifies a local effect when effects are heterogeneous (LATE intuition)\n"
+            ),
+        ]
+
+    # Time-series econometrics notebooks
+    if spec.path.endswith("00_stationarity_unit_roots.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Learn the stationarity toolkit that prevents common macro mistakes:\n"
+                "- spurious regression\n"
+                "- over-trusting p-values on trending series\n"
+                "- misinterpreting dynamics\n"
+            ),
+            md(primer("pandas_time_series")),
+            md(primer("statsmodels_tsa_var")),
+            md(
+                f"<a id=\"{slugify('Load macro series')}\"></a>\n"
+                "## Load macro series\n\n"
+                "### Goal\n"
+                "Load the macro monthly panel.\n"
+            ),
+            md("### Your Turn: Load panel_monthly.csv (or sample)"),
+            code(
+                "import pandas as pd\n\n"
+                "path = PROCESSED_DIR / 'panel_monthly.csv'\n"
+                "if path.exists():\n"
+                "    df = pd.read_csv(path, index_col=0, parse_dates=True)\n"
+                "else:\n"
+                "    df = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True)\n"
+                "\n"
+                "df = df.dropna().copy()\n"
+                "df.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Transformations')}\"></a>\n"
+                "## Transformations\n\n"
+                "### Goal\n"
+                "Create stationary-ish transformations (diff, pct change, log diff).\n"
+            ),
+            md("### Your Turn: Differences and growth rates"),
+            code(
+                "import numpy as np\n\n"
+                "# TODO: Pick a few series and create transformations\n"
+                "tmp = df[['CPIAUCSL', 'UNRATE', 'INDPRO']].astype(float).copy()\n"
+                "tmp['dCPI'] = tmp['CPIAUCSL'].diff()\n"
+                "tmp['dUNRATE'] = tmp['UNRATE'].diff()\n"
+                "\n"
+                "# log-diff for industrial production (example)\n"
+                "x = tmp['INDPRO'].where(tmp['INDPRO'] > 0)\n"
+                "tmp['dlog_INDPRO'] = np.log(x).diff()\n"
+                "\n"
+                "tmp = tmp.dropna()\n"
+                "tmp.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('ADF/KPSS tests')}\"></a>\n"
+                "## ADF/KPSS tests\n\n"
+                "### Goal\n"
+                "Run stationarity diagnostics on levels vs transformed series.\n"
+            ),
+            md("### Your Turn: ADF and KPSS"),
+            code(
+                "from statsmodels.tsa.stattools import adfuller, kpss\n\n"
+                "# TODO: Choose one series and compare levels vs diff\n"
+                "x = df['CPIAUCSL'].astype(float).dropna()\n"
+                "dx = x.diff().dropna()\n"
+                "\n"
+                "out = {\n"
+                "    'adf_p_level': adfuller(x)[1],\n"
+                "    'adf_p_diff': adfuller(dx)[1],\n"
+                "    'kpss_p_level': kpss(x, regression='c', nlags='auto')[1],\n"
+                "    'kpss_p_diff': kpss(dx, regression='c', nlags='auto')[1],\n"
+                "}\n"
+                "out\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Spurious regression demo')}\"></a>\n"
+                "## Spurious regression demo\n\n"
+                "### Goal\n"
+                "Show how levels-on-levels regressions can look good for the wrong reasons.\n"
+            ),
+            md("### Your Turn: Levels vs differences"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "tmp2 = df[['CPIAUCSL', 'INDPRO']].astype(float).dropna()\n"
+                "\n"
+                "# Levels regression\n"
+                "res_lvl = sm.OLS(tmp2['CPIAUCSL'], sm.add_constant(tmp2[['INDPRO']], has_constant='add')).fit()\n"
+                "\n"
+                "# Differences regression\n"
+                "d = tmp2.diff().dropna()\n"
+                "res_diff = sm.OLS(d['CPIAUCSL'], sm.add_constant(d[['INDPRO']], has_constant='add')).fit()\n"
+                "\n"
+                "print('R2 levels:', res_lvl.rsquared)\n"
+                "print('R2 diffs :', res_diff.rsquared)\n"
+            ),
+        ]
+
+    if spec.path.endswith("01_cointegration_error_correction.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Learn cointegration and error correction models (ECM):\n"
+                "- long-run equilibrium relationship\n"
+                "- short-run dynamics that correct deviations\n"
+            ),
+            md(primer("statsmodels_tsa_var")),
+            md(
+                f"<a id=\"{slugify('Construct cointegrated pair')}\"></a>\n"
+                "## Construct cointegrated pair\n\n"
+                "### Goal\n"
+                "Construct a pair of series that are individually nonstationary but cointegrated.\n"
+            ),
+            md("### Your Turn: Simulate a cointegrated pair"),
+            code(
+                "import numpy as np\n"
+                "import pandas as pd\n\n"
+                "rng = np.random.default_rng(0)\n"
+                "n = 240\n"
+                "idx = pd.date_range('2000-01-31', periods=n, freq='ME')\n"
+                "\n"
+                "x = rng.normal(size=n).cumsum()\n"
+                "y = 1.0 * x + rng.normal(scale=0.5, size=n)\n"
+                "\n"
+                "df = pd.DataFrame({'x': x, 'y': y}, index=idx)\n"
+                "df.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Engle-Granger test')}\"></a>\n"
+                "## Engle-Granger test\n\n"
+                "### Goal\n"
+                "Run a cointegration test and interpret the p-value carefully.\n"
+            ),
+            md("### Your Turn: Cointegration test"),
+            code(
+                "from statsmodels.tsa.stattools import coint\n\n"
+                "t_stat, p_val, _ = coint(df['y'], df['x'])\n"
+                "{'t': t_stat, 'p': p_val}\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Error correction model')}\"></a>\n"
+                "## Error correction model\n\n"
+                "### Goal\n"
+                "Fit an ECM:\n"
+                "- short-run changes depend on long-run disequilibrium (lagged residual)\n"
+            ),
+            md("### Your Turn: Fit ECM"),
+            code(
+                "import statsmodels.api as sm\n\n"
+                "# Long-run regression\n"
+                "lr = sm.OLS(df['y'], sm.add_constant(df[['x']], has_constant='add')).fit()\n"
+                "df['u'] = lr.resid\n"
+                "\n"
+                "# ECM regression\n"
+                "ecm = pd.DataFrame({\n"
+                "    'dy': df['y'].diff(),\n"
+                "    'dx': df['x'].diff(),\n"
+                "    'u_lag1': df['u'].shift(1),\n"
+                "}).dropna()\n"
+                "\n"
+                "res = sm.OLS(ecm['dy'], sm.add_constant(ecm[['dx', 'u_lag1']], has_constant='add')).fit()\n"
+                "res.params\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Interpretation')}\"></a>\n"
+                "## Interpretation\n\n"
+                "Write 5-8 sentences:\n"
+                "- What does the error-correction coefficient mean?\n"
+                "- What would you expect if there were no cointegration?\n"
+            ),
+        ]
+
+    if spec.path.endswith("02_var_impulse_responses.ipynb"):
+        cells += [
+            md(
+                "## Goal\n"
+                "Fit a VAR on transformed macro series and interpret:\n"
+                "- lag selection\n"
+                "- Granger causality\n"
+                "- impulse response functions (IRFs)\n"
+            ),
+            md(primer("statsmodels_tsa_var")),
+            md(
+                f"<a id=\"{slugify('Build stationary dataset')}\"></a>\n"
+                "## Build stationary dataset\n\n"
+                "### Goal\n"
+                "Build a small stationary-ish dataset to fit a VAR.\n"
+            ),
+            md("### Your Turn: Load and transform"),
+            code(
+                "import pandas as pd\n\n"
+                "panel = pd.read_csv(SAMPLE_DIR / 'panel_monthly_sample.csv', index_col=0, parse_dates=True).dropna()\n"
+                "\n"
+                "# TODO: Choose a few columns and difference them\n"
+                "df = panel[['UNRATE', 'FEDFUNDS', 'INDPRO']].astype(float).diff().dropna()\n"
+                "df.head()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Fit VAR + choose lags')}\"></a>\n"
+                "## Fit VAR + choose lags\n\n"
+                "### Goal\n"
+                "Fit a VAR and choose lags using an information criterion.\n"
+            ),
+            md("### Your Turn: Fit VAR"),
+            code(
+                "from statsmodels.tsa.api import VAR\n\n"
+                "# TODO: Fit and inspect chosen lag order\n"
+                "res = VAR(df).fit(maxlags=8, ic='aic')\n"
+                "res.k_ar\n"
+            ),
+            md(
+                f"<a id=\"{slugify('Granger causality')}\"></a>\n"
+                "## Granger causality\n\n"
+                "### Goal\n"
+                "Run at least one Granger causality test.\n\n"
+                "Reminder: this is predictive causality, not structural causality.\n"
+            ),
+            md("### Your Turn: Test causality"),
+            code(
+                "# Example: do lagged FEDFUNDS help predict UNRATE?\n"
+                "res.test_causality('UNRATE', ['FEDFUNDS']).summary()\n"
+            ),
+            md(
+                f"<a id=\"{slugify('IRFs + forecasting')}\"></a>\n"
+                "## IRFs + forecasting\n\n"
+                "### Goal\n"
+                "Compute and plot impulse responses.\n\n"
+                "Caution:\n"
+                "- orthogonalized IRFs depend on variable ordering.\n"
+            ),
+            md("### Your Turn: IRFs"),
+            code(
+                "irf = res.irf(12)\n"
+                "irf.plot(orth=True)\n"
+            ),
+        ]
+
     # Classification notebooks
     if spec.path.endswith("00_recession_classifier_baselines.ipynb"):
         cells += [
@@ -4693,6 +5801,24 @@ def guide_code_map(category: str, stem: str) -> list[str]:
             "`outputs/`: artifact bundles from training runs (models/metrics/preds/plots)",
         ]
 
+    if category == "07_causal":
+        return [
+            "`src/causal.py`: panel + IV helpers (`to_panel_index`, `fit_twfe_panel_ols`, `fit_iv_2sls`)",
+            "`scripts/build_datasets.py`: ACS panel builder (writes data/processed/census_county_panel.csv)",
+            "`src/census_api.py`: Census/ACS client (`fetch_acs`)",
+            "`configs/census_panel.yaml`: panel config (years + variables)",
+            "`data/sample/census_county_panel_sample.csv`: offline panel dataset",
+            *common,
+        ]
+
+    if category == "08_time_series_econ":
+        return [
+            "`data/sample/panel_monthly_sample.csv`: offline macro panel",
+            "`src/features.py`: safe lag/diff/rolling feature helpers",
+            "`src/macro.py`: GDP growth + label helpers (for context)",
+            *common,
+        ]
+
     return common
 
 
@@ -5176,6 +6302,137 @@ def write_guide(spec: NotebookSpec, root: Path) -> None:
             "Mitchell et al.: Model Cards",
         ]
 
+    elif category == "07_causal":
+        intro = (
+            f"{header}\n\n"
+            "This module adds identification-focused econometrics: panels, DiD/event studies, and IV.\n\n"
+            "### Key Terms (defined)\n"
+            "- **Identification**: assumptions that justify a causal interpretation.\n"
+            "- **Fixed effects (FE)**: controls for time-invariant unit differences.\n"
+            "- **Clustered SE**: allows correlated errors within groups (e.g., state).\n"
+            "- **DiD**: compares changes over time between treated and control units.\n"
+            "- **IV/2SLS**: uses an instrument to address endogeneity.\n"
+        )
+
+        checklist_items = [
+            *base_steps,
+            "Write the causal question and identification assumptions before estimating.",
+            "Run at least one diagnostic/falsification (pre-trends, placebo, weak-IV check).",
+            "Report clustered SE (and number of clusters) when appropriate.",
+        ]
+
+        alt_example = (
+            "```python\n"
+            "# Toy DiD setup (not the notebook data):\n"
+            "import numpy as np\n"
+            "import pandas as pd\n"
+            "\n"
+            "df = pd.DataFrame({\n"
+            "  'group': ['T']*50 + ['C']*50,\n"
+            "  'post':  [0]*25 + [1]*25 + [0]*25 + [1]*25,\n"
+            "})\n"
+            "df['treated'] = (df['group'] == 'T').astype(int)\n"
+            "df['D'] = df['treated'] * df['post']\n"
+            "```\n"
+        )
+
+        technical = concept("core_causal")
+        if stem == "00_build_census_county_panel":
+            technical = concept("core_causal") + "\n\n" + concept("panel_fixed_effects")
+        elif stem == "01_panel_fixed_effects_clustered_se":
+            technical = concept("core_causal") + "\n\n" + concept("panel_fixed_effects") + "\n\n" + concept("clustered_se")
+        elif stem == "02_difference_in_differences_event_study":
+            technical = (
+                concept("core_causal")
+                + "\n\n"
+                + concept("difference_in_differences")
+                + "\n\n"
+                + concept("event_study_parallel_trends")
+                + "\n\n"
+                + concept("clustered_se")
+            )
+        elif stem == "03_instrumental_variables_2sls":
+            technical = concept("core_causal") + "\n\n" + concept("instrumental_variables")
+
+        mistakes_items = [
+            "Jumping to regression output without writing identification assumptions.",
+            "Treating Granger-type correlations as causal effects (wrong question).",
+            "Ignoring clustered/serial correlation and using overly small SE.",
+            "For DiD: not checking pre-trends (leads) before interpreting effects.",
+            "For IV: using weak instruments (no meaningful first stage).",
+        ]
+
+        summary = (
+            "You now have a toolkit for causal estimation under explicit assumptions (FE/DiD/IV).\n"
+            "The goal is disciplined thinking: identification first, estimation second.\n"
+        )
+
+        readings_items = [
+            "Angrist & Pischke: Mostly Harmless Econometrics (design-based causal inference)",
+            "Wooldridge: Econometric Analysis of Cross Section and Panel Data (FE/IV foundations)",
+        ]
+
+    elif category == "08_time_series_econ":
+        intro = (
+            f"{header}\n\n"
+            "This module covers classical time-series econometrics: stationarity, cointegration/ECM, and VAR/IRFs.\n\n"
+            "### Key Terms (defined)\n"
+            "- **Stationarity**: stable statistical properties over time.\n"
+            "- **Unit root**: nonstationary process where shocks accumulate (random walk-like).\n"
+            "- **Cointegration**: nonstationary series with a stationary long-run relationship.\n"
+            "- **VAR**: multivariate autoregression.\n"
+            "- **IRF**: impulse response function (shock propagation over time).\n"
+        )
+
+        checklist_items = [
+            *base_steps,
+            "Plot series in levels before running tests.",
+            "Justify each transformation (diff/logdiff) in words.",
+            "State what your IRF identification assumes (ordering or structure).",
+        ]
+
+        alt_example = (
+            "```python\n"
+            "# Random walk vs stationary series (ADF intuition):\n"
+            "import numpy as np\n"
+            "from statsmodels.tsa.stattools import adfuller\n"
+            "\n"
+            "rng = np.random.default_rng(0)\n"
+            "rw = rng.normal(size=400).cumsum()\n"
+            "st = rng.normal(size=400)\n"
+            "\n"
+            "adf_rw_p = adfuller(rw)[1]\n"
+            "adf_st_p = adfuller(st)[1]\n"
+            "adf_rw_p, adf_st_p\n"
+            "```\n"
+        )
+
+        technical = concept("stationarity_unit_roots")
+        if stem == "00_stationarity_unit_roots":
+            technical = concept("stationarity_unit_roots")
+        elif stem == "01_cointegration_error_correction":
+            technical = concept("stationarity_unit_roots") + "\n\n" + concept("cointegration_ecm")
+        elif stem == "02_var_impulse_responses":
+            technical = concept("stationarity_unit_roots") + "\n\n" + concept("var_irf")
+
+        mistakes_items = [
+            "Running levels-on-levels regressions without checking stationarity (spurious regression).",
+            "Interpreting Granger causality as structural causality.",
+            "Choosing VAR lags mechanically without sanity checks.",
+            "For IRFs: forgetting that orthogonalized IRFs depend on variable ordering.",
+        ]
+
+        summary = (
+            "You now have a classical macro time-series toolkit that complements the ML workflow in this repo.\n"
+            "Use it to avoid spurious inference and to reason about dynamics.\n"
+        )
+
+        readings_items = [
+            "Hamilton: Time Series Analysis (classic reference)",
+            "Hyndman & Athanasopoulos: Forecasting: Principles and Practice (applied)",
+            "Stock & Watson: Introduction to Econometrics (time-series chapters)",
+        ]
+
     else:
         intro = header
         checklist_items = [*base_steps, "Complete the notebook TODOs."]
@@ -5277,6 +6534,8 @@ def write_docs_index(specs: list[NotebookSpec], root: Path) -> None:
         "00_foundations",
         "01_data",
         "02_regression",
+        "07_causal",
+        "08_time_series_econ",
         "03_classification",
         "04_unsupervised",
         "05_model_ops",
@@ -5294,6 +6553,8 @@ def write_docs_index(specs: list[NotebookSpec], root: Path) -> None:
             "00_foundations": "Foundations",
             "01_data": "Data (Macro + Micro)",
             "02_regression": "Regression (Micro then Macro)",
+            "07_causal": "Causal Inference (Panels + Quasi-Experiments)",
+            "08_time_series_econ": "Time-Series Econometrics (Unit Roots \u2192 VAR)",
             "03_classification": "Classification (Technical Recession)",
             "04_unsupervised": "Unsupervised (Macro Structure)",
             "05_model_ops": "Model Ops",
@@ -5501,6 +6762,83 @@ def main() -> None:
                 "Rolling regression",
                 "Coefficient drift",
                 "Regime interpretation",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/07_causal/00_build_census_county_panel.ipynb",
+            title="00 Build Census County Panel",
+            summary="Build a county-year ACS panel for panel/DiD methods.",
+            sections=[
+                "Choose years + variables",
+                "Fetch/cache ACS tables",
+                "Build panel + FIPS",
+                "Save processed panel",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb",
+            title="01 Panel Fixed Effects + Clustered SE",
+            summary="Pooled vs two-way fixed effects and clustered standard errors.",
+            sections=[
+                "Load panel and define variables",
+                "Pooled OLS baseline",
+                "Two-way fixed effects",
+                "Clustered standard errors",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/07_causal/02_difference_in_differences_event_study.ipynb",
+            title="02 Difference-in-Differences + Event Study",
+            summary="TWFE DiD and event studies with synthetic adoption and diagnostics.",
+            sections=[
+                "Synthetic adoption + treatment",
+                "TWFE DiD",
+                "Event study (leads/lags)",
+                "Diagnostics: pre-trends + placebo",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/07_causal/03_instrumental_variables_2sls.ipynb",
+            title="03 Instrumental Variables (2SLS)",
+            summary="Endogeneity, instruments, and two-stage least squares (2SLS).",
+            sections=[
+                "Simulate endogeneity",
+                "OLS vs 2SLS",
+                "First-stage + weak IV checks",
+                "Interpretation + limitations",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/08_time_series_econ/00_stationarity_unit_roots.ipynb",
+            title="00 Stationarity and Unit Roots",
+            summary="ADF/KPSS, differencing, and spurious regression intuition.",
+            sections=[
+                "Load macro series",
+                "Transformations",
+                "ADF/KPSS tests",
+                "Spurious regression demo",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/08_time_series_econ/01_cointegration_error_correction.ipynb",
+            title="01 Cointegration and Error Correction",
+            summary="Engle-Granger cointegration and error correction models (ECM).",
+            sections=[
+                "Construct cointegrated pair",
+                "Engle-Granger test",
+                "Error correction model",
+                "Interpretation",
+            ],
+        ),
+        NotebookSpec(
+            path="notebooks/08_time_series_econ/02_var_impulse_responses.ipynb",
+            title="02 VAR and Impulse Responses",
+            summary="Fit VARs, test Granger causality, and interpret IRFs.",
+            sections=[
+                "Build stationary dataset",
+                "Fit VAR + choose lags",
+                "Granger causality",
+                "IRFs + forecasting",
             ],
         ),
         NotebookSpec(

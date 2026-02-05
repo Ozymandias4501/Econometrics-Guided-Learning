@@ -6,6 +6,7 @@ matplotlib
 seaborn
 joblib
 statsmodels
+linearmodels
 scipy
 pyyaml
 streamlit

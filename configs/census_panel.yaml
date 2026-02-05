@@ -1,0 +1,18 @@
+acs_panel:
+  years: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
+  dataset: "acs/acs5"
+  geography:
+    for: "county:*"
+    in: "state:*"
+
+  # Starter variable set (mirrors configs/census.yaml)
+  get:
+    - "NAME"
+    - "B01003_001E"  # total population
+    - "B19013_001E"  # median household income
+    - "B25064_001E"  # median gross rent
+    - "B25077_001E"  # median home value
+    - "B17001_002E"  # poverty count
+    - "B23025_002E"  # in labor force
+    - "B23025_004E"  # employed
+    - "B23025_005E"  # unemployed

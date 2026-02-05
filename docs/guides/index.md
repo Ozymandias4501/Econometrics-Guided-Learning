@@ -66,3 +66,20 @@ Use `docs/index.md` for the recommended learning path.
 
 - [00_capstone_brief](06_capstone/00_capstone_brief.md)
 - [01_capstone_workspace](06_capstone/01_capstone_workspace.md)
+
+## 07_causal
+
+- [Part overview](07_causal/index.md)
+
+- [00_build_census_county_panel](07_causal/00_build_census_county_panel.md)
+- [01_panel_fixed_effects_clustered_se](07_causal/01_panel_fixed_effects_clustered_se.md)
+- [02_difference_in_differences_event_study](07_causal/02_difference_in_differences_event_study.md)
+- [03_instrumental_variables_2sls](07_causal/03_instrumental_variables_2sls.md)
+
+## 08_time_series_econ
+
+- [Part overview](08_time_series_econ/index.md)
+
+- [00_stationarity_unit_roots](08_time_series_econ/00_stationarity_unit_roots.md)
+- [01_cointegration_error_correction](08_time_series_econ/01_cointegration_error_correction.md)
+- [02_var_impulse_responses](08_time_series_econ/02_var_impulse_responses.md)

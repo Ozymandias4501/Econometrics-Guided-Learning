@@ -16,6 +16,7 @@ Outputs:
   data/processed/gdp_quarterly.csv
   data/processed/macro_quarterly.csv
   data/processed/census_county_<year>.csv
+  data/processed/census_county_panel.csv
 
 If API keys are missing, notebooks can fall back to `data/sample/`.
 """
@@ -151,6 +152,67 @@ def build_census_county(cfg: dict, *, root: Path) -> pd.DataFrame:
     return df
 
 
+def build_census_county_panel(cfg: dict, *, root: Path) -> pd.DataFrame:
+    """Build a multi-year ACS county panel.
+
+    This is intended for panel methods (FE/DiD). It is not a "true panel" of the
+    same survey respondents; it is repeated cross-sections at the county level.
+    """
+
+    acs = cfg["acs_panel"]
+    years = list(acs.get("years", []))
+    if not years:
+        raise ValueError("acs_panel.years must be a non-empty list")
+
+    dataset = str(acs.get("dataset", "acs/acs5"))
+    get_vars = list(acs.get("get", []))
+    geo_for = str(acs["geography"]["for"])
+    geo_in = str(acs["geography"].get("in")) if acs["geography"].get("in") else None
+
+    raw_dir = root / "data" / "raw" / "census"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    def safe_div(num: pd.Series, den: pd.Series) -> pd.Series:
+        den = den.replace({0: pd.NA})
+        return (num / den).astype(float)
+
+    frames: list[pd.DataFrame] = []
+    for y in years:
+        year = int(y)
+        raw_csv = raw_dir / f"acs_county_{year}.csv"
+
+        if raw_csv.exists():
+            df_y = pd.read_csv(raw_csv)
+        else:
+            df_y = census_api.fetch_acs(year=year, dataset=dataset, get=get_vars, for_geo=geo_for, in_geo=geo_in)
+            df_y.to_csv(raw_csv, index=False)
+
+        # Make sure geo ids are stable strings.
+        df_y["state"] = df_y["state"].astype(str).str.zfill(2)
+        df_y["county"] = df_y["county"].astype(str).str.zfill(3)
+        df_y["fips"] = df_y["state"] + df_y["county"]
+        df_y["year"] = year
+
+        # Derived rates (safe guards included).
+        if {"B23025_002E", "B23025_005E"}.issubset(df_y.columns):
+            df_y["unemployment_rate"] = safe_div(
+                df_y["B23025_005E"].astype(float),
+                df_y["B23025_002E"].astype(float),
+            )
+
+        if {"B17001_002E", "B01003_001E"}.issubset(df_y.columns):
+            df_y["poverty_rate"] = safe_div(
+                df_y["B17001_002E"].astype(float),
+                df_y["B01003_001E"].astype(float),
+            )
+
+        frames.append(df_y)
+
+    panel = pd.concat(frames, ignore_index=True)
+    panel = panel.set_index(["fips", "year"], drop=False).sort_index()
+    return panel
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--recession-config", required=True)
@@ -173,9 +235,14 @@ def main() -> int:
     macro_q = build_macro_quarterly_table(recession_cfg, root=root, panel_monthly=panel_monthly, gdp_q=gdp_q)
     data_utils.save_csv(macro_q, processed_dir / "macro_quarterly.csv")
 
-    census_df = build_census_county(census_cfg, root=root)
-    year = int(census_cfg["acs"]["year"])
-    data_utils.save_csv(census_df.set_index(["state", "county"], drop=False), processed_dir / f"census_county_{year}.csv")
+    if "acs" in census_cfg:
+        census_df = build_census_county(census_cfg, root=root)
+        year = int(census_cfg["acs"]["year"])
+        data_utils.save_csv(census_df.set_index(["state", "county"], drop=False), processed_dir / f"census_county_{year}.csv")
+
+    if "acs_panel" in census_cfg:
+        census_panel = build_census_county_panel(census_cfg, root=root)
+        data_utils.save_csv(census_panel, processed_dir / "census_county_panel.csv")
 
     print("Wrote processed datasets to", processed_dir)
     return 0
