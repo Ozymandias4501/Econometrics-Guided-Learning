@@ -65,7 +65,7 @@ def fit_ols_hac(
     """Fit OLS and report HAC/Newey-West robust standard errors (time-series default)."""
 
     res = fit_ols(df, y_col=y_col, x_cols=x_cols, add_const=add_const)
-    return res.get_robustcov_results(cov_type="HAC", cov_kwds={"maxlags": int(maxlags)})
+    return res.get_robustcov_results(cov_type="HAC", maxlags=int(maxlags))
 
 
 def vif_table(df: pd.DataFrame, x_cols: Iterable[str]) -> pd.DataFrame:
