@@ -11,17 +11,17 @@
 
 This guide accompanies the notebook `notebooks/03_classification/02_calibration_and_costs.ipynb`.
 
-This classification module predicts **next-quarter technical recession** from macro indicators.
+This guide focuses on **calibration, Brier score, and cost-based decision-making** -- the bridge between a model that ranks risk well and one whose probabilities you can actually trust. A classifier with excellent AUC can still produce misleading probabilities. This guide explains how to diagnose that problem, fix it, and embed explicit cost trade-offs into threshold selection.
 
 ### Key Terms (defined)
-- **Logistic regression**: a linear model that outputs probabilities via a sigmoid function.
-- **Log-odds**: `log(p/(1-p))`; logistic regression is linear in log-odds.
-- **Threshold**: rule converting probability into class (e.g., 1 if p>=0.5).
-- **Precision/Recall**: trade off false positives vs false negatives.
-- **ROC-AUC / PR-AUC**: threshold-free ranking metrics.
-- **Calibration**: whether predicted probabilities match observed frequencies.
-- **Brier score**: mean squared error of probabilities (lower is better).
-
+- **Calibration**: whether predicted probabilities match observed frequencies (e.g., among patients given 30% risk, roughly 30% actually experience the event).
+- **Reliability diagram (calibration curve)**: plot of mean predicted probability vs observed frequency in each bin.
+- **Brier score**: mean squared error of predicted probabilities; $\frac{1}{n}\sum(p_i - y_i)^2$ (lower is better).
+- **Expected calibration error (ECE)**: weighted average absolute gap between predicted and observed frequency across bins.
+- **Platt scaling**: post-hoc calibration by fitting a logistic regression on model outputs.
+- **Isotonic regression**: non-parametric post-hoc calibration using a monotone step function.
+- **Cost-optimal threshold**: $\tau^* = c_{FP}/(c_{FP} + c_{FN})$; the threshold that minimizes expected misclassification cost.
+- **Decision curve**: plot of net benefit as a function of threshold probability.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
@@ -37,264 +37,323 @@ This classification module predicts **next-quarter technical recession** from ma
 - Complete notebook section: Decision costs
 - Establish baselines before fitting any model.
 - Fit at least one probabilistic classifier and evaluate ROC-AUC, PR-AUC, and Brier score.
+- Produce a reliability diagram and interpret it.
 - Pick a threshold intentionally (cost-based or metric-based) and justify it.
 
-### Alternative Example (Not the Notebook Solution)
+### Alternative Example: Calibrating a Readmission Risk Model
 ```python
-# Toy logistic regression (not the notebook data):
+# Calibration assessment for a hospital readmission model.
+# NOT the notebook solution -- illustrates calibration mechanics.
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
+from sklearn.calibration import calibration_curve, CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import brier_score_loss
 
-rng = np.random.default_rng(0)
-X = rng.normal(size=(300, 3))
-p = 1 / (1 + np.exp(-(0.2 + 1.0*X[:,0] - 0.8*X[:,1])))
-y = rng.binomial(1, p)
+rng = np.random.default_rng(42)
+n = 1000
 
-clf = Pipeline([('scaler', StandardScaler()), ('lr', LogisticRegression(max_iter=5000))])
-clf.fit(X, y)
+# Simulate patient features and outcomes
+age = rng.normal(68, 10, n)
+comorbidities = rng.poisson(2, n)
+X = np.column_stack([age, comorbidities])
+
+logit_p = -3.5 + 0.02 * age + 0.45 * comorbidities
+p_true = 1 / (1 + np.exp(-logit_p))
+y = rng.binomial(1, p_true)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=0
+)
+
+# Fit model
+clf = LogisticRegression(max_iter=5000)
+clf.fit(X_train, y_train)
+probs = clf.predict_proba(X_test)[:, 1]
+
+# Brier score
+bs = brier_score_loss(y_test, probs)
+print(f"Brier score: {bs:.4f}")
+
+# Calibration curve
+fraction_pos, mean_predicted = calibration_curve(y_test, probs, n_bins=10)
+for frac, pred in zip(fraction_pos, mean_predicted):
+    print(f"  predicted ~{pred:.2f}, observed {frac:.2f}")
+
+# Post-hoc calibration with Platt scaling
+cal_clf = CalibratedClassifierCV(clf, method='sigmoid', cv=5)
+cal_clf.fit(X_train, y_train)
+cal_probs = cal_clf.predict_proba(X_test)[:, 1]
+print(f"Brier after Platt scaling: {brier_score_loss(y_test, cal_probs):.4f}")
 ```
-
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: probabilities, losses, and decision thresholds
+> **Prerequisites:** [Classification foundations](00_recession_classifier_baselines.md) -- core classification concepts (probabilities, losses, thresholds, metrics, calibration overview, class imbalance).
 
-In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
+### Deep Dive: Calibration and Brier Score (Probabilities You Can Trust)
 
-#### 1) Intuition (plain English)
+Calibration is the difference between "good ranking" and "usable probabilities." A model can have perfect AUC (it ranks every positive above every negative) yet be terribly calibrated (it says 90% when the true rate is 30%). When decisions depend on the magnitude of risk -- not just the ordering -- calibration is essential.
 
-Binary labels (recession vs not) hide uncertainty.
-The useful object is the probability:
-- “Given data today, how likely is a recession next quarter?”
+#### 1) Intuition: what calibration means in practice
 
-Probabilities let you:
-- compare risk over time,
-- set thresholds based on costs,
-- evaluate calibration (whether 30% means ~30% in reality).
+If a model says "30% recession probability" many times, then about 30% of those cases should actually be recessions. If the model says 30% but only 10% materialize, the model is **over-confident**. If 50% materialize, it is **under-confident**.
 
-#### 2) Notation + setup (define symbols)
+**Health econ motivation.** A hospital readmission risk model predicts each discharged patient's 30-day readmission probability. A care coordinator uses these probabilities to allocate follow-up resources: patients above 25% risk get a home visit; those between 15-25% get a phone call; those below 15% get standard discharge. If the probabilities are poorly calibrated -- say the model reports 25% for patients who actually have 10% risk -- the coordinator wastes home visits on low-risk patients and misses genuinely high-risk ones. The ranking might be fine (sicker patients still score higher), but the absolute cutoffs are wrong. This is why calibration matters whenever probabilities drive resource allocation.
 
-Let:
-- $y_i \in \{0,1\}$ be the true label (1 = recession),
-- $x_i$ be features,
-- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
+#### 2) Reliability diagrams, step by step
 
-Logistic regression uses the log-odds (“logit”) link:
+A reliability diagram (calibration curve) is the primary visual diagnostic.
 
-$$
-\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
-$$
+**How to construct one:**
 
-Equivalently:
+1. **Obtain predicted probabilities** $\hat{p}_1, \dots, \hat{p}_n$ from the model on held-out data.
+2. **Sort and bin** the predictions into $B$ groups (e.g., $B = 10$ decile bins: [0, 0.1), [0.1, 0.2), ..., [0.9, 1.0]).
+3. **For each bin $b$**, compute:
+   - the mean predicted probability: $\bar{p}_b = \frac{1}{|B_b|}\sum_{i \in B_b} \hat{p}_i$
+   - the observed frequency: $\bar{y}_b = \frac{1}{|B_b|}\sum_{i \in B_b} y_i$
+4. **Plot** $\bar{p}_b$ (x-axis) vs $\bar{y}_b$ (y-axis). A perfectly calibrated model lies on the 45-degree diagonal.
 
-$$
-p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
-$$
+**Reading the plot:**
+- Points **above** the diagonal: model is under-confident (says 20%, reality is higher).
+- Points **below** the diagonal: model is over-confident (says 40%, reality is lower).
+- Bins with very few observations produce noisy points -- always report bin counts.
 
-**What each term means**
-- $\sigma(\cdot)$ maps real numbers to (0,1).
-- coefficients move probabilities through the log-odds scale.
+**Practical choice of bins:** 10 equal-width bins is the default. With small test sets (< 200), use fewer bins (5-8) or use isotonic-style adaptive binning.
 
-#### 3) Assumptions (and what “probability model” means)
+#### 3) Brier score and its decomposition
 
-Logistic regression assumes:
-- a linear relationship in log-odds,
-- observations are conditionally independent given $x$ (often violated in time series),
-- no perfect multicollinearity in features.
-
-Even if the model is misspecified, it can still be useful for ranking risk.
-But calibration can suffer, so we measure it.
-
-#### 4) Estimation mechanics (how the model is fit)
-
-Logistic regression is typically fit by maximum likelihood:
-- choose $\beta$ to maximize the probability of the observed labels.
-
-The negative log-likelihood corresponds to **log loss** (cross-entropy):
+The **Brier score** is the mean squared error of predicted probabilities:
 
 $$
-\ell(\beta) = -\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
+\text{Brier} = \frac{1}{n}\sum_{i=1}^{n} (\hat{p}_i - y_i)^2.
 $$
 
-In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
+It ranges from 0 (perfect) to 1 (worst). A baseline model that always predicts the prevalence $\pi = \bar{y}$ achieves:
 
-#### 5) Inference vs prediction
-
-- `statsmodels` gives standard errors and p-values (inference framing).
-- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
-
-In this project:
-- prioritize time-aware out-of-sample evaluation,
-- treat inference outputs as descriptive unless you have identification.
-
-#### 6) Metrics (what to measure and why)
-
-At minimum, treat these as standard:
-
-- **ROC-AUC:** ranking performance (threshold-free).
-- **PR-AUC:** often more informative when positives are rare.
-- **Brier score:** mean squared error of probabilities:
 $$
-\text{Brier} = \frac{1}{n} \sum_i (p_i - y_i)^2.
-$$
-- **Calibration plots:** do predicted probabilities match observed frequencies?
-
-#### 7) Thresholding is a decision rule (not a model property)
-
-A threshold $\tau$ converts probability to a hard label:
-$$
-\hat y_i = 1[p_i \ge \tau].
+\text{Brier}_{\text{baseline}} = \pi(1-\pi).
 $$
 
-Choosing $\tau$ should reflect costs:
-- false positives (crying wolf),
-- false negatives (missing recessions).
+**Decomposition (Murphy, 1973).** The Brier score can be decomposed into three components:
 
-**Worked example:** Suppose missing a recession ($c_{FN}$) is 5 times worse than a false alarm ($c_{FP} = 1$). The cost-optimal threshold balances the two errors:
+$$
+\text{Brier} = \underbrace{\text{Reliability}}_{\text{calibration error}} - \underbrace{\text{Resolution}}_{\text{ability to separate}} + \underbrace{\text{Uncertainty}}_{\text{inherent difficulty}}.
+$$
+
+- **Reliability** (lower is better): measures how far the calibration curve deviates from the diagonal. This is the part you can fix with post-hoc calibration.
+- **Resolution** (higher is better): measures how much predicted probabilities vary across bins. A model that gives the same probability to everyone has zero resolution.
+- **Uncertainty** = $\pi(1-\pi)$: depends only on the base rate and cannot be changed by the model.
+
+The decomposition helps diagnose whether a high Brier score comes from poor calibration (fixable) or lack of discrimination (model needs better features).
+
+#### 4) Expected calibration error (ECE)
+
+ECE summarizes the reliability diagram as a single number:
+
+$$
+\text{ECE} = \sum_{b=1}^{B} \frac{|B_b|}{n} \left|\bar{y}_b - \bar{p}_b\right|.
+$$
+
+Each bin's calibration gap is weighted by the fraction of observations in that bin. Lower ECE means better calibration.
+
+**Limitations:**
+- ECE depends on the binning scheme (number and type of bins).
+- With equal-width bins, bins near 0 and 1 may be nearly empty.
+- Report ECE alongside the reliability diagram, not as a standalone metric.
+
+#### 5) Cost-based threshold selection
+
+A threshold $\tau$ converts probability to a hard label: $\hat{y}_i = 1[\hat{p}_i \ge \tau]$. The optimal threshold depends on the relative costs of false positives and false negatives.
+
+**Worked example.** Suppose missing a recession ($c_{FN}$) is 5 times worse than a false alarm ($c_{FP} = 1$). The cost-optimal threshold is:
 
 $$
 \tau^* = \frac{c_{FP}}{c_{FP} + c_{FN}} = \frac{1}{1 + 5} \approx 0.167.
 $$
 
-So you would flag a recession whenever $p_i > 0.167$, not the default 0.50. This dramatically increases recall (catching more recessions) at the cost of more false alarms — which is the right tradeoff when misses are expensive. In practice, plot precision and recall as a function of $\tau$ and pick the threshold that matches your cost story.
+You flag a recession whenever $\hat{p}_i > 0.167$, not the default 0.50. This dramatically increases recall at the cost of more false alarms -- which is the right trade-off when misses are expensive.
 
-#### 8) Diagnostics + robustness (minimum set)
-
-1) **Time-aware evaluation**
-- use a time split or walk-forward; avoid random splits for forecasting tasks.
-
-2) **Calibration**
-- plot predicted vs observed probabilities; compute Brier score.
-
-3) **Threshold sensitivity**
-- show how precision/recall changes with threshold.
-
-4) **Feature stability**
-- check whether model performance is stable over subperiods (structural change).
-
-#### 9) Interpretation + reporting
-
-Report:
-- horizon (what “next quarter” means),
-- split method and dates,
-- probability calibration (not just accuracy),
-- threshold choice rationale.
-
-**What this does NOT mean**
-- AUC does not tell you if probabilities are calibrated.
-- A good backtest does not guarantee future performance in a new regime.
-
-#### Exercises
-
-- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
-- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
-- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
-- [ ] Compare random-split vs time-split AUC and explain the difference.
-
-### Deep Dive: Calibration and Brier score (probabilities you can trust)
-
-Calibration is the difference between “good ranking” and “usable probabilities.”
-
-#### 1) Intuition (plain English)
-
-If a model says “30% recession probability” many times, then about 30% of those cases should actually be recessions.
-If not, the model is miscalibrated (over- or under-confident).
-
-#### 2) Notation + setup (define symbols)
-
-Let:
-- $p_i$ be predicted probability,
-- $y_i \in \{0,1\}$ be the realized label.
-
-Brier score:
+**Why this formula works.** The expected cost of a decision at threshold $\tau$ for observation $i$ is:
 
 $$
-\text{Brier} = \frac{1}{n}\sum_{i=1}^{n} (p_i - y_i)^2.
+\text{EC}_i(\tau) = c_{FP} \cdot (1-p_i) \cdot 1[\hat{p}_i \ge \tau] + c_{FN} \cdot p_i \cdot 1[\hat{p}_i < \tau].
 $$
 
-**What it measures**
-- probability mean squared error (lower is better).
+Setting the two terms equal and solving for $p_i$ gives the breakeven probability $\tau^*$. Below this probability, the expected cost of acting exceeds the expected cost of not acting.
 
-Calibration curve:
-- bin predictions into groups (e.g., 0.0–0.1, 0.1–0.2, …),
-- compare average predicted probability vs empirical frequency in each bin.
+**Health econ example.** For a readmission model, suppose a preventive home visit costs \$200 ($c_{FP}$, the cost of intervening on a patient who would not have been readmitted) and a readmission costs \$15,000 ($c_{FN}$). Then:
 
-#### 3) Assumptions
+$$
+\tau^* = \frac{200}{200 + 15000} \approx 0.013.
+$$
 
-Calibration assessment assumes:
-- evaluation is out-of-sample (time split / walk-forward),
-- enough data in bins (small samples produce noisy curves),
-- label definition is stable.
+You would intervene for nearly everyone -- because readmissions are so expensive relative to the intervention that even a 1.3% risk justifies action. This illustrates why cost analysis sometimes produces surprising thresholds.
 
-#### 4) Estimation mechanics: why calibration can fail
+**In practice:** plot precision and recall as a function of $\tau$ alongside the cost curve. The cost-optimal threshold assumes calibrated probabilities, so calibrate first.
 
-Even if a classifier ranks well, probabilities can be miscalibrated due to:
-- regularization strength,
-- class imbalance,
-- dataset shift (new regime),
-- model misspecification.
+#### 6) Platt scaling vs isotonic regression
 
-Calibration methods:
-- Platt scaling (logistic calibration),
-- isotonic regression.
+When raw model probabilities are miscalibrated, post-hoc calibration can fix them without retraining the model.
 
-These should be fit on validation data, not on the test set.
+**Platt scaling:**
+- Fits a logistic regression $\sigma(a \cdot f(x) + b)$ on the model's raw scores $f(x)$.
+- Two parameters only ($a$ and $b$), so it works well with limited validation data.
+- Assumes the calibration function is sigmoid-shaped (S-curve mapping from raw scores to probabilities).
+- Best for: models whose miscalibration is roughly monotone and smooth (e.g., SVMs, neural nets).
 
-#### 5) Inference: decisions require calibrated probabilities
+**Isotonic regression:**
+- Fits a non-parametric, monotone step function mapping raw scores to calibrated probabilities.
+- Very flexible -- can correct any monotone miscalibration pattern.
+- Requires more validation data (it can overfit with fewer than ~1,000 calibration samples).
+- Best for: large datasets where the calibration function has a complex shape.
 
-If you use probabilities for decisions (alerts, risk management), calibration matters more than AUC.
-AUC only checks ranking, not absolute probability accuracy.
+**Key trade-off:** Platt scaling has high bias but low variance (only 2 parameters). Isotonic regression has low bias but higher variance (many parameters). With small validation sets (common in health econ with rare outcomes), prefer Platt scaling.
 
-#### 6) Diagnostics + robustness (minimum set)
+**Important:** Always fit calibration methods on a held-out validation set, never on the test set. Use `CalibratedClassifierCV` in sklearn, which handles the internal cross-validation.
 
-1) **Calibration curve + Brier**
-- always pair a curve with a scalar metric.
+```python
+from sklearn.calibration import CalibratedClassifierCV
 
-2) **Subperiod calibration**
-- check calibration separately in different eras (structural change).
+# Platt scaling (logistic calibration)
+cal_platt = CalibratedClassifierCV(base_estimator, method='sigmoid', cv=5)
 
-3) **Threshold sensitivity**
-- miscalibration can shift optimal thresholds across time.
+# Isotonic regression
+cal_iso = CalibratedClassifierCV(base_estimator, method='isotonic', cv=5)
+```
 
-#### 7) Interpretation + reporting
+#### 7) Decision curves and net benefit (brief introduction)
 
-Report:
-- Brier score,
-- calibration plot (with bin counts),
-- whether calibration was improved with post-processing (and how).
+Decision curve analysis extends cost-based thresholding by plotting **net benefit** as a function of the threshold probability $p_t$:
 
-#### Exercises
+$$
+\text{Net Benefit}(p_t) = \frac{TP}{n} - \frac{FP}{n} \cdot \frac{p_t}{1 - p_t}.
+$$
 
-- [ ] Produce a calibration curve and identify whether the model is over- or under-confident.
-- [ ] Compute Brier score and compare to a baseline (constant probability = prevalence).
-- [ ] Fit a calibration method on validation data and re-check calibration on test data.
+The term $p_t / (1-p_t)$ is the odds at the threshold, which represents the exchange rate between false positives and true positives.
 
-### Project Code Map
-- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
-- `scripts/train_recession.py`: training script that writes artifacts
-- `scripts/predict_recession.py`: prediction script that loads artifacts
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+**How to read a decision curve:**
+- Compare the model's net benefit to two baselines: "treat all" and "treat none."
+- The model is useful at threshold $p_t$ if its net benefit exceeds both baselines.
+- The range of thresholds where the model adds value defines its clinical utility.
 
-### Common Mistakes
-- Reporting only accuracy (can be misleading if recessions are rare).
-- Picking threshold=0.5 by default without considering costs.
-- Evaluating with random splits (time leakage).
+Decision curves are increasingly standard in clinical prediction model research (Vickers & Elkin, 2006). For a full treatment, see the `dcurves` Python package.
+
+#### 8) Alternative example: calibration assessment for a cost-sensitive readmission model
+
+```python
+# Full calibration + cost workflow for readmission prediction.
+# NOT the notebook solution -- illustrates calibration and cost mechanics.
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss
+
+rng = np.random.default_rng(7)
+n = 800
+
+# Simulate: age, comorbidities, prior_admissions
+age = rng.normal(67, 11, n)
+comorbidities = rng.poisson(2, n)
+prior_admissions = rng.poisson(1, n)
+X = np.column_stack([age, comorbidities, prior_admissions])
+
+logit_p = -4.0 + 0.025 * age + 0.4 * comorbidities + 0.3 * prior_admissions
+p_true = 1 / (1 + np.exp(-logit_p))
+y = rng.binomial(1, p_true)
+
+# Time-like split (first 600 train, last 200 test)
+X_tr, X_te = X[:600], X[600:]
+y_tr, y_te = y[:600], y[600:]
+
+clf = LogisticRegression(max_iter=5000)
+clf.fit(X_tr, y_tr)
+probs = clf.predict_proba(X_te)[:, 1]
+
+# --- Brier score ---
+brier = brier_score_loss(y_te, probs)
+baseline_brier = y_te.mean() * (1 - y_te.mean())
+print(f"Brier: {brier:.4f}  (baseline: {baseline_brier:.4f})")
+
+# --- Reliability diagram data ---
+frac_pos, mean_pred = calibration_curve(y_te, probs, n_bins=8)
+print("\nReliability diagram:")
+for fp, mp in zip(frac_pos, mean_pred):
+    gap = "over-confident" if mp > fp else "under-confident"
+    print(f"  predicted {mp:.2f}, observed {fp:.2f}  ({gap})")
+
+# --- ECE ---
+bins = np.linspace(0, 1, 9)  # 8 bins
+bin_idx = np.digitize(probs, bins) - 1
+ece = 0.0
+for b in range(8):
+    mask = bin_idx == b
+    if mask.sum() == 0:
+        continue
+    ece += mask.sum() / len(probs) * abs(y_te[mask].mean() - probs[mask].mean())
+print(f"\nECE: {ece:.4f}")
+
+# --- Cost-optimal threshold ---
+c_fp = 200      # cost of unnecessary home visit
+c_fn = 15000    # cost of missed readmission
+tau_star = c_fp / (c_fp + c_fn)
+print(f"\nCost-optimal threshold: {tau_star:.4f}")
+y_hat = (probs >= tau_star).astype(int)
+print(f"Flagged {y_hat.sum()} of {len(y_hat)} patients for intervention")
+```
+
+#### 9) Diagnostics and robustness
+
+1. **Time-aware evaluation** -- calibration assessed on random splits can be misleadingly good. Use a time split or walk-forward design.
+2. **Subperiod calibration** -- check calibration separately in different time windows. Structural change (new treatment protocols, policy shifts) can degrade calibration even if the model was well-calibrated historically.
+3. **Bin sensitivity** -- re-run the reliability diagram with different numbers of bins (5, 10, 15). If conclusions change substantially, your test set may be too small for reliable calibration assessment.
+4. **Calibration after recalibration** -- after applying Platt or isotonic, re-check the calibration curve on a held-out set. Confirm that the fix actually worked.
+
+### Key Terms (Calibration-Specific)
+
+| Term | Definition |
+|------|-----------|
+| Reliability | Component of Brier decomposition measuring calibration error |
+| Resolution | Component of Brier decomposition measuring the model's ability to separate risk groups |
+| Uncertainty | $\pi(1-\pi)$; inherent difficulty determined by the base rate |
+| Platt scaling | Sigmoid calibration; 2 parameters; good for small validation sets |
+| Isotonic regression | Non-parametric monotone calibration; flexible but needs more data |
+| ECE | Expected calibration error; weighted mean absolute calibration gap across bins |
+| Net benefit | Decision-theoretic metric balancing true positives against weighted false positives |
+| Cost-optimal threshold | $\tau^* = c_{FP}/(c_{FP} + c_{FN})$; minimizes expected misclassification cost |
+
+### Common Mistakes (Calibration-Specific)
+- **Evaluating calibration on training data.** Calibration must be assessed out-of-sample. In-sample calibration is nearly meaningless.
+- **Calibrating on the test set.** Platt scaling and isotonic regression must be fit on a validation set, not the final test set. Use cross-validated calibration (`CalibratedClassifierCV`).
+- **Ignoring bin counts in reliability diagrams.** A bin with 3 observations is noise, not evidence. Always report how many observations fall in each bin.
+- **Treating ECE as the only calibration metric.** ECE depends on binning choices. Always pair it with a visual reliability diagram.
+- **Assuming calibration is preserved after model changes.** Retraining, adding features, or changing hyperparameters invalidates previous calibration. Re-assess after any model change.
+- **Using cost-optimal thresholds without calibrated probabilities.** The formula $\tau^* = c_{FP}/(c_{FP} + c_{FN})$ assumes the model's probabilities are well-calibrated. If they are not, calibrate first, then apply the threshold.
+
+### Exercises
+
+- [ ] Produce a reliability diagram with 10 bins and annotate which bins are over-confident vs under-confident.
+- [ ] Compute the Brier score for your model and for a baseline that always predicts the prevalence. How much better is your model?
+- [ ] Apply Platt scaling and isotonic regression to the same model. Compare calibration curves and Brier scores. Which method works better on your data, and why?
+- [ ] Compute the ECE before and after calibration. By how much did calibration improve?
+- [ ] Write a cost story for your application (what are $c_{FP}$ and $c_{FN}$?). Derive $\tau^*$ and report precision/recall at that threshold.
+- [ ] Construct a simple decision curve comparing your model to the "treat all" and "treat none" strategies. At which thresholds does the model add value?
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You should now be able to build a recession probability model and explain:
-- what the probability means,
-- how you evaluated it, and
-- why your chosen threshold makes sense.
-
+You should now be able to:
+- construct and interpret a reliability diagram,
+- compute and decompose the Brier score,
+- apply Platt scaling or isotonic regression and assess whether calibration improved,
+- derive a cost-optimal threshold from explicit cost assumptions,
+- explain why calibration matters for health-economic decision-making beyond simple ranking.
 
 Suggested readings:
-- scikit-learn docs: classification metrics, calibration
-- Murphy: Machine Learning (probabilistic interpretation)
-- Applied time-series evaluation articles (walk-forward validation)
+- Niculescu-Mizil & Caruana (2005), "Predicting good probabilities with supervised learning" -- ICML (Platt vs isotonic comparison)
+- Murphy (1973), "A new vector partition of the probability score" -- *J. Applied Meteorology* (Brier decomposition)
+- Vickers & Elkin (2006), "Decision curve analysis" -- *Medical Decision Making* (net benefit framework)
+- Van Calster et al. (2019), "Calibration: the Achilles heel of predictive analytics" -- *BMC Medicine* (modern overview)
+- scikit-learn docs: `calibration_curve`, `CalibratedClassifierCV`, `brier_score_loss`
+- Steyerberg, *Clinical Prediction Models* -- Ch. 15 (calibration in clinical settings)

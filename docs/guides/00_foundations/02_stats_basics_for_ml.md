@@ -11,14 +11,19 @@
 
 This guide accompanies the notebook `notebooks/00_foundations/02_stats_basics_for_ml.ipynb`.
 
-This foundations module builds core intuition you will reuse in every later notebook.
+This guide covers the statistical foundations that every applied analysis rests on: hypothesis testing, confidence intervals, the distinction between correlation and causation, the law of large numbers and CLT, multicollinearity, and the bias-variance tradeoff. These are not abstract topics -- they determine whether your regression output is trustworthy or misleading.
+
+For a health economist working as a data analyst, these concepts appear daily: interpreting a clinical trial's $p$-value, deciding whether an observational association is causal, diagnosing why a regression coefficient flipped sign when you added a variable, or explaining to a stakeholder what a confidence interval actually means.
 
 ### Key Terms (defined)
-- **Time series**: data indexed by time; ordering is meaningful and must be respected.
-- **Leakage**: using future information in features/labels, producing unrealistically good results.
-- **Train/test split**: separating data for model fitting vs evaluation.
-- **Multicollinearity**: predictors are highly correlated; coefficients can become unstable.
-
+- **p-value**: the probability of observing data at least as extreme as what you got, assuming the null hypothesis and all model assumptions are true. It is NOT the probability that the null is true.
+- **Type I error ($\alpha$)**: rejecting the null when it is actually true (false positive). Conventional threshold: 0.05.
+- **Type II error ($\beta$)**: failing to reject the null when it is actually false (false negative).
+- **Statistical power ($1 - \beta$)**: the probability of correctly rejecting a false null. Depends on sample size, effect size, and $\alpha$.
+- **Confidence interval**: a range constructed so that, across repeated samples, $(1-\alpha) \times 100\%$ of such intervals would contain the true parameter. It does NOT mean there is a 95% probability the parameter is inside this particular interval.
+- **Multicollinearity**: predictors are highly correlated with each other; individual coefficients become unstable even though the overall model fit may be fine.
+- **VIF (Variance Inflation Factor)**: a diagnostic that quantifies how much the variance of a coefficient is inflated by collinearity with other predictors.
+- **Confounder**: a variable that causally affects both the treatment/exposure and the outcome, creating a spurious association if not controlled for.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
@@ -35,7 +40,8 @@ This foundations module builds core intuition you will reuse in every later note
 - Complete notebook section: Hypothesis testing
 - Run the bootstrap cell and confirm `PROJECT_ROOT` points to the repo root.
 - Complete all TODOs (no `...` left).
-- Write a short paragraph explaining a leakage example you created.
+- Compute VIF for a set of predictors and write a 3-sentence interpretation.
+- Run a hypothesis test, report the $p$-value and CI, and write one sentence stating what they do and do not tell you.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
@@ -66,153 +72,124 @@ print("Controlled coef on x:", sm.OLS(y, X_ctrl).fit().params['x'].round(3))
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-This notebook introduces the core statistical vocabulary used throughout the project.
+This guide covers the statistical vocabulary and reasoning patterns that underlie every regression, every test, and every model comparison in this project.
 
-### Core Foundations: Time, Evaluation, and Leakage (the rules you never stop using)
-
-This project treats “foundations” as more than warm-up material. They are the rules that keep every later result honest.
-
-#### 1) Intuition (plain English): what problem are we solving?
-
-Most mistakes in applied econometrics + ML come from confusing these three questions:
-
-1) **What did we know at the time of prediction/decision?** (timing)
-2) **What are we trying to predict/estimate?** (target/estimand)
-3) **How do we know the result would hold in the future or in another sample?** (evaluation/generalization)
-
-**Story example:** You build a recession probability model using macro indicators.
-- If you accidentally include information from the future (even indirectly), the model will look amazing on paper and fail in reality.
-- If you evaluate with random splits, you are testing a different problem (IID classification) than the one you actually face (time-ordered forecasting).
-
-#### 2) Notation + setup (define symbols)
-
-Time index:
-- $t = 1,\dots,T$ indexes time (months/quarters).
-
-Forecast horizon:
-- $h \ge 1$ is how far ahead you predict.
-
-Features and target:
-- $X_t$ is the feature vector available at time $t$.
-- $y_{t+h}$ is the future value you want to predict (or a label defined using future data).
-
-The forecasting problem is:
-
-$$
-\text{learn a function } f \text{ such that } \hat y_{t+h} = f(X_t).
-$$
-
-**What each term means**
-- $X_t$: information available at time $t$ (must be “past-only”).
-- $y_{t+h}$: the thing you want to know in the future.
-- $f$: your model (linear regression, logistic regression, random forest, …).
-
-#### 3) Assumptions (and why time breaks ML defaults)
-
-Many ML defaults assume **IID** data: independent and identically distributed samples.
-Time series often violate both:
-- observations are correlated over time,
-- the data-generating process can drift (regime changes, structural breaks).
-
-Practical implications:
-- random train/test splits are usually invalid for forecasting,
-- you must use time-aware splits and leakage checks.
-
-#### 4) Estimation mechanics: evaluation is part of the method
-
-When you evaluate a model, you are estimating its future performance.
-If the evaluation scheme does not match the real timing of the task, the estimate is biased.
-
-**Time-aware evaluation patterns**
-- **Holdout (time split):** train on early period, test on later period.
-- **Walk-forward / rolling origin:** re-train as time advances and evaluate sequentially.
-
-If you use a walk-forward scheme, conceptually you are estimating:
-
-$$
-\text{future error} \approx \frac{1}{M} \sum_{m=1}^{M} \ell(\hat y_{t_m+h}, y_{t_m+h})
-$$
-
-where:
-- $\ell$ is a loss function (squared error, log loss, …),
-- $t_m$ are evaluation times in the future relative to training.
-
-#### 5) Leakage (the #1 silent killer)
-
-> **Definition:** **Leakage** happens when features contain information that would not have been available at the time of prediction.
-
-Leakage examples:
-- using $y_{t+h}$ (or a function of it) in $X_t$,
-- using “centered” rolling windows that include future values,
-- merging datasets with mismatched timestamps so the future leaks into the past,
-- standardizing using full-sample mean/variance before splitting.
-
-**Why leakage is so dangerous**
-- it makes models look much better than they are,
-- it leads to confident but wrong decisions,
-- it is often subtle and not caught by unit tests.
-
-#### 6) Diagnostics + robustness (minimum set)
-
-1) **Timing statement (write it down)**
-- “At time $t$ we know $X_t$ and we predict $y_{t+h}$.”
-- If you cannot say this clearly, leakage risk is high.
-
-2) **Index sanity**
-- check index type (DatetimeIndex), sorting, monotonicity.
-
-3) **Shift sanity**
-- after creating lags/targets, confirm the direction:
-  - lags use `.shift(+k)` (past),
-  - targets for forecasting are often `.shift(-h)` (future).
-
-4) **Train/test boundary check**
-- print the last train date and first test date; confirm no overlap.
-
-#### 7) Interpretation + reporting
-
-When you report results in this repo, always include:
-- the prediction horizon $h$,
-- the split scheme (time split or walk-forward),
-- at least one metric appropriate for the task,
-- a leakage check (what you did to prevent it).
-
-**What this does NOT mean**
-- A high in-sample $R^2$ is not evidence of real forecasting power.
-- Random-split accuracy is not forecasting accuracy.
-
-<details>
-<summary>Optional: why time series “generalization” is harder</summary>
-
-In forecasting, you train on one historical regime and test on another.
-If the economy changes (policy regime, technology, measurement), relationships can shift.
-That is why stability checks and walk-forward evaluation are emphasized in this project.
-
-</details>
-
-#### Exercises
-
-- [ ] Write the timing statement for one notebook: “At time $t$ I know __ and predict __ at $t+h$.”
-- [ ] Create one intentional leakage feature (future shift) and show how it inflates test performance.
-- [ ] Compare random-split vs time-split evaluation on the same dataset; explain the difference.
-- [ ] List 3 places leakage can enter during feature engineering (lags, rolling windows, scaling, joins).
-
-### Deep Dive: Correlation vs causation — the question you must not confuse
-
-Economics is full of correlated variables. Causal inference is about deciding when a relationship is more than correlation.
+### Deep Dive: Hypothesis testing -- p-values, Type I/II error, and power
 
 #### 1) Intuition (plain English)
 
-Correlation answers:
-- “Do $X$ and $Y$ move together?”
+A hypothesis test asks: "Is the pattern I see in the data compatible with pure chance (the null hypothesis), or is it strong enough that chance alone is an unlikely explanation?"
 
-Causation answers:
-- “If I intervene and change $X$, does $Y$ change?”
+**Story example (health econ):** A hospital implements a new discharge protocol. Average length of stay drops from 5.2 to 4.8 days. Is that a real effect or random variation? A hypothesis test formalizes this question. But the answer depends on sample size, variability, and what you define as "the null."
 
-**Story example (macro):** Interest rates and inflation are correlated.  
-That does not imply raising rates increases inflation; the correlation can reflect policy responses to expected inflation.
+#### 2) Notation and setup
 
-#### 2) Notation + setup (define symbols)
+- $H_0$: null hypothesis (e.g., $\beta = 0$, "no effect of the protocol").
+- $H_1$: alternative hypothesis (e.g., $\beta \neq 0$).
+- Test statistic: $t = \hat\beta / \widehat{SE}(\hat\beta)$.
+- $p$-value: $P(\text{data this extreme or more} \mid H_0 \text{ is true})$.
+
+The decision rule at significance level $\alpha$:
+- If $p < \alpha$, reject $H_0$.
+- If $p \ge \alpha$, fail to reject $H_0$ (this is NOT the same as accepting $H_0$).
+
+#### 3) Type I error, Type II error, and power
+
+|  | $H_0$ true (no real effect) | $H_0$ false (real effect exists) |
+|---|---|---|
+| **Reject $H_0$** | Type I error (false positive), prob = $\alpha$ | Correct rejection, prob = $1-\beta$ (power) |
+| **Fail to reject $H_0$** | Correct, prob = $1-\alpha$ | Type II error (false negative), prob = $\beta$ |
+
+**Practical implications for a health economist:**
+- **Type I error:** You conclude a drug reduces readmissions when it does not. Wasted resources, possible harm.
+- **Type II error:** You conclude a drug has no effect when it actually does. Patients miss a beneficial treatment.
+- **Power** increases with: larger sample size, larger true effect, larger $\alpha$, lower noise.
+
+**Rule of thumb:** Clinical trials typically target 80% power at $\alpha = 0.05$. Observational studies in health econ often have lower power due to noisy data and small effect sizes.
+
+#### 4) What p-values do and do not tell you
+
+A $p$-value of 0.03 means: "If the null were true and all model assumptions held, there is a 3% chance of seeing a result this extreme."
+
+It does **NOT** mean:
+- "There is a 97% probability the effect is real."
+- "The effect is large or clinically meaningful."
+- "The model is correctly specified."
+
+**Worked example:**
+
+```python
+import numpy as np
+import statsmodels.api as sm
+
+rng = np.random.default_rng(99)
+n = 200
+
+# True effect is small but nonzero
+treatment = rng.binomial(1, 0.5, size=n)
+outcome = 0.15 * treatment + rng.normal(scale=1.0, size=n)  # true beta = 0.15
+
+X = sm.add_constant(treatment)
+result = sm.OLS(outcome, X).fit()
+
+print(f"Estimated beta: {result.params[1]:.3f}")
+print(f"SE:             {result.bse[1]:.3f}")
+print(f"t-stat:         {result.tvalues[1]:.3f}")
+print(f"p-value:        {result.pvalues[1]:.4f}")
+print(f"95% CI:         [{result.conf_int().iloc[1, 0]:.3f}, {result.conf_int().iloc[1, 1]:.3f}]")
+# With n=200 and a small effect, you may or may not reject at 0.05.
+# That's the power problem: small effects need large samples.
+```
+
+#### 5) The SE estimator changes the p-value (not the coefficient)
+
+This is crucial for applied work. The same $\hat\beta$ can be "significant" or "not significant" depending on how you estimate the standard error:
+
+- **Naive (homoskedastic) SE**: assumes constant error variance. Often too small.
+- **HC3 (robust) SE**: allows heteroskedasticity. Standard in cross-sectional health econ.
+- **HAC (Newey-West) SE**: allows heteroskedasticity and autocorrelation. Required for time-series data.
+- **Clustered SE**: allows correlation within groups (e.g., patients within hospitals). Required for panel data.
+
+Changing the SE estimator changes $t$, $p$, and the CI width without changing $\hat\beta$.
+
+### Deep Dive: Confidence intervals -- what they actually mean
+
+#### 1) The correct interpretation
+
+A 95% confidence interval means: **if you repeated the sampling procedure many times, 95% of the resulting intervals would contain the true parameter.**
+
+It does NOT mean: "There is a 95% probability that $\beta$ is between $a$ and $b$." The parameter $\beta$ is fixed (not random); it either is or is not in the interval. The randomness is in the interval itself (which changes with each sample).
+
+#### 2) Why CIs are often more useful than p-values
+
+A CI tells you:
+- **Sign:** Is the entire CI positive? Then you can be fairly confident the effect is positive.
+- **Magnitude:** Is the CI $[0.01, 0.03]$ or $[0.01, 3.50]$? The first is precise; the second means you know almost nothing about the size.
+- **Practical significance:** A CI of $[0.001, 0.005]$ for a drug effect on mortality might be statistically significant but clinically negligible.
+
+**Health econ example:** A study of Medicaid expansion finds a coefficient on ER visits of $-12.3$ with 95% CI $[-22.1, -2.5]$. This tells you the effect is likely negative (reduced ER visits) and somewhere between 2.5 and 22.1 fewer visits. That range matters for policy -- the low end may not justify the cost, the high end clearly does.
+
+#### 3) Formula and connection to hypothesis testing
+
+For a coefficient $\hat\beta_j$ with estimated SE:
+
+$$
+CI_{95\%} = \hat\beta_j \pm t_{0.975, \, n-k} \cdot \widehat{SE}(\hat\beta_j).
+$$
+
+A 95% CI excludes zero if and only if the $p$-value for $H_0: \beta_j = 0$ is below 0.05. They are dual representations of the same test.
+
+### Deep Dive: Correlation vs causation -- the question you must not confuse
+
+#### 1) Intuition (plain English)
+
+Correlation answers: "Do $X$ and $Y$ move together?"
+
+Causation answers: "If I intervene and change $X$, does $Y$ change?"
+
+**Story example:** Counties with more hospital beds per capita have higher mortality rates. Does building hospitals kill people? No -- sicker, older populations attract more hospital capacity. The confounder (population health/age) drives both.
+
+#### 2) Notation
 
 Correlation between random variables $X$ and $Y$:
 
@@ -220,224 +197,219 @@ $$
 \rho_{XY} = \frac{\mathrm{Cov}(X,Y)}{\sqrt{\mathrm{Var}(X)\mathrm{Var}(Y)}}.
 $$
 
-**What each term means**
-- $\mathrm{Cov}(X,Y)$: whether $X$ and $Y$ co-move.
-- correlation is unit-free and lies in $[-1,1]$.
+Correlation is symmetric ($\rho_{XY} = \rho_{YX}$) and unit-free, lying in $[-1, 1]$. Causal effects are directional and have units.
 
-Correlation is symmetric:
-$$
-\rho_{XY} = \rho_{YX}.
-$$
-But causal effects are directional.
+#### 3) Confounding: how correlation arises without causation
 
-#### 3) Assumptions (what you need for a causal claim)
+A confounder $Z$ causes both $X$ and $Y$:
 
-A causal claim requires an identification strategy:
-- randomization,
-- a natural experiment,
-- a credible quasi-experimental design (DiD/IV/RD),
-- or a structural model with defensible assumptions.
-
-Without identification, regression coefficients are best interpreted as conditional associations.
-
-#### 4) Estimation mechanics: how confounding creates correlation without causation
-
-Consider a simple confounding structure:
-- $Z$ causes both $X$ and $Y$.
-
-One possible DGP:
 $$
 X = aZ + \eta, \qquad Y = bZ + \varepsilon.
 $$
 
-Even if $X$ does not cause $Y$, $X$ and $Y$ will be correlated because they share the common cause $Z$.
+Even if $X$ does not cause $Y$, they will be correlated because they share the common cause $Z$.
 
-Regression “controls” can help if you measure the confounder, but:
+Regression "controls" can help if you measure the confounder, but:
 - you rarely observe all confounders,
-- controlling for the wrong variables (colliders/mediators) can introduce bias.
+- controlling for the wrong variables (colliders, mediators) can introduce bias.
 
-#### 5) Inference: significance is not causality
+#### 4) What you need for a causal claim
 
-A small p-value means “incompatible with $\beta=0$ under the model assumptions.”
-It does not mean:
-- the model is correct,
-- the effect is causal,
-- the effect is economically large.
+A causal claim requires an **identification strategy**:
+- Randomization (RCT -- the gold standard in clinical research).
+- Natural experiment (e.g., a policy change that affects some groups but not others).
+- Quasi-experimental design (DiD, IV, RD) with defensible assumptions.
+- A structural model with explicit, testable assumptions.
 
-#### 6) Diagnostics + robustness (minimum set)
+Without identification, regression coefficients are best described as **conditional associations**, not causal effects.
 
-1) **Timing sanity**
-- can $X$ plausibly affect $Y$ given publication/decision timing?
-
-2) **Confounder list**
-- write down plausible common causes of $X$ and $Y$ (before running regressions).
-
-3) **Placebos**
-- test outcomes that should not respond to $X$; “effects” there suggest confounding.
-
-4) **Design upgrade**
-- if you need causality, move from “controls” to FE/DiD/IV where appropriate.
-
-#### 7) Interpretation + reporting
-
-Be explicit about the claim type:
-- predictive association vs causal effect.
-
-**What this does NOT mean**
-- “Controlling for some variables” is not a guarantee of causality.
-
-#### Exercises
-
-- [ ] Write one example where correlation is expected but causality is ambiguous (macro or micro).
-- [ ] Draw a simple confounding story in words (Z→X and Z→Y).
-- [ ] Simulate confounding and show correlation without causation.
-- [ ] Rewrite a regression interpretation paragraph to remove causal language unless justified.
-
-### Deep Dive: Bias–variance tradeoff and overfitting (why train ≠ test)
-
-Understanding overfitting is essential for both ML and econometrics—especially in small-sample macro settings.
+### Deep Dive: Law of Large Numbers and CLT -- why sample means work
 
 #### 1) Intuition (plain English)
 
-Models can fail in two ways:
-- **too simple:** cannot capture real patterns (high bias),
-- **too flexible:** fits noise that does not repeat (high variance).
+The **Law of Large Numbers (LLN)** says: as your sample gets larger, the sample mean converges to the population mean. This is why surveys, clinical trials, and administrative data analyses work -- with enough observations, you get close to the truth.
 
-Overfitting is when performance looks great on training data but poor on new data.
+The **Central Limit Theorem (CLT)** says: regardless of the original distribution, the sampling distribution of the sample mean becomes approximately normal as $n$ grows. This is why $t$-tests and confidence intervals work even when the underlying data is skewed.
 
-#### 2) Notation + setup (define symbols)
+#### 2) Formal statements (brief)
 
-Let:
-- true outcome be $y = f(x) + \varepsilon$,
-- model prediction be $\hat f(x)$,
-- loss be squared error.
-
-For a fixed $x$, the expected prediction error decomposes as:
+**LLN:** If $X_1, X_2, \dots, X_n$ are i.i.d. with mean $\mu$, then:
 
 $$
-\mathbb{E}[(\hat f(x) - y)^2]
-= \underbrace{(\mathbb{E}[\hat f(x)] - f(x))^2}_{\text{bias}^2}
-\; + \;
-\underbrace{\mathbb{E}[(\hat f(x) - \mathbb{E}[\hat f(x)])^2]}_{\text{variance}}
-\; + \;
-\underbrace{\mathrm{Var}(\varepsilon)}_{\text{noise}}.
+\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i \xrightarrow{p} \mu \quad \text{as } n \to \infty.
 $$
 
-**What each term means**
-- bias: systematic error from model misspecification/underfitting,
-- variance: sensitivity to sample fluctuations (overfitting risk),
-- noise: irreducible uncertainty in outcomes.
+**CLT:** Under the same conditions, with finite variance $\sigma^2$:
 
-#### 3) Assumptions
+$$
+\sqrt{n}(\bar{X}_n - \mu) \xrightarrow{d} N(0, \sigma^2).
+$$
 
-This decomposition assumes:
-- a stable data-generating process for the evaluation period,
-- meaningful train/test separation (no leakage),
-- loss function matches the task.
+Equivalently, $\bar{X}_n$ is approximately $N(\mu, \sigma^2/n)$ for large $n$.
 
-In time series, regime changes can dominate this story; walk-forward evaluation helps reveal it.
+#### 3) Why this matters practically
 
-#### 4) Estimation mechanics: why complexity increases variance
+- The CLT justifies using normal-based confidence intervals and $t$-tests even when health outcomes (costs, lengths of stay) are heavily right-skewed.
+- The LLN tells you that with a large enough administrative dataset, your sample averages are reliable estimates of population quantities.
+- **Caveat:** Both require independence (or at least weak dependence). Clustered data (patients within hospitals) or time-series data violate this, which is why you need clustered SEs or HAC SEs.
 
-More flexible models can fit training data better (lower bias) but often:
-- increase variance,
-- require more data to generalize,
-- need regularization/constraints.
+**Health econ example:** Hospital cost data is notoriously right-skewed (a few very expensive cases). With $n = 50$, the sampling distribution of mean cost may not be well-approximated by a normal. With $n = 5{,}000$, the CLT kicks in and normal-based inference is reliable.
 
-In regression, adding more correlated predictors can:
-- increase coefficient variance,
-- create unstable interpretations,
-- improve in-sample fit without improving out-of-sample performance.
+### Deep Dive: Multicollinearity and VIF
 
-#### 5) Inference connection
+#### 1) Intuition (plain English)
 
-Overfitting is not only an ML problem:
-- specification search (trying many models) is a form of overfitting,
-- p-values become misleading under heavy model selection.
+Multicollinearity means your predictors are highly correlated with each other. This does **not** bias your coefficient estimates (if exogeneity holds), but it inflates their standard errors, making it hard to tell which variable is doing the work.
 
-#### 6) Diagnostics + robustness (minimum set)
+**Story example:** You regress patient outcomes on both "number of prescriptions" and "number of doctor visits." These are highly correlated (sicker patients have more of both). OLS cannot cleanly separate their individual effects, so both coefficients may be imprecise and sensitive to the sample.
 
-1) **Train vs test gap**
-- large gap suggests overfitting or leakage.
+#### 2) The VIF diagnostic
 
-2) **Learning curves**
-- performance as a function of sample size can reveal high variance.
-
-3) **Cross-validation (time-aware)**
-- use walk-forward folds for time series.
-
-4) **Regularization sensitivity**
-- ridge/lasso strength vs performance; look for a stable region.
-
-#### 7) Interpretation + reporting
-
-Report:
-- out-of-sample metrics (not just in-sample),
-- evaluation scheme (time split / walk-forward),
-- and a simple overfitting check (train/test comparison).
-
-#### Exercises
-
-- [ ] Fit a simple model and a complex model; compare train vs test performance.
-- [ ] Increase feature count and watch the train/test gap change.
-- [ ] Plot a learning curve (even crude) by training on increasing time windows.
-- [ ] Explain in 6 sentences how overfitting relates to specification search in econometrics.
-
-### Multicollinearity and VIF — preview
-
-When predictors are highly correlated, regression coefficients become unstable. The key diagnostic is the **Variance Inflation Factor (VIF)**:
+The **Variance Inflation Factor** for predictor $j$:
 
 $$
 \mathrm{VIF}_j = \frac{1}{1 - R_j^2}
 $$
 
-where $R_j^2$ comes from regressing feature $j$ on all other features. VIF > 5 suggests notable collinearity; VIF > 10 suggests serious collinearity.
+where $R_j^2$ is the $R^2$ from regressing feature $j$ on all other features.
 
-Key points:
-- Multicollinearity inflates SE but does **not** bias coefficients (if exogeneity holds).
-- It makes "holding others fixed" interpretations unrealistic when predictors move together.
-- Solutions: drop redundant variables, use regularization (ridge/lasso), or PCA.
+- $\mathrm{VIF}_j = 1$: no collinearity (feature $j$ is uncorrelated with others).
+- $\mathrm{VIF}_j = 5$: the variance of $\hat\beta_j$ is 5x what it would be without collinearity.
+- $\mathrm{VIF}_j > 10$: serious collinearity; interpret $\hat\beta_j$ with caution.
 
-> **Full treatment**: See the [regression guide: Multicollinearity and VIF](../02_regression/00_single_factor_regression_micro.md#deep-dive-multicollinearity-and-vif--why-coefficients-become-unstable) for the complete derivation, diagnostics, and exercises.
+#### 3) When multicollinearity matters vs. when it does not
 
-### Hypothesis Testing — preview
+| Goal | Does multicollinearity matter? | Why |
+|---|---|---|
+| Interpreting individual coefficients | Yes | SEs are inflated; coefficients are unstable |
+| Overall prediction | Usually not much | Collinear features are redundant but not harmful for $\hat{y}$ |
+| Causal inference (treatment effect) | Depends | If treatment is collinear with controls, the treatment effect estimate is imprecise |
+| Variable selection | Yes | Hard to tell which variables to include/exclude |
 
-Hypothesis tests appear in every regression output. The essentials:
+#### 4) Worked example
 
-- **p-value**: probability of data at least as extreme as observed, **under the null and model assumptions**. It is not the probability the null is true.
-- **t-statistic**: $t_j = \hat\beta_j / \widehat{SE}(\hat\beta_j)$ — how many SEs the coefficient is from zero.
-- **Confidence interval**: $\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j)$ — shows sign and magnitude uncertainty together. Often more informative than p-values.
-- Changing SE estimator (naive → HC3 → HAC → clustered) changes the p-value **without** changing the coefficient.
+```python
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-Common pitfalls:
-- Multiple testing / spec search inflates false positives.
-- "Significant" is not "important" and "not significant" is not "no effect."
-- A small p-value is not causal evidence without an identification strategy.
+rng = np.random.default_rng(11)
+n = 300
 
-> **Full treatment**: See the [regression guide: Hypothesis Testing](../02_regression/00_single_factor_regression_micro.md#deep-dive-hypothesis-testing--how-to-read-p-values-without-fooling-yourself) for the complete derivation, demos, and exercises.
+# Two highly correlated health predictors + one independent
+age = rng.normal(50, 10, size=n)
+bmi = 0.3 * age + rng.normal(0, 3, size=n)         # correlated with age
+exercise_hours = rng.normal(5, 2, size=n)            # independent
+
+# Outcome
+cost = 200 + 50 * age + 30 * bmi + (-80) * exercise_hours + rng.normal(0, 500, size=n)
+
+X = pd.DataFrame({"age": age, "bmi": bmi, "exercise": exercise_hours})
+X_const = sm.add_constant(X)
+
+# Compute VIF
+for i, col in enumerate(X_const.columns):
+    if col == "const":
+        continue
+    vif = variance_inflation_factor(X_const.values, i)
+    print(f"VIF({col}): {vif:.2f}")
+
+# Regression
+model = sm.OLS(cost, X_const).fit()
+print("\n", model.summary2().tables[1].to_string())
+# Note: age and bmi will have high VIF and wide CIs, exercise will not.
+```
+
+#### 5) Solutions for multicollinearity
+
+- **Drop redundant variables** if theory supports it (e.g., keep BMI, drop weight and height separately).
+- **Regularization** (ridge regression shrinks correlated coefficients toward each other; lasso selects one).
+- **PCA** if you do not need interpretable coefficients.
+- **Accept it** if your goal is prediction and the overall model performs well out-of-sample.
+
+> **Full treatment**: See the [regression guide: Multicollinearity and VIF](../02_regression/00_single_factor_regression_micro.md#deep-dive-multicollinearity-and-vif--why-coefficients-become-unstable) for the complete derivation with matrix algebra.
+
+### Deep Dive: Bias-variance tradeoff and overfitting
+
+#### 1) Intuition (plain English)
+
+Models can fail in two ways:
+- **Too simple (high bias):** cannot capture real patterns. Example: fitting a straight line to a clearly nonlinear dose-response curve.
+- **Too flexible (high variance):** fits noise that does not repeat. Example: a 20-degree polynomial that passes through every training point but oscillates wildly on new data.
+
+Overfitting is when performance looks great on training data but poor on new data.
+
+#### 2) Formal decomposition
+
+Let the true outcome be $y = f(x) + \varepsilon$ and the model prediction be $\hat{f}(x)$. The expected prediction error decomposes as:
+
+$$
+\mathbb{E}[(\hat{f}(x) - y)^2]
+= \underbrace{(\mathbb{E}[\hat{f}(x)] - f(x))^2}_{\text{bias}^2}
+\; + \;
+\underbrace{\mathbb{E}[(\hat{f}(x) - \mathbb{E}[\hat{f}(x)])^2]}_{\text{variance}}
+\; + \;
+\underbrace{\mathrm{Var}(\varepsilon)}_{\text{irreducible noise}}.
+$$
+
+- **Bias**: systematic error from underfitting / misspecification.
+- **Variance**: sensitivity to the particular training sample.
+- **Noise**: inherent unpredictability in outcomes. No model can reduce this.
+
+#### 3) Practical implications
+
+- Adding more correlated predictors can increase variance without improving out-of-sample performance.
+- Specification search (trying many models) is a form of overfitting: you select the model that happened to look best on this sample.
+- Regularization (ridge, lasso, elastic net) explicitly trades a small increase in bias for a large reduction in variance.
+
+#### 4) Connection to health econ
+
+In health economics, datasets are often moderate-sized (hundreds to low thousands of observations, not millions). This means:
+- Overfitting is a constant threat, especially with many potential control variables.
+- Cross-validation (time-aware for panel/time-series data) is essential for honest model evaluation.
+- "Kitchen sink" regressions (throwing in every available variable) frequently overfit.
+
+### Common Mistakes (statistics-specific)
+- Interpreting a confidence interval as "95% probability the parameter is in this range" (it is not -- the parameter is fixed; the interval is random across samples).
+- Treating "not statistically significant" as "no effect." It may just mean low power.
+- Running many specifications or subgroup analyses and reporting only the one with $p < 0.05$ (p-hacking / multiple testing).
+- Ignoring multicollinearity warnings and over-interpreting individual coefficients from a model with VIF > 10.
+- Confusing statistical significance with practical/clinical significance. A drug that reduces blood pressure by 0.5 mmHg may be "significant" with $n = 50{,}000$ but clinically meaningless.
+- Assuming that "controlling for confounders" in a regression makes the coefficient causal. Without an identification strategy, it does not.
+- Using the wrong SE estimator for the data structure (e.g., naive SEs on clustered data).
 
 ### Project Code Map
-- `scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)
-- `src/evaluation.py`: time splits and metrics used later
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
 - `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
 
-### Common Mistakes
-- Using `train_test_split(shuffle=True)` on time-indexed data.
-- Looking at the test set repeatedly while tuning ("test leakage").
-- Assuming a significant p-value implies causation.
-- Running many tests/specs and treating a small p-value as proof (multiple testing / p-hacking).
+#### Exercises
+
+- [ ] Simulate a confounder and show that the naive correlation between $X$ and $Y$ disappears when you control for $Z$.
+- [ ] Compute VIF for a regression with 5+ predictors. Identify the most collinear pair and explain what it means for interpretation.
+- [ ] Run a hypothesis test on a treatment effect. Report the $p$-value, the 95% CI, and write one sentence correctly interpreting each.
+- [ ] Demonstrate the CLT: draw 1,000 samples of size $n=5$ and $n=500$ from a skewed distribution. Plot the sampling distribution of $\bar{X}$ for each. When does it look normal?
+- [ ] Fit a simple model and a complex model on the same data. Compare train vs. test performance. Which overfits? By how much?
+- [ ] Take a regression with $p = 0.04$ under naive SEs. Recompute with HC3 robust SEs. Does the conclusion change?
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You now have the tooling to avoid the two most common beginner mistakes in economic ML:
-1) leaking future information, and
-2) over-interpreting correlated coefficients.
+This guide covered the statistical foundations that every applied regression and ML analysis depends on:
 
+1. **Hypothesis testing** formalizes "Is this pattern real or noise?" but $p$-values require correct interpretation -- they are not the probability the null is true.
+2. **Confidence intervals** are often more informative than $p$-values because they convey sign, magnitude, and precision simultaneously.
+3. **Correlation does not imply causation.** Without an identification strategy, regression coefficients are associations, not causal effects.
+4. **The LLN and CLT** justify why sample-based inference works -- but they require (approximate) independence, which clustered or time-series data violates.
+5. **Multicollinearity** inflates coefficient standard errors without biasing them. Use VIF to diagnose it and regularization or variable selection to address it.
+6. **The bias-variance tradeoff** explains why more flexible models are not always better, especially in the moderate-sample-size world of health economics.
 
-Suggested readings:
-- Hyndman & Athanasopoulos: Forecasting: Principles and Practice (time series basics)
-- Wooldridge: Introductory Econometrics (interpretation + pitfalls)
-- scikit-learn docs: model evaluation and cross-validation
+The unifying theme: statistical tools are powerful but require careful application. Every number in a regression table (coefficient, SE, $p$-value, CI) tells you something, but only if the underlying assumptions are met.
+
+### Suggested Readings
+- Wooldridge, *Introductory Econometrics* -- Chapters 4-5 on inference, Chapter 3 on multicollinearity.
+- Angrist & Pischke, *Mostly Harmless Econometrics* -- Chapter 3 on regression and causality.
+- Wasserstein & Lazar, "The ASA Statement on p-Values" (2016) -- essential reading on what $p$-values mean.
+- James, Witten, Hastie & Tibshirani, *Introduction to Statistical Learning* -- Chapter 2 on bias-variance, Chapter 6 on regularization.
+- Greenland et al., "Statistical tests, P values, confidence intervals, and power" (2016) -- practical guide to correct interpretation.

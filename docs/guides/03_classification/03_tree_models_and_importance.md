@@ -11,17 +11,19 @@
 
 This guide accompanies the notebook `notebooks/03_classification/03_tree_models_and_importance.ipynb`.
 
-This classification module predicts **next-quarter technical recession** from macro indicators.
+This classification module predicts **next-quarter technical recession** from macro indicators using tree-based models and interprets their feature-importance outputs.
 
 ### Key Terms (defined)
-- **Logistic regression**: a linear model that outputs probabilities via a sigmoid function.
-- **Log-odds**: `log(p/(1-p))`; logistic regression is linear in log-odds.
-- **Threshold**: rule converting probability into class (e.g., 1 if p>=0.5).
-- **Precision/Recall**: trade off false positives vs false negatives.
-- **ROC-AUC / PR-AUC**: threshold-free ranking metrics.
-- **Calibration**: whether predicted probabilities match observed frequencies.
-- **Brier score**: mean squared error of probabilities (lower is better).
-
+- **Decision tree**: a model that recursively partitions feature space via binary splits.
+- **Gini impurity**: a measure of node "mixedness"; lower means purer.
+- **Entropy / information gain**: an alternative split criterion based on information theory.
+- **Bagging**: training many models on bootstrap samples and averaging predictions to reduce variance.
+- **Random Forest**: bagged decision trees where each split considers a random feature subset.
+- **Boosting**: sequential training where each new tree corrects the previous ensemble's errors.
+- **Gradient Boosted Trees (GBT)**: boosting that fits each tree to the negative gradient of the loss.
+- **Feature importance (impurity-based)**: total reduction in impurity across all splits on a feature.
+- **Feature importance (permutation)**: drop in performance when a single feature is shuffled.
+- **SHAP values**: Shapley-based attributions that decompose each prediction into per-feature contributions.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
@@ -35,257 +37,304 @@ This classification module predicts **next-quarter technical recession** from ma
 - Complete notebook section: Fit tree model
 - Complete notebook section: Compare metrics
 - Complete notebook section: Interpret importance
-- Establish baselines before fitting any model.
-- Fit at least one probabilistic classifier and evaluate ROC-AUC, PR-AUC, and Brier score.
-- Pick a threshold intentionally (cost-based or metric-based) and justify it.
+- Fit a Random Forest or Gradient Boosted classifier and compare its ROC-AUC to the logistic baseline.
+- Compute both impurity-based and permutation importance and note where they disagree.
+- Identify at least one correlated-feature group and explain how it affects importance rankings.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Toy logistic regression (not the notebook data):
+# Predicting 30-day hospital readmission with a Random Forest (toy data):
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+from sklearn.inspection import permutation_importance
 
-rng = np.random.default_rng(0)
-X = rng.normal(size=(300, 3))
-p = 1 / (1 + np.exp(-(0.2 + 1.0*X[:,0] - 0.8*X[:,1])))
-y = rng.binomial(1, p)
+rng = np.random.default_rng(42)
+n = 500
 
-clf = Pipeline([('scaler', StandardScaler()), ('lr', LogisticRegression(max_iter=5000))])
-clf.fit(X, y)
+# Simulated patient features
+age = rng.normal(65, 12, n)
+length_of_stay = rng.poisson(5, n)
+num_comorbidities = rng.poisson(2, n)
+discharge_score = rng.normal(0, 1, n)
+
+X = np.column_stack([age, length_of_stay, num_comorbidities, discharge_score])
+feature_names = ["age", "length_of_stay", "num_comorbidities", "discharge_score"]
+
+# True readmission probability depends nonlinearly on age and comorbidities
+logit = -3 + 0.03 * age + 0.4 * num_comorbidities + 0.1 * length_of_stay
+prob = 1 / (1 + np.exp(-logit))
+y = rng.binomial(1, prob)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=0
+)
+
+rf = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=6,
+    min_samples_leaf=10,
+    random_state=0,
+)
+rf.fit(X_train, y_train)
+
+y_prob = rf.predict_proba(X_test)[:, 1]
+print(f"ROC-AUC: {roc_auc_score(y_test, y_prob):.3f}")
+
+# Compare importance methods
+imp_gini = rf.feature_importances_
+perm = permutation_importance(rf, X_test, y_test, n_repeats=30, random_state=0)
+
+for name, gi, pi in zip(feature_names, imp_gini, perm.importances_mean):
+    print(f"  {name:>20s}  Gini={gi:.3f}  Perm={pi:.3f}")
 ```
+
+**Interpreting the output:** `age` is a continuous variable with many possible split points, so Gini importance tends to inflate its ranking relative to the discrete `num_comorbidities`. Permutation importance, which measures the actual performance drop when a feature is shuffled, often gives a ranking more aligned with the true data-generating process. This illustrates why you should always compute both.
 
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Classification: probabilities, losses, and decision thresholds
+**Prerequisites:** [Classification foundations](00_recession_classifier_baselines.md) -- core classification concepts (probabilities, losses, thresholds, metrics, calibration overview, class imbalance).
 
-In this repo, classification means: predict **recession risk** as a probability and make decisions with explicit trade-offs.
+### Deep Dive: Tree Models and Feature Importance
 
-#### 1) Intuition (plain English)
+Tree-based models can capture nonlinearities and interactions that linear classifiers miss. However, interpreting "which features matter" requires understanding the mechanics beneath the importance scores.
 
-Binary labels (recession vs not) hide uncertainty.
-The useful object is the probability:
-- “Given data today, how likely is a recession next quarter?”
+#### 1) How a decision tree splits: Gini impurity
 
-Probabilities let you:
-- compare risk over time,
-- set thresholds based on costs,
-- evaluate calibration (whether 30% means ~30% in reality).
+A decision tree greedily partitions the data at each node by choosing the feature and threshold that produce the purest child nodes. The most common criterion for classification is **Gini impurity**.
 
-#### 2) Notation + setup (define symbols)
-
-Let:
-- $y_i \in \{0,1\}$ be the true label (1 = recession),
-- $x_i$ be features,
-- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
-
-Logistic regression uses the log-odds (“logit”) link:
+For a node with $K$ classes and class proportions $p_k$:
 
 $$
-\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
+G = 1 - \sum_{k=1}^{K} p_k^2.
 $$
 
-Equivalently:
+For binary classification ($K=2$):
 
 $$
-p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
+G = 2\,p\,(1-p),
 $$
 
-**What each term means**
-- $\sigma(\cdot)$ maps real numbers to (0,1).
-- coefficients move probabilities through the log-odds scale.
+where $p$ is the proportion of the positive class. When the node is perfectly pure ($p=0$ or $p=1$), $G=0$. When it is maximally mixed ($p=0.5$), $G=0.5$.
 
-#### 3) Assumptions (and what “probability model” means)
+**Worked example -- splitting on age > 65 for readmission prediction:**
 
-Logistic regression assumes:
-- a linear relationship in log-odds,
-- observations are conditionally independent given $x$ (often violated in time series),
-- no perfect multicollinearity in features.
+Suppose a node has 200 patients: 60 readmitted ($p = 0.30$, $G = 2 \times 0.30 \times 0.70 = 0.42$).
 
-Even if the model is misspecified, it can still be useful for ranking risk.
-But calibration can suffer, so we measure it.
+Consider splitting on `age > 65`:
+- **Left child** (age $\le$ 65): 120 patients, 24 readmitted. $p_L = 0.20$, $G_L = 2 \times 0.20 \times 0.80 = 0.32$.
+- **Right child** (age $> 65$): 80 patients, 36 readmitted. $p_R = 0.45$, $G_R = 2 \times 0.45 \times 0.55 = 0.495$.
 
-#### 4) Estimation mechanics (how the model is fit)
-
-Logistic regression is typically fit by maximum likelihood:
-- choose $\beta$ to maximize the probability of the observed labels.
-
-The negative log-likelihood corresponds to **log loss** (cross-entropy):
+Weighted Gini after split:
 
 $$
-\ell(\beta) = -\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
+G_{\text{split}} = \frac{120}{200} \times 0.32 + \frac{80}{200} \times 0.495 = 0.192 + 0.198 = 0.390.
 $$
 
-In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
+Impurity reduction: $\Delta G = 0.42 - 0.39 = 0.03$. The tree evaluates every feature and every threshold and picks the split with the largest $\Delta G$.
 
-#### 5) Inference vs prediction
+An alternative criterion is **entropy** (information gain):
 
-- `statsmodels` gives standard errors and p-values (inference framing).
-- `sklearn` focuses on predictive performance (pipelines, CV, regularization).
-
-In this project:
-- prioritize time-aware out-of-sample evaluation,
-- treat inference outputs as descriptive unless you have identification.
-
-#### 6) Metrics (what to measure and why)
-
-At minimum, treat these as standard:
-
-- **ROC-AUC:** ranking performance (threshold-free).
-- **PR-AUC:** often more informative when positives are rare.
-- **Brier score:** mean squared error of probabilities:
 $$
-\text{Brier} = \frac{1}{n} \sum_i (p_i - y_i)^2.
-$$
-- **Calibration plots:** do predicted probabilities match observed frequencies?
-
-#### 7) Thresholding is a decision rule (not a model property)
-
-A threshold $\tau$ converts probability to a hard label:
-$$
-\hat y_i = 1[p_i \ge \tau].
+H = -\sum_{k=1}^{K} p_k \log_2 p_k.
 $$
 
-Choosing $\tau$ should reflect costs:
-- false positives (crying wolf),
-- false negatives (missing recessions).
+In practice, Gini and entropy usually produce similar trees. Gini is slightly faster to compute and is the default in scikit-learn.
 
-#### 8) Diagnostics + robustness (minimum set)
+#### 2) Why trees overfit and how ensembles help
 
-1) **Time-aware evaluation**
-- use a time split or walk-forward; avoid random splits for forecasting tasks.
+A single decision tree grown to full depth will memorize the training data (zero training error, poor generalization). Two ensemble strategies address this:
 
-2) **Calibration**
-- plot predicted vs observed probabilities; compute Brier score.
+**Bagging (Bootstrap Aggregating) $\to$ Random Forest.**
+- Draw $B$ bootstrap samples from the training set.
+- Fit one tree per sample. At each split, consider only a random subset of $\sqrt{p}$ features (for classification) or $p/3$ (for regression).
+- Average predicted probabilities across all $B$ trees.
+- Averaging reduces variance without increasing bias. The random feature subset decorrelates trees, which is critical: averaging highly correlated trees gives little variance reduction.
 
-3) **Threshold sensitivity**
-- show how precision/recall changes with threshold.
+**Boosting $\to$ Gradient Boosted Trees (GBT).**
+- Start with a simple initial prediction (e.g., the base rate).
+- Fit a small (shallow) tree to the negative gradient of the loss (for log loss, this is the residual on the probability scale).
+- Add that tree's predictions to the ensemble, scaled by a learning rate $\eta$.
+- Repeat for $B$ rounds.
+- Each tree is intentionally weak (shallow), and the ensemble gradually reduces bias. Overfitting is controlled by the learning rate and early stopping.
 
-4) **Feature stability**
-- check whether model performance is stable over subperiods (structural change).
+#### 3) Random Forest vs Gradient Boosting: when to use each
 
-#### 9) Interpretation + reporting
+| Aspect | Random Forest | Gradient Boosted Trees |
+|---|---|---|
+| **Bias vs variance** | Low bias, reduces variance via averaging | Reduces bias sequentially; variance controlled by $\eta$ |
+| **Tuning difficulty** | Relatively forgiving; few critical hyperparameters | More sensitive; learning rate, depth, and n_estimators interact |
+| **Training speed** | Embarrassingly parallel (trees are independent) | Sequential (each tree depends on the previous) |
+| **Performance ceiling** | Often competitive, sometimes slightly below GBT | Often achieves the best tabular performance |
+| **Overfitting risk** | Low (more trees rarely hurts) | Higher (too many rounds or too high $\eta$ overfits) |
+| **Recommended when** | You want a strong, low-effort baseline | You are willing to tune carefully and want maximum performance |
 
-Report:
-- horizon (what “next quarter” means),
-- split method and dates,
-- probability calibration (not just accuracy),
-- threshold choice rationale.
+In health economics applications with moderate sample sizes and many correlated features (e.g., claims data), Random Forest is often the safer starting point. Gradient Boosted Trees (via `XGBoost`, `LightGBM`, or `sklearn.ensemble.HistGradientBoostingClassifier`) are preferred when performance is paramount and you can afford a proper tuning budget.
 
-**What this does NOT mean**
-- AUC does not tell you if probabilities are calibrated.
-- A good backtest does not guarantee future performance in a new regime.
+#### 4) Hyperparameter tuning: the key parameters
+
+**Random Forest:**
+| Parameter | What it controls | Rule of thumb |
+|---|---|---|
+| `n_estimators` | Number of trees | 200--1000; more is rarely harmful, just slower |
+| `max_depth` | Maximum tree depth | 6--15; `None` (full growth) is the default but risks overfitting on small data |
+| `min_samples_leaf` | Minimum observations in a leaf | 5--50; acts as regularization |
+| `max_features` | Features considered per split | `"sqrt"` (classification) or `"log2"` |
+
+**Gradient Boosted Trees:**
+| Parameter | What it controls | Rule of thumb |
+|---|---|---|
+| `n_estimators` | Number of boosting rounds | 100--2000; use early stopping on a validation set |
+| `learning_rate` ($\eta$) | Step size per tree | 0.01--0.1; lower requires more trees but generalizes better |
+| `max_depth` | Depth of each tree | 3--6; shallow trees are standard for boosting |
+| `min_samples_leaf` | Minimum observations in a leaf | 10--50 |
+| `subsample` | Fraction of data per tree | 0.5--0.8; adds stochasticity, reduces overfitting |
+
+**Tuning strategy:** Start with a low learning rate (0.05) and use early stopping to find `n_estimators`. Then tune `max_depth` and `min_samples_leaf` via cross-validation (time-aware for forecasting tasks). Avoid grid-searching all parameters simultaneously -- it is computationally wasteful and rarely better than sequential tuning.
+
+#### 5) Feature importance: impurity-based vs permutation
+
+**Impurity-based importance** (also called "Gini importance" or "mean decrease in impurity"):
+- For each feature, sum the impurity reductions ($\Delta G$) across every split that uses that feature, across all trees.
+- Normalize so they sum to 1.
+- **Pros:** Free (computed during training), fast.
+- **Cons:**
+  - Biased toward high-cardinality features (continuous variables and features with many unique values get more candidate split points).
+  - Biased toward correlated features: when two features carry similar information, the tree randomly picks one at each split, so importance is **split between them**. Neither appears as important as it truly is.
+  - Computed on training data, so it can reflect overfitting.
+
+**Permutation importance:**
+- Fit the model. Record baseline performance (e.g., AUC) on the test set.
+- For each feature: randomly shuffle that feature's values in the test set, re-score, and record the performance drop.
+- Repeat many times (e.g., 30) to get a distribution of importance.
+- **Pros:**
+  - Model-agnostic (works with any classifier).
+  - Evaluated on held-out data (reflects generalization, not training fit).
+  - Less biased by cardinality.
+- **Cons:**
+  - Slower (requires repeated re-scoring).
+  - Still affected by correlated features, but in a different way: shuffling one feature in a correlated pair can be "compensated" by the other, so both may appear less important than the pair truly is. Grouping correlated features and shuffling them together addresses this.
+
+**Why they disagree -- a concrete scenario:**
+Consider a recession prediction model with two highly correlated features: `yield_spread_10y2y` and `yield_spread_10y3m`. Both carry similar information. In a Random Forest:
+- Impurity-based importance splits the credit roughly 50/50, so each appears only moderately important.
+- Permutation importance for either feature alone may be low (because the other feature compensates), but permuting both simultaneously produces a large drop.
+
+**Takeaway:** Always compute both, compare them, and when they disagree, investigate feature correlations.
+
+#### 6) SHAP values: the gold standard for tree model interpretation
+
+SHAP (SHapley Additive exPlanations) values come from cooperative game theory. For each prediction, SHAP decomposes the output into additive contributions from each feature:
+
+$$
+f(x) = \phi_0 + \sum_{j=1}^{p} \phi_j,
+$$
+
+where $\phi_0$ is the base value (average prediction) and $\phi_j$ is the contribution of feature $j$ for that specific observation.
+
+**Why SHAP is preferred for tree models:**
+- **Local explanations:** SHAP tells you why *this specific patient* was flagged as high-risk, not just which features matter on average.
+- **Consistent:** if a feature contributes more to the prediction in model A than model B, its SHAP value will be larger. Impurity importance lacks this property.
+- **Efficient for trees:** the `TreeSHAP` algorithm computes exact SHAP values in polynomial time for tree ensembles (as opposed to the exponential cost of exact Shapley values for arbitrary models).
+- **Rich visualizations:** summary plots (feature importance as distributions), dependence plots (feature value vs SHAP value), and force plots (per-prediction explanations).
+
+```python
+# Quick SHAP usage with a fitted Random Forest:
+import shap
+
+explainer = shap.TreeExplainer(rf)
+shap_values = explainer.shap_values(X_test)
+
+# Global importance (mean |SHAP|)
+shap.summary_plot(shap_values[1], X_test, feature_names=feature_names)
+```
+
+In health economics, SHAP values are especially valuable because stakeholders (clinicians, policymakers) need to understand *why* a model predicts high readmission risk for a specific patient, not just that it does. Regulatory contexts may require this level of interpretability.
+
+#### 7) Health econ example: predicting 30-day hospital readmissions
+
+Consider a Random Forest predicting 30-day readmission after heart failure hospitalization. Features include patient demographics (age, sex), clinical measures (ejection fraction, BNP level, number of comorbidities), prior utilization (ED visits in last 6 months, prior admissions), and discharge characteristics (length of stay, discharge disposition).
+
+**Which features matter most?**
+
+Typical findings from the literature and from SHAP analysis:
+- **Number of prior admissions** and **ED visits** dominate: these are strong proxies for underlying severity and social determinants.
+- **Ejection fraction** and **BNP** rank high clinically, but their permutation importance may be lower if they are correlated with each other and with age.
+- **Length of stay** has a nonlinear effect: very short stays (possible premature discharge) and very long stays (indicating severity) both increase readmission risk. SHAP dependence plots reveal this U-shape, which impurity importance and permutation importance rankings alone would miss.
+- **Discharge disposition** (home vs skilled nursing facility) interacts with age: being discharged home is protective for younger patients but risky for older patients with limited support. Trees capture this interaction naturally; feature importance tells you the feature matters but not *how*.
+
+**Key lesson:** Importance rankings tell you *what* to look at. SHAP values and partial dependence plots tell you *how* features drive predictions. Always follow importance with deeper investigation.
+
+#### 8) Diagnostics and robustness
+
+1) **Out-of-sample importance.** Always compute permutation importance on held-out data, not training data. Training-set permutation importance reflects overfitting.
+
+2) **Stability across time periods.** Compute importance separately on pre-2008, 2008--2015, and post-2015 data. If the ranking changes dramatically, the model is sensitive to regime and importance claims are fragile.
+
+3) **Correlation groups.** Before interpreting individual feature importance, compute a correlation matrix. Group features with $|\rho| > 0.7$ and interpret the group rather than any single member.
+
+4) **Calibration check.** Tree ensembles (especially Random Forests) tend to produce probabilities clustered away from 0 and 1. Check calibration plots and consider Platt scaling or isotonic regression if probabilities need to be well-calibrated (e.g., for clinical risk scores).
+
+5) **OOB (Out-of-Bag) error.** Random Forests provide a free estimate of generalization error: each tree was not trained on roughly 37% of the data, so those "out-of-bag" observations can be used for evaluation without a separate validation set. This is useful for quick diagnostics but does not replace proper time-aware evaluation for forecasting.
 
 #### Exercises
 
-- [ ] Fit a classifier and report ROC-AUC, PR-AUC, and Brier; explain what each measures.
-- [ ] Produce a calibration plot and interpret whether probabilities are over/under-confident.
-- [ ] Choose a threshold based on a cost story (false negative vs false positive) and justify it.
-- [ ] Compare random-split vs time-split AUC and explain the difference.
+- [ ] Fit a Random Forest and a Gradient Boosted classifier to the same data. Compare ROC-AUC and Brier score. Which model performs better, and why might that be?
+- [ ] Compute impurity-based and permutation importance for the same model. Where do the rankings disagree? Identify a correlated feature pair that explains the disagreement.
+- [ ] Evaluate importance stability across two non-overlapping time periods. Which features remain consistently important?
+- [ ] Produce a SHAP summary plot for the top 8 features. Identify one feature with a nonlinear effect (visible as a non-monotone color pattern).
+- [ ] Tune `max_depth` and `min_samples_leaf` for a Random Forest using time-aware cross-validation. Report the best configuration and the improvement over the default.
 
-### Deep Dive: Tree models and feature importance (interpretation pitfalls)
+### Key Terms (Tree Models)
 
-Tree-based models can capture nonlinearities and interactions, but interpretation requires care.
+| Term | Definition |
+|---|---|
+| **Gini impurity** | $G = 1 - \sum p_k^2$; measures node impurity. Lower is purer. |
+| **Entropy** | $H = -\sum p_k \log_2 p_k$; alternative split criterion. |
+| **Bagging** | Bootstrap aggregating: train on bootstrap samples, average predictions. |
+| **Boosting** | Sequential training: each model corrects the ensemble's residuals. |
+| **Random Forest** | Bagged trees with random feature subsets at each split. |
+| **Gradient Boosted Trees** | Boosting where each tree fits the negative gradient of the loss. |
+| **Impurity importance** | Total impurity reduction across all splits on a feature; biased by cardinality. |
+| **Permutation importance** | Performance drop when a feature is shuffled on test data; model-agnostic. |
+| **SHAP values** | Shapley-based per-feature, per-prediction attributions; gold standard for tree interpretation. |
+| **Out-of-bag (OOB) error** | Free generalization estimate from bootstrap samples not used to train each tree. |
+| **Concept drift** | Change in the data-generating process over time, degrading model performance. |
 
-#### 1) Intuition (plain English)
+### Common Mistakes (Tree Models)
 
-Trees can outperform linear models in prediction, especially when relationships are nonlinear.
-But tree “feature importance” is often misunderstood.
-
-**Story example:** A random forest says a variable is “important.”
-That does not mean changing the variable causes the outcome; it means the variable helps prediction in the fitted model.
-
-#### 2) Notation + setup (define terms)
-
-Tree models partition feature space into regions and predict with averages (regression) or probabilities (classification).
-
-Feature importance measures (common types):
-- **impurity-based importance:** how much splits reduce impurity across the forest,
-- **permutation importance:** how much performance drops when a feature is shuffled.
-
-#### 3) Assumptions
-
-Interpretation assumes:
-- evaluation is leakage-free,
-- features are aligned correctly in time,
-- importance is stable across folds/periods.
-
-Correlated features complicate importance:
-- the model can “spread” importance across correlated predictors.
-
-#### 4) Estimation mechanics (high level)
-
-Impurity-based importance is fast but can be biased toward:
-- variables with many possible split points,
-- noisy continuous features.
-
-Permutation importance is often more reliable:
-- measure baseline performance,
-- shuffle one feature in the test set,
-- measure performance drop.
-
-#### 5) Inference: treat importance as descriptive
-
-Importance does not come with simple p-values.
-Uncertainty can be assessed via:
-- cross-validation variability,
-- bootstrap resampling,
-- permutation distributions.
-
-#### 6) Diagnostics + robustness (minimum set)
-
-1) **Out-of-sample importance**
-- compute importance on test/validation data, not training.
-
-2) **Stability across folds/time**
-- if importance changes drastically across periods, interpretation is fragile.
-
-3) **Correlation groups**
-- check whether important variables are part of a correlated cluster; interpret the group, not a single variable.
-
-#### 7) Interpretation + reporting
-
-Report:
-- model type and evaluation scheme,
-- the importance method (impurity vs permutation),
-- stability checks.
-
-**What this does NOT mean**
-- importance is not a causal effect,
-- importance is not the same as “economic significance.”
-
-#### Exercises
-
-- [ ] Compute impurity and permutation importance for the same model; compare and explain differences.
-- [ ] Evaluate importance stability across two time periods.
-- [ ] Identify a correlated feature group and explain why “the most important feature” can be unstable.
+- **Treating impurity importance as ground truth.** It is biased toward high-cardinality and correlated features. Always cross-check with permutation importance.
+- **Interpreting importance as causation.** A feature being "important" for prediction does not mean changing it would change the outcome. This is a prediction model, not a causal model.
+- **Growing fully deep trees without regularization.** Unconstrained trees memorize noise. Set `max_depth` and `min_samples_leaf` explicitly.
+- **Ignoring calibration.** Random Forests and GBTs can rank risk well (high AUC) while producing poorly calibrated probabilities. If the probability value itself matters (as it often does in health econ applications), calibrate post-hoc.
+- **Using training-set permutation importance.** This reflects what the model memorized, not what generalizes. Always permute on held-out data.
+- **Over-tuning on a single validation fold.** Use walk-forward or repeated time splits for hyperparameter tuning.
 
 ### Project Code Map
-- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall)
+- `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall) and splits (`time_train_test_split_index`, `walk_forward_splits`)
 - `scripts/train_recession.py`: training script that writes artifacts
 - `scripts/predict_recession.py`: prediction script that loads artifacts
 - `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
 - `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
-
-### Common Mistakes
-- Reporting only accuracy (can be misleading if recessions are rare).
-- Picking threshold=0.5 by default without considering costs.
-- Evaluating with random splits (time leakage).
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You should now be able to build a recession probability model and explain:
-- what the probability means,
-- how you evaluated it, and
-- why your chosen threshold makes sense.
-
+You should now be able to:
+- Explain how a decision tree selects splits using Gini impurity (or entropy).
+- Describe why single trees overfit and how bagging (Random Forest) and boosting (GBT) address this.
+- Tune the most critical hyperparameters for both Random Forest and GBT.
+- Compute and compare impurity-based and permutation importance, explaining why they can disagree.
+- Use SHAP values to produce local (per-prediction) explanations for tree ensemble models.
+- Apply these tools to health economics contexts like hospital readmission prediction.
 
 Suggested readings:
-- scikit-learn docs: classification metrics, calibration
-- Murphy: Machine Learning (probabilistic interpretation)
-- Applied time-series evaluation articles (walk-forward validation)
+- Breiman (2001): "Random Forests" -- the foundational paper.
+- Friedman (2001): "Greedy Function Approximation: A Gradient Boosting Machine."
+- Lundberg & Lee (2017): "A Unified Approach to Interpreting Model Predictions" (SHAP).
+- scikit-learn docs: `RandomForestClassifier`, `GradientBoostingClassifier`, `permutation_importance`.
+- Hastie, Tibshirani, & Friedman: *Elements of Statistical Learning*, Ch. 10 (Boosting) and Ch. 15 (Random Forests).
+- Christodoulou et al. (2019): "A systematic review shows no performance benefit of machine learning over logistic regression for clinical prediction models" -- a sobering health econ perspective.
