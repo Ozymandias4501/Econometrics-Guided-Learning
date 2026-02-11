@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/08_time_series_econ/01_cointegration_error_correction.ipynb`.
+This guide accompanies the notebook `notebooks/07_time_series_econ/01_cointegration_error_correction.ipynb`.
 
 > **Note:** Cointegration and error correction models are primarily used in **macroeconomics and finance**. For health economics, panel data methods (fixed effects, DiD, IV) are far more central. This guide provides a solid overview for general econometric literacy, but it is not a priority topic for health econ coursework.
 

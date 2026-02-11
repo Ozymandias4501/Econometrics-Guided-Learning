@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/08_time_series_econ/00_stationarity_unit_roots.ipynb`.
+This guide accompanies the notebook `notebooks/07_time_series_econ/00_stationarity_unit_roots.ipynb`.
 
 Before fitting any time-series model — regression, VAR, or forecasting — you need to answer one question: **is this series stable enough that the usual statistical tools make sense?** Stationarity is the formal version of that question, and unit-root tests are the primary diagnostic tools for answering it. Getting this wrong leads to spurious regression, meaningless t-statistics, and models that look great on paper but predict nothing.
 

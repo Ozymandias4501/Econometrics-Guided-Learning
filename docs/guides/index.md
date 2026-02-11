@@ -60,26 +60,26 @@ Use `docs/index.md` for the recommended learning path.
 - [02_build_cli_train_predict](05_model_ops/02_build_cli_train_predict.md)
 - [03_model_cards_and_reporting](05_model_ops/03_model_cards_and_reporting.md)
 
-## 06_capstone
+## 06_causal
 
-- [Part overview](06_capstone/index.md)
+- [Part overview](06_causal/index.md)
 
-- [00_capstone_brief](06_capstone/00_capstone_brief.md)
-- [01_capstone_workspace](06_capstone/01_capstone_workspace.md)
+- [00_build_census_county_panel](06_causal/00_build_census_county_panel.md)
+- [01_panel_fixed_effects_clustered_se](06_causal/01_panel_fixed_effects_clustered_se.md)
+- [02_difference_in_differences_event_study](06_causal/02_difference_in_differences_event_study.md)
+- [03_instrumental_variables_2sls](06_causal/03_instrumental_variables_2sls.md)
 
-## 07_causal
+## 07_time_series_econ
 
-- [Part overview](07_causal/index.md)
+- [Part overview](07_time_series_econ/index.md)
 
-- [00_build_census_county_panel](07_causal/00_build_census_county_panel.md)
-- [01_panel_fixed_effects_clustered_se](07_causal/01_panel_fixed_effects_clustered_se.md)
-- [02_difference_in_differences_event_study](07_causal/02_difference_in_differences_event_study.md)
-- [03_instrumental_variables_2sls](07_causal/03_instrumental_variables_2sls.md)
+- [00_stationarity_unit_roots](07_time_series_econ/00_stationarity_unit_roots.md)
+- [01_cointegration_error_correction](07_time_series_econ/01_cointegration_error_correction.md)
+- [02_var_impulse_responses](07_time_series_econ/02_var_impulse_responses.md)
 
-## 08_time_series_econ
+## 08_capstone
 
-- [Part overview](08_time_series_econ/index.md)
+- [Part overview](08_capstone/index.md)
 
-- [00_stationarity_unit_roots](08_time_series_econ/00_stationarity_unit_roots.md)
-- [01_cointegration_error_correction](08_time_series_econ/01_cointegration_error_correction.md)
-- [02_var_impulse_responses](08_time_series_econ/02_var_impulse_responses.md)
+- [00_capstone_brief](08_capstone/00_capstone_brief.md)
+- [01_capstone_workspace](08_capstone/01_capstone_workspace.md)

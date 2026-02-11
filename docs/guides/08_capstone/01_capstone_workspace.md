@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/06_capstone/01_capstone_workspace.ipynb`.
+This guide accompanies the notebook `notebooks/08_capstone/01_capstone_workspace.ipynb`.
 
 This is the capstone: you will synthesize macro concepts, statistical inference, model evaluation, and reproducibility.
 

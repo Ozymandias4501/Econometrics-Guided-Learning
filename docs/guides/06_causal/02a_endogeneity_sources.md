@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/07_causal/02a_endogeneity_sources.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/02a_endogeneity_sources.ipynb`.
 
 Endogeneity -- the correlation of a regressor with the error term -- is the central problem of causal econometrics. When exogeneity fails, OLS coefficients no longer have a causal interpretation and may not even be consistent estimates of population parameters. This module catalogs the three main sources of endogeneity (omitted variables, measurement error, and simultaneity), derives their bias formulas, and shows how to diagnose and sign the bias before reaching for identification strategies like IV or natural experiments.
 

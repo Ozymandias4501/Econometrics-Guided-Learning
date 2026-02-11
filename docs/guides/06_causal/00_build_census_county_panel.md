@@ -15,7 +15,7 @@
 <a id="intro"></a>
 ## Introduction
 
-This guide accompanies the notebook `notebooks/07_causal/00_build_census_county_panel.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/00_build_census_county_panel.ipynb`.
 
 ### What is panel data?
 
@@ -23,7 +23,7 @@ Panel data (also called longitudinal data) tracks the same entities across multi
 
 Panel structure is what makes most causal inference methods in applied economics possible. Fixed effects, difference-in-differences, and event studies all rely on observing the same unit before and after some change. Without a well-constructed panel, these methods cannot be applied.
 
-For a full treatment of causal inference concepts (potential outcomes, identification, selection bias, and the designs that use panel data), see `docs/guides/07_causal/01_panel_fixed_effects_clustered_se.md`. This guide focuses on the upstream task: **building the panel dataset itself**.
+For a full treatment of causal inference concepts (potential outcomes, identification, selection bias, and the designs that use panel data), see `docs/guides/06_causal/01_panel_fixed_effects_clustered_se.md`. This guide focuses on the upstream task: **building the panel dataset itself**.
 
 ### Why Census/ACS data matters for health economics research
 

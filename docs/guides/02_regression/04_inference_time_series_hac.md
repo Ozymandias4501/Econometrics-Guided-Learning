@@ -400,7 +400,7 @@ Use this table to choose the right standard error for your data structure. The c
 | Classical (naive) | Nothing -- assumes homoskedastic, uncorrelated errors | Textbook exercises only | `sm.OLS(y, X).fit()` |
 | HC3 (robust) | Heteroskedasticity | Cross-section data (wages, health expenditures) | `.fit(cov_type='HC3')` |
 | HAC / Newey-West | Heteroskedasticity + autocorrelation | Time-series data (macro, finance) | `.fit(cov_type='HAC', cov_kwds={'maxlags': L})` |
-| Clustered | Heteroskedasticity + within-group correlation | Panel data, grouped cross-sections, DiD | See [Guide 07_causal/01](../07_causal/01_diff_in_diff.md) |
+| Clustered | Heteroskedasticity + within-group correlation | Panel data, grouped cross-sections, DiD | See [Guide 06_causal/01](../06_causal/01_diff_in_diff.md) |
 
 **When in doubt:**
 - Cross-section with unknown error structure: use HC3 (it is never worse than naive, and only slightly conservative).

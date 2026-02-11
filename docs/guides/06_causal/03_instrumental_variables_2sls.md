@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/07_causal/03_instrumental_variables_2sls.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/03_instrumental_variables_2sls.ipynb`.
 
 **Scope.** This guide focuses exclusively on Instrumental Variables (IV) and Two-Stage Least Squares (2SLS). For the foundational causal inference framework (potential outcomes, selection bias, identification vs. estimation, the core assumptions that recur across all causal designs), see [Guide 01 — Panel Fixed Effects](01_panel_fixed_effects_clustered_se.md). For a detailed taxonomy of endogeneity sources (omitted variables, measurement error, simultaneity), see [Guide 02a — Endogeneity Sources](02a_endogeneity_sources.md). This guide assumes you have read both.
 

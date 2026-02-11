@@ -15,7 +15,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/07_causal/02_difference_in_differences_event_study.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/02_difference_in_differences_event_study.ipynb`.
 
 **Prerequisites.** This guide assumes you have read
 [Guide 01: Panel Fixed Effects and Clustered SE](01_panel_fixed_effects_clustered_se.md),

@@ -23,5 +23,5 @@ The capstone integrates everything:
 - Prefer clear and honest reporting over complicated models.
 
 ## Chapters
-- [00_capstone_brief](00_capstone_brief.md) — Notebook: [00_capstone_brief.ipynb](../../../notebooks/06_capstone/00_capstone_brief.ipynb)
-- [01_capstone_workspace](01_capstone_workspace.md) — Notebook: [01_capstone_workspace.ipynb](../../../notebooks/06_capstone/01_capstone_workspace.ipynb)
+- [00_capstone_brief](00_capstone_brief.md) — Notebook: [00_capstone_brief.ipynb](../../../notebooks/08_capstone/00_capstone_brief.ipynb)
+- [01_capstone_workspace](01_capstone_workspace.md) — Notebook: [01_capstone_workspace.ipynb](../../../notebooks/08_capstone/01_capstone_workspace.ipynb)

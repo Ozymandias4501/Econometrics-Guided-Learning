@@ -23,7 +23,7 @@ You will use panel data and quasi-experimental designs to estimate causal effect
 - Treat these notebooks as **method practice**, not real policy evaluation.
 
 ## Chapters
-- [00_build_census_county_panel](00_build_census_county_panel.md) — Notebook: [00_build_census_county_panel.ipynb](../../../notebooks/07_causal/00_build_census_county_panel.ipynb)
-- [01_panel_fixed_effects_clustered_se](01_panel_fixed_effects_clustered_se.md) — Notebook: [01_panel_fixed_effects_clustered_se.ipynb](../../../notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb)
-- [02_difference_in_differences_event_study](02_difference_in_differences_event_study.md) — Notebook: [02_difference_in_differences_event_study.ipynb](../../../notebooks/07_causal/02_difference_in_differences_event_study.ipynb)
-- [03_instrumental_variables_2sls](03_instrumental_variables_2sls.md) — Notebook: [03_instrumental_variables_2sls.ipynb](../../../notebooks/07_causal/03_instrumental_variables_2sls.ipynb)
+- [00_build_census_county_panel](00_build_census_county_panel.md) — Notebook: [00_build_census_county_panel.ipynb](../../../notebooks/06_causal/00_build_census_county_panel.ipynb)
+- [01_panel_fixed_effects_clustered_se](01_panel_fixed_effects_clustered_se.md) — Notebook: [01_panel_fixed_effects_clustered_se.ipynb](../../../notebooks/06_causal/01_panel_fixed_effects_clustered_se.ipynb)
+- [02_difference_in_differences_event_study](02_difference_in_differences_event_study.md) — Notebook: [02_difference_in_differences_event_study.ipynb](../../../notebooks/06_causal/02_difference_in_differences_event_study.ipynb)
+- [03_instrumental_variables_2sls](03_instrumental_variables_2sls.md) — Notebook: [03_instrumental_variables_2sls.ipynb](../../../notebooks/06_causal/03_instrumental_variables_2sls.ipynb)

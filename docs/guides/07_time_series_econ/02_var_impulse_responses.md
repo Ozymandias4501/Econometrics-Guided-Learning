@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/08_time_series_econ/02_var_impulse_responses.ipynb`.
+This guide accompanies the notebook `notebooks/07_time_series_econ/02_var_impulse_responses.ipynb`.
 
 > **Note:** VARs and impulse response functions are primarily used in **macroeconomics**. For health economics, panel methods (FE, DiD, IV) are far more relevant. This guide provides a solid overview for econometric literacy — VARs may appear in your macro electives but are unlikely to be central to your research.
 

@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/01_panel_fixed_effects_clustered_se.ipynb`.
 
 This module adds identification-focused econometrics: panels, DiD/event studies, and IV.
 

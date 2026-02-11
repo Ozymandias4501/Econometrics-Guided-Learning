@@ -23,6 +23,6 @@ stationarity, cointegration, and VAR-based dynamics (IRFs).
   - and what identification assumption your IRF uses (ordering).
 
 ## Chapters
-- [00_stationarity_unit_roots](00_stationarity_unit_roots.md) — Notebook: [00_stationarity_unit_roots.ipynb](../../../notebooks/08_time_series_econ/00_stationarity_unit_roots.ipynb)
-- [01_cointegration_error_correction](01_cointegration_error_correction.md) — Notebook: [01_cointegration_error_correction.ipynb](../../../notebooks/08_time_series_econ/01_cointegration_error_correction.ipynb)
-- [02_var_impulse_responses](02_var_impulse_responses.md) — Notebook: [02_var_impulse_responses.ipynb](../../../notebooks/08_time_series_econ/02_var_impulse_responses.ipynb)
+- [00_stationarity_unit_roots](00_stationarity_unit_roots.md) — Notebook: [00_stationarity_unit_roots.ipynb](../../../notebooks/07_time_series_econ/00_stationarity_unit_roots.ipynb)
+- [01_cointegration_error_correction](01_cointegration_error_correction.md) — Notebook: [01_cointegration_error_correction.ipynb](../../../notebooks/07_time_series_econ/01_cointegration_error_correction.ipynb)
+- [02_var_impulse_responses](02_var_impulse_responses.md) — Notebook: [02_var_impulse_responses.ipynb](../../../notebooks/07_time_series_econ/02_var_impulse_responses.ipynb)

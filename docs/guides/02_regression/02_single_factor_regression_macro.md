@@ -107,7 +107,7 @@ If you regress one I(1) variable (e.g., the price level) on another I(1) variabl
 - Use growth rates, first differences, or log-differences.
 - Or use cointegration methods (error-correction models) if you believe a long-run equilibrium relationship exists.
 
-For a detailed treatment of unit root tests and stationarity, see [Guide 08: Stationarity and Unit Roots](../08_time_series_econ/00_stationarity_unit_roots.md).
+For a detailed treatment of unit root tests and stationarity, see [Guide 08: Stationarity and Unit Roots](../07_time_series_econ/00_stationarity_unit_roots.md).
 
 #### 3) Interpretation challenges: association vs prediction vs causation
 
@@ -165,7 +165,7 @@ Macro time-series regression uses the same OLS mechanics as cross-section, but t
 **Companion guides:**
 - [Guide 00](00_single_factor_regression_micro.md): OLS foundations (derivation, assumptions, diagnostics)
 - [Guide 04](04_inference_time_series_hac.md): Hypothesis testing and HAC (Newey-West formula, maxlags, SE comparison)
-- [Guide 08](../08_time_series_econ/00_stationarity_unit_roots.md): Stationarity and unit root tests
+- [Guide 08](../07_time_series_econ/00_stationarity_unit_roots.md): Stationarity and unit root tests
 
 Suggested readings:
 - Wooldridge: *Introductory Econometrics*, Ch. 10-12 (time-series regression)

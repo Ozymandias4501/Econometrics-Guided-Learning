@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/07_causal/01a_random_effects_hausman.ipynb`.
+This guide accompanies the notebook `notebooks/06_causal/01a_random_effects_hausman.ipynb`.
 
 Fixed effects (FE) eliminates time-invariant unobserved heterogeneity by demeaning within each unit, but it also eliminates any time-invariant regressors you care about (e.g., gender, geography, race). Random effects (RE) offers a more efficient alternative by assuming the unobserved unit effect is uncorrelated with the regressors. The Hausman test arbitrates: if RE and FE estimates disagree significantly, the RE assumption is violated and FE is preferred.
 
