@@ -49,7 +49,7 @@ A key theme: macro data is time-series data. Many "standard" ML defaults break i
 - `notebooks/03_classification/*`: recession classifiers, calibration, trees, walk-forward validation.
 - `notebooks/04_unsupervised/*`: PCA factors, clustering regimes, anomaly detection.
 - `notebooks/05_model_ops/*`: reproducible CLI runs and saved artifacts.
-- `notebooks/06_capstone/*`: end-to-end project output + report + dashboard.
+- `notebooks/08_capstone/*`: end-to-end project output + report + dashboard.
 
 ---
 

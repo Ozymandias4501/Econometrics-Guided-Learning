@@ -4,7 +4,7 @@ This is the navigation hub for the full tutorial project.
 
 ## How To Use This Repo
 - Work through the notebooks in the **recommended path below** (not necessarily by directory number).
-- Directory numbers (e.g., `03_classification`, `07_causal`) are organizational identifiers. The learning sequence below reorders them for pedagogical flow — econometric methods (causal, time-series) come before ML classification/unsupervised in the recommended path.
+- Directory numbers (e.g., `03_classification`, `06_causal`) are organizational identifiers. The learning sequence below reorders them for pedagogical flow — econometric methods (causal, time-series) come before ML classification/unsupervised in the recommended path.
 - Each notebook has a matching deep guide under `docs/guides/<category>/`.
 - Notebooks are hands-on: code cells are intentionally incomplete (TODO-driven).
 - Each notebook ends with a collapsed **Solutions (Reference)** section to self-check.
@@ -54,26 +54,26 @@ This is the navigation hub for the full tutorial project.
     GLS/WLS: when you know the error structure
 
 ### Causal Inference (Panels + Quasi-Experiments)
-1. [Notebook: 00_build_census_county_panel](../notebooks/07_causal/00_build_census_county_panel.ipynb)
-   Guide: [00_build_census_county_panel](guides/07_causal/00_build_census_county_panel.md)
-2. [Notebook: 01_panel_fixed_effects_clustered_se](../notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb)
-   Guide: [01_panel_fixed_effects_clustered_se](guides/07_causal/01_panel_fixed_effects_clustered_se.md)
-3. [Notebook: 01a_random_effects_hausman](../notebooks/07_causal/01a_random_effects_hausman.ipynb) *(new)*
+1. [Notebook: 00_build_census_county_panel](../notebooks/06_causal/00_build_census_county_panel.ipynb)
+   Guide: [00_build_census_county_panel](guides/06_causal/00_build_census_county_panel.md)
+2. [Notebook: 01_panel_fixed_effects_clustered_se](../notebooks/06_causal/01_panel_fixed_effects_clustered_se.ipynb)
+   Guide: [01_panel_fixed_effects_clustered_se](guides/06_causal/01_panel_fixed_effects_clustered_se.md)
+3. [Notebook: 01a_random_effects_hausman](../notebooks/06_causal/01a_random_effects_hausman.ipynb) *(new)*
    Random Effects vs Fixed Effects and the Hausman test
-4. [Notebook: 02_difference_in_differences_event_study](../notebooks/07_causal/02_difference_in_differences_event_study.ipynb)
-   Guide: [02_difference_in_differences_event_study](guides/07_causal/02_difference_in_differences_event_study.md)
-5. [Notebook: 02a_endogeneity_sources](../notebooks/07_causal/02a_endogeneity_sources.ipynb) *(new)*
+4. [Notebook: 02_difference_in_differences_event_study](../notebooks/06_causal/02_difference_in_differences_event_study.ipynb)
+   Guide: [02_difference_in_differences_event_study](guides/06_causal/02_difference_in_differences_event_study.md)
+5. [Notebook: 02a_endogeneity_sources](../notebooks/06_causal/02a_endogeneity_sources.ipynb) *(new)*
    Endogeneity: OVB, measurement error, and simultaneity
-6. [Notebook: 03_instrumental_variables_2sls](../notebooks/07_causal/03_instrumental_variables_2sls.ipynb)
-   Guide: [03_instrumental_variables_2sls](guides/07_causal/03_instrumental_variables_2sls.md)
+6. [Notebook: 03_instrumental_variables_2sls](../notebooks/06_causal/03_instrumental_variables_2sls.ipynb)
+   Guide: [03_instrumental_variables_2sls](guides/06_causal/03_instrumental_variables_2sls.md)
 
 ### Time-Series Econometrics (Unit Roots → VAR)
-1. [Notebook: 00_stationarity_unit_roots](../notebooks/08_time_series_econ/00_stationarity_unit_roots.ipynb)  
-   Guide: [00_stationarity_unit_roots](guides/08_time_series_econ/00_stationarity_unit_roots.md)
-2. [Notebook: 01_cointegration_error_correction](../notebooks/08_time_series_econ/01_cointegration_error_correction.ipynb)  
-   Guide: [01_cointegration_error_correction](guides/08_time_series_econ/01_cointegration_error_correction.md)
-3. [Notebook: 02_var_impulse_responses](../notebooks/08_time_series_econ/02_var_impulse_responses.ipynb)  
-   Guide: [02_var_impulse_responses](guides/08_time_series_econ/02_var_impulse_responses.md)
+1. [Notebook: 00_stationarity_unit_roots](../notebooks/07_time_series_econ/00_stationarity_unit_roots.ipynb)  
+   Guide: [00_stationarity_unit_roots](guides/07_time_series_econ/00_stationarity_unit_roots.md)
+2. [Notebook: 01_cointegration_error_correction](../notebooks/07_time_series_econ/01_cointegration_error_correction.ipynb)  
+   Guide: [01_cointegration_error_correction](guides/07_time_series_econ/01_cointegration_error_correction.md)
+3. [Notebook: 02_var_impulse_responses](../notebooks/07_time_series_econ/02_var_impulse_responses.ipynb)  
+   Guide: [02_var_impulse_responses](guides/07_time_series_econ/02_var_impulse_responses.md)
 
 ### Classification (Technical Recession)
 1. [Notebook: 00_recession_classifier_baselines](../notebooks/03_classification/00_recession_classifier_baselines.ipynb)  
@@ -104,10 +104,10 @@ This is the navigation hub for the full tutorial project.
    Guide: [03_model_cards_and_reporting](guides/05_model_ops/03_model_cards_and_reporting.md)
 
 ### Capstone
-1. [Notebook: 00_capstone_brief](../notebooks/06_capstone/00_capstone_brief.ipynb)  
-   Guide: [00_capstone_brief](guides/06_capstone/00_capstone_brief.md)
-2. [Notebook: 01_capstone_workspace](../notebooks/06_capstone/01_capstone_workspace.ipynb)  
-   Guide: [01_capstone_workspace](guides/06_capstone/01_capstone_workspace.md)
+1. [Notebook: 00_capstone_brief](../notebooks/08_capstone/00_capstone_brief.ipynb)  
+   Guide: [00_capstone_brief](guides/08_capstone/00_capstone_brief.md)
+2. [Notebook: 01_capstone_workspace](../notebooks/08_capstone/01_capstone_workspace.ipynb)  
+   Guide: [01_capstone_workspace](guides/08_capstone/01_capstone_workspace.md)
 
 ## Extra References
 - [Guides Index](guides/index.md)
