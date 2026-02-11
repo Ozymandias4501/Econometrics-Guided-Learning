@@ -11,203 +11,212 @@
 
 This guide accompanies the notebook `notebooks/00_foundations/00_setup.ipynb`.
 
-This foundations module builds core intuition you will reuse in every later notebook.
+This notebook configures your environment, verifies API keys, loads sample data, and introduces the validation patterns you will use in every subsequent notebook. No modeling happens here — the goal is to make sure everything runs and you understand the project layout before moving on.
 
 ### Key Terms (defined)
-- **Time series**: data indexed by time; ordering is meaningful and must be respected.
-- **Leakage**: using future information in features/labels, producing unrealistically good results.
-- **Train/test split**: separating data for model fitting vs evaluation.
-- **Multicollinearity**: predictors are highly correlated; coefficients can become unstable.
-
+- **PROJECT_ROOT**: the absolute path to the top-level repo directory. Every notebook computes this so that imports and file paths work regardless of where Jupyter was launched.
+- **Environment variable**: a key-value setting provided by your shell (e.g., `FRED_API_KEY`). Python reads them with `os.getenv()`. They keep secrets out of code.
+- **Sample data**: small offline datasets bundled in `data/sample/` so notebooks run without network access. Real pipeline outputs go to `data/processed/`.
+- **Data validation / assertions**: runtime checks (shape, dtype, range, index monotonicity) that catch silent errors early — before they propagate into modeling results.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+- Use **Technical Explanations** to understand the repo structure and data patterns.
+- Then return to the notebook and complete the TODOs.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Environment bootstrap
-- Complete notebook section: Verify API keys
-- Complete notebook section: Load sample data
-- Complete notebook section: Checkpoints
-- Run the bootstrap cell and confirm `PROJECT_ROOT` points to the repo root.
+- Complete notebook section: Environment bootstrap — run the cell and confirm `PROJECT_ROOT` prints the repo root.
+- Complete notebook section: Verify API keys — read `FRED_API_KEY` and `CENSUS_API_KEY` with `os.getenv()` and print whether each is set (without printing the full key).
+- Complete notebook section: Load sample data — load `data/sample/macro_quarterly_sample.csv`, inspect its shape, columns, and dtypes.
+- Complete notebook section: Checkpoints — write assertions that validate the loaded DataFrame (monotonic index, minimum rows, expected columns).
+- Create `data/raw/` and `data/processed/` directories if they don't exist.
 - Complete all TODOs (no `...` left).
-- Write a short paragraph explaining a leakage example you created.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Toy leakage example (not the notebook data):
-import numpy as np
+# Loading and validating a CSV (not the notebook data):
+from pathlib import Path
 import pandas as pd
 
-idx = pd.date_range('2020-01-01', periods=200, freq='D')
-y = pd.Series(np.sin(np.linspace(0, 12, len(idx))) + 0.1*np.random.randn(len(idx)), index=idx)
+path = Path("data/sample/macro_quarterly_sample.csv")
+assert path.exists(), f"File not found: {path}"
 
-# Correct feature: yesterday
-x_lag1 = y.shift(1)
+df = pd.read_csv(path, index_col=0, parse_dates=True)
 
-# Leakage feature: tomorrow (do NOT do this)
-x_leak = y.shift(-1)
+# Validation checks you should build the habit of running:
+assert isinstance(df.index, pd.DatetimeIndex), "Index should be datetime"
+assert df.index.is_monotonic_increasing, "Index should be sorted"
+assert df.shape[0] > 20, f"Expected >20 rows, got {df.shape[0]}"
+print(f"Loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+print(f"Date range: {df.index.min()} to {df.index.max()}")
+print(f"Missing values:\n{df.isna().sum().sort_values(ascending=False).head(5)}")
 ```
 
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Foundations: Time, Evaluation, and Leakage (the rules you never stop using)
+### Project structure: how guides, notebooks, and source code relate
 
-This project treats “foundations” as more than warm-up material. They are the rules that keep every later result honest.
+```
+stats_learning/
+├── notebooks/          ← where you work (Jupyter, section by section)
+│   ├── 00_foundations/
+│   ├── 01_data/
+│   ├── 02_regression/
+│   └── ...
+├── docs/guides/        ← companion reference for each notebook (this file)
+├── docs/cheatsheets/   ← quick-reference sheets for key topics
+├── src/                ← shared Python modules (imported by notebooks + scripts)
+│   ├── features.py     ← lag, rolling, diff, log-diff feature helpers
+│   ├── evaluation.py   ← train/test splits, walk-forward CV, metrics
+│   ├── econometrics.py ← OLS, HC3, HAC, VIF wrappers
+│   ├── fred_api.py     ← FRED API client with retry + caching
+│   └── data.py         ← JSON caching helpers
+├── scripts/            ← CLI entry points (build datasets, train models)
+├── configs/            ← YAML configuration files
+├── data/
+│   ├── sample/         ← small offline datasets (committed to repo)
+│   ├── raw/            ← API responses (gitignored)
+│   └── processed/      ← cleaned datasets built by scripts (gitignored)
+└── tests/              ← pytest test suite for src/ modules
+```
 
-#### 1) Intuition (plain English): what problem are we solving?
+**The workflow for each topic:**
+1. Open the notebook (`notebooks/XX/YY.ipynb`).
+2. Read the companion guide (`docs/guides/XX/YY.md`) for the math, assumptions, and deeper context.
+3. Work through the notebook's TODO cells, using the guide and cheatsheets as reference.
+4. Run the checkpoint cells to validate your work.
 
-Most mistakes in applied econometrics + ML come from confusing these three questions:
+### Environment variables and API keys
 
-1) **What did we know at the time of prediction/decision?** (timing)
-2) **What are we trying to predict/estimate?** (target/estimand)
-3) **How do we know the result would hold in the future or in another sample?** (evaluation/generalization)
+This project uses two external APIs:
 
-**Story example:** You build a recession probability model using macro indicators.
-- If you accidentally include information from the future (even indirectly), the model will look amazing on paper and fail in reality.
-- If you evaluate with random splits, you are testing a different problem (IID classification) than the one you actually face (time-ordered forecasting).
+| API | Env var | What it provides | Required? |
+|---|---|---|---|
+| **FRED** (Federal Reserve Economic Data) | `FRED_API_KEY` | Macro time series (GDP, unemployment, yield curve, etc.) | Yes for live fetches; sample data works offline |
+| **U.S. Census ACS** | `CENSUS_API_KEY` | County-level demographics (population, income, insurance, poverty) | Optional; many endpoints work without a key |
 
-#### 2) Notation + setup (define symbols)
+**How to set them:**
 
-Time index:
-- $t = 1,\dots,T$ indexes time (months/quarters).
+```bash
+# In your shell profile (~/.bashrc, ~/.zshrc, etc.):
+export FRED_API_KEY="your-key-here"
+export CENSUS_API_KEY="your-key-here"
+```
 
-Forecast horizon:
-- $h \ge 1$ is how far ahead you predict.
+After setting a key, restart your Jupyter kernel so Python sees it. In a notebook:
 
-Features and target:
-- $X_t$ is the feature vector available at time $t$.
-- $y_{t+h}$ is the future value you want to predict (or a label defined using future data).
+```python
+import os
+fred_key = os.getenv("FRED_API_KEY")
+print("FRED key set?", fred_key is not None)
+# Print at most the first 4 characters to verify without exposing the full key
+if fred_key:
+    print("Starts with:", fred_key[:4])
+```
 
-The forecasting problem is:
+**Security rule:** Never print full API keys or commit them to version control. Use `.env` files (gitignored) or shell environment variables.
 
-$$
-\text{learn a function } f \text{ such that } \hat y_{t+h} = f(X_t).
-$$
+### Sample vs processed data: the offline-first pattern
 
-**What each term means**
-- $X_t$: information available at time $t$ (must be “past-only”).
-- $y_{t+h}$: the thing you want to know in the future.
-- $f$: your model (linear regression, logistic regression, random forest, …).
+Every data notebook follows the same pattern:
 
-#### 3) Assumptions (and why time breaks ML defaults)
+```python
+path = PROCESSED_DIR / "macro_quarterly.csv"
+if path.exists():
+    df = pd.read_csv(path, index_col=0, parse_dates=True)
+else:
+    df = pd.read_csv(SAMPLE_DIR / "macro_quarterly_sample.csv", index_col=0, parse_dates=True)
+```
 
-Many ML defaults assume **IID** data: independent and identically distributed samples.
-Time series often violate both:
-- observations are correlated over time,
-- the data-generating process can drift (regime changes, structural breaks).
+**Why:** This keeps notebooks runnable without network access. The first time you work through the project, you will use sample data. Once you run the data-building scripts (covered in Module 01), real pipeline outputs will be saved to `data/processed/` and subsequent notebooks will use those instead.
 
-Practical implications:
-- random train/test splits are usually invalid for forecasting,
-- you must use time-aware splits and leakage checks.
+**What is different between sample and processed data:**
+- Sample files are small subsets (~100 rows) committed to the repo.
+- Processed files are full datasets (~200-300 rows for quarterly, ~3,200 rows for county-level) built by `scripts/build_datasets.py`. They are gitignored because they depend on API access.
 
-#### 4) Estimation mechanics: evaluation is part of the method
+### Data validation patterns
 
-When you evaluate a model, you are estimating its future performance.
-If the evaluation scheme does not match the real timing of the task, the estimate is biased.
+You will repeat these checks in every notebook. Build the habit here:
 
-**Time-aware evaluation patterns**
-- **Holdout (time split):** train on early period, test on later period.
-- **Walk-forward / rolling origin:** re-train as time advances and evaluate sequentially.
+**1. Index checks**
+```python
+assert isinstance(df.index, pd.DatetimeIndex), "Expected DatetimeIndex"
+assert df.index.is_monotonic_increasing, "Index must be sorted ascending"
+```
+These protect you from silent alignment bugs when merging or lagging.
 
-If you use a walk-forward scheme, conceptually you are estimating:
+**2. Shape checks**
+```python
+assert df.shape[0] > 20, "Too few rows — did the load fail?"
+assert df.shape[1] >= 3, "Too few columns — check column selection"
+```
 
-$$
-\text{future error} \approx \frac{1}{M} \sum_{m=1}^{M} \ell(\hat y_{t_m+h}, y_{t_m+h})
-$$
+**3. Column existence**
+```python
+expected = ["gdp_growth_qoq", "recession", "target_recession_next_q"]
+missing = [c for c in expected if c not in df.columns]
+assert not missing, f"Missing columns: {missing}"
+```
 
-where:
-- $\ell$ is a loss function (squared error, log loss, …),
-- $t_m$ are evaluation times in the future relative to training.
+**4. Missingness summary**
+```python
+print(df.isna().sum().sort_values(ascending=False).head(10))
+```
+Some NaNs are expected (e.g., the first few rows after creating lag features). But unexpected NaNs often indicate a join or resample error.
 
-#### 5) Leakage (the #1 silent killer)
+**5. Dtype checks**
+```python
+# Numeric columns should not be object/string
+for col in ["gdp_growth_qoq", "UNRATE"]:
+    assert df[col].dtype in [float, "float64", "int64"], f"{col} has wrong dtype: {df[col].dtype}"
+```
 
-> **Definition:** **Leakage** happens when features contain information that would not have been available at the time of prediction.
+### How to read a notebook in this project
 
-Leakage examples:
-- using $y_{t+h}$ (or a function of it) in $X_t$,
-- using “centered” rolling windows that include future values,
-- merging datasets with mismatched timestamps so the future leaks into the past,
-- standardizing using full-sample mean/variance before splitting.
+Every notebook follows a consistent structure:
 
-**Why leakage is so dangerous**
-- it makes models look much better than they are,
-- it leads to confident but wrong decisions,
-- it is often subtle and not caught by unit tests.
-
-#### 6) Diagnostics + robustness (minimum set)
-
-1) **Timing statement (write it down)**
-- “At time $t$ we know $X_t$ and we predict $y_{t+h}$.”
-- If you cannot say this clearly, leakage risk is high.
-
-2) **Index sanity**
-- check index type (DatetimeIndex), sorting, monotonicity.
-
-3) **Shift sanity**
-- after creating lags/targets, confirm the direction:
-  - lags use `.shift(+k)` (past),
-  - targets for forecasting are often `.shift(-h)` (future).
-
-4) **Train/test boundary check**
-- print the last train date and first test date; confirm no overlap.
-
-#### 7) Interpretation + reporting
-
-When you report results in this repo, always include:
-- the prediction horizon $h$,
-- the split scheme (time split or walk-forward),
-- at least one metric appropriate for the task,
-- a leakage check (what you did to prevent it).
-
-**What this does NOT mean**
-- A high in-sample $R^2$ is not evidence of real forecasting power.
-- Random-split accuracy is not forecasting accuracy.
-
-<details>
-<summary>Optional: why time series “generalization” is harder</summary>
-
-In forecasting, you train on one historical regime and test on another.
-If the economy changes (policy regime, technology, measurement), relationships can shift.
-That is why stability checks and walk-forward evaluation are emphasized in this project.
-
-</details>
-
-#### Exercises
-
-- [ ] Write the timing statement for one notebook: “At time $t$ I know __ and predict __ at $t+h$.”
-- [ ] Create one intentional leakage feature (future shift) and show how it inflates test performance.
-- [ ] Compare random-split vs time-split evaluation on the same dataset; explain the difference.
-- [ ] List 3 places leakage can enter during feature engineering (lags, rolling windows, scaling, joins).
+| Section | What it does | Your job |
+|---|---|---|
+| **Environment Bootstrap** | Sets up `PROJECT_ROOT`, `DATA_DIR`, etc. | Run the cell, confirm the path is correct |
+| **Primer** | Teaches a prerequisite skill (pandas, statsmodels, etc.) | Read and understand; code examples are for reference |
+| **Topic sections** (the main body) | Each has a goal, "Your Turn" code cells with TODOs, and a checkpoint | Fill in the `...` placeholders, run the cell, verify the checkpoint |
+| **Checkpoint (Self-Check)** | Assertions and a prompt to write 2-3 sentences | Run the assertions; write the interpretation |
+| **Extensions (Optional)** | Stretch exercises | Do these if you want more practice |
+| **Reflection** | Prompts about assumptions and limitations | Write brief answers — this builds the critical thinking habit |
+| **Solutions (Reference)** | Collapsed reference implementations | Try first, then compare |
 
 ### Project Code Map
-- `scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)
-- `src/evaluation.py`: time splits and metrics used later
 - `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
+- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`, `add_diff_features`, `add_log_diff_features`, `drop_na_rows`)
 - `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/econometrics.py`: regression wrappers (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`, `vif_table`)
+- `src/fred_api.py`: FRED API client with retry and caching
+- `src/health_data.py`: CMS/Socrata API client for health economics datasets
 
-### Common Mistakes
-- Using `train_test_split(shuffle=True)` on time-indexed data.
-- Looking at the test set repeatedly while tuning ("test leakage").
-- Assuming a significant p-value implies causation.
-- Running many tests/specs and treating a small p-value as proof (multiple testing / p-hacking).
+### Exercises
+
+- [ ] Run the bootstrap cell and confirm `PROJECT_ROOT` points to the repo root.
+- [ ] Read `FRED_API_KEY` and `CENSUS_API_KEY` from the environment. Print whether each is set without exposing the full key.
+- [ ] Create `data/raw/` and `data/processed/` directories using `Path.mkdir(parents=True, exist_ok=True)`.
+- [ ] Load `data/sample/macro_quarterly_sample.csv` with `index_col=0, parse_dates=True`.
+- [ ] Write at least 4 assertions: index type, monotonicity, minimum row count, and at least one expected column name.
+- [ ] Print a missingness summary and identify which columns have NaNs and why (hint: lag features at the start of the series).
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You now have the tooling to avoid the two most common beginner mistakes in economic ML:
-1) leaking future information, and
-2) over-interpreting correlated coefficients.
+You now have a working environment with verified API keys, sample data loaded, and a set of validation patterns you will reuse in every notebook.
 
+**What comes next:** The remaining foundations notebooks introduce the two concepts that govern everything in this project:
+- `01_time_series_basics` — time ordering, resampling, lags, rolling windows, and the leakage problem.
+- `02_stats_basics_for_ml` — hypothesis testing, confidence intervals, multicollinearity, and the bias-variance tradeoff.
 
 Suggested readings:
-- Hyndman & Athanasopoulos: Forecasting: Principles and Practice (time series basics)
-- Wooldridge: Introductory Econometrics (interpretation + pitfalls)
-- scikit-learn docs: model evaluation and cross-validation
+- pandas documentation: `pd.read_csv`, `DatetimeIndex`, `Path` objects
+- Python `pathlib` module documentation
+- Python `os.getenv` documentation
