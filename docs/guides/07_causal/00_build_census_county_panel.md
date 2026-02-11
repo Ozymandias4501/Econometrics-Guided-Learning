@@ -1,445 +1,503 @@
-# Guide: 00_build_census_county_panel
+# Guide: Building a Census County Panel Dataset
 
 ## Table of Contents
-- [Intro of Concept Explained](#intro)
-- [Step-by-Step and Alternative Examples](#step-by-step)
-- [Technical Explanations (Code + Math + Interpretation)](#technical)
+- [Introduction](#intro)
+- [Key Terms](#key-terms)
+- [Step-by-Step Checklist](#step-by-step)
+- [Alternative Example](#alternative-example)
+- [Technical Explanations](#technical)
+- [Diagnostics Checklist](#diagnostics)
+- [Common Mistakes](#common-mistakes)
 - [Summary + Suggested Readings](#summary)
 
+---
+
 <a id="intro"></a>
-## Intro of Concept Explained
+## Introduction
 
 This guide accompanies the notebook `notebooks/07_causal/00_build_census_county_panel.ipynb`.
 
-This module adds identification-focused econometrics: panels, DiD/event studies, and IV.
+### What is panel data?
 
-### Key Terms (defined)
-- **Identification**: assumptions that justify a causal interpretation.
-- **Fixed effects (FE)**: controls for time-invariant unit differences.
-- **Clustered SE**: allows correlated errors within groups (e.g., state).
-- **DiD**: compares changes over time between treated and control units.
-- **IV/2SLS**: uses an instrument to address endogeneity.
+Panel data (also called longitudinal data) tracks the same entities across multiple time periods. Instead of a single snapshot (cross-section) or a single aggregate time series, panel data gives you a matrix: **entities x time**. A county-year panel, for example, records demographic and economic variables for each U.S. county in each year.
 
+Panel structure is what makes most causal inference methods in applied economics possible. Fixed effects, difference-in-differences, and event studies all rely on observing the same unit before and after some change. Without a well-constructed panel, these methods cannot be applied.
 
-### How To Read This Guide
-- Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+For a full treatment of causal inference concepts (potential outcomes, identification, selection bias, and the designs that use panel data), see `docs/guides/07_causal/01_panel_fixed_effects_clustered_se.md`. This guide focuses on the upstream task: **building the panel dataset itself**.
+
+### Why Census/ACS data matters for health economics research
+
+The American Community Survey (ACS) is the primary source of county-level socioeconomic data in the United States between decennial censuses. For health economics, ACS variables serve as:
+
+- **Outcome proxies**: poverty rates, insurance coverage, and employment status are direct measures of economic well-being that correlate with health outcomes.
+- **Control variables**: demographics, income distributions, and education levels are standard confounders in health policy studies.
+- **Treatment context**: Medicaid expansion studies, for instance, use county-level uninsurance rates and poverty rates from the ACS to characterize treatment intensity.
+
+Building a clean, validated panel from ACS data is the first step in any county-level causal analysis. If the panel is malformed (duplicate rows, inconsistent identifiers, mixed estimate types), every downstream regression inherits those problems.
+
+---
+
+<a id="key-terms"></a>
+## Key Terms
+
+- **Panel data**: A dataset where the same entities (counties, hospitals, patients) are observed at multiple time points. Also called longitudinal data.
+
+- **Cross-section**: A single observation per entity at one point in time. A single year of ACS data is a cross-section.
+
+- **Balanced panel**: Every entity appears in every time period. If you have 100 counties and 9 years, a balanced panel has exactly 900 rows.
+
+- **Unbalanced panel**: Some entities are missing in some time periods. This can happen when counties are created, merged, or when ACS suppresses data for small populations.
+
+- **FIPS code**: Federal Information Processing Standards code. For counties, this is a 5-digit string: 2-digit state code + 3-digit county code (e.g., "06001" = Alameda County, California). FIPS codes are the standard entity identifier for U.S. county panels.
+
+- **American Community Survey (ACS)**: An ongoing survey administered by the U.S. Census Bureau. It replaced the decennial census long form and provides annual estimates of demographic, social, economic, and housing characteristics.
+
+- **Unit of observation**: The entity-time combination that defines a single row. In this project, the unit of observation is a county-year pair.
+
+- **Panel structure (entity x time)**: The organizing principle of panel data. Each row is uniquely identified by a (entity, time) pair. In pandas, this corresponds to a MultiIndex of `(fips, year)`.
+
+---
 
 <a id="step-by-step"></a>
-## Step-by-Step and Alternative Examples
+## Step-by-Step Checklist
 
-### What You Should Implement (Checklist)
-- Complete notebook section: Choose years + variables
-- Complete notebook section: Fetch/cache ACS tables
-- Complete notebook section: Build panel + FIPS
-- Complete notebook section: Save processed panel
-- Write the causal question and identification assumptions before estimating.
-- Run at least one diagnostic/falsification (pre-trends, placebo, weak-IV check).
-- Report clustered SE (and number of clusters) when appropriate.
+These are the tasks you will implement in the notebook. Work through them in order.
 
-### Alternative Example (Not the Notebook Solution)
+### 1. Load the panel configuration
+- [ ] Read `configs/census_panel.yaml` to get years, ACS variables, dataset type, and geography settings.
+- [ ] Inspect the variable list and write down what each ACS code measures (e.g., `B01003_001E` = total population).
+
+### 2. Fetch or load ACS tables for each year
+- [ ] For each year, check if a cached raw CSV exists under `data/raw/census/`.
+- [ ] If cached files are missing, fall back to `data/sample/census_county_panel_sample.csv`.
+- [ ] (Optional) If you have a Census API key, fetch live data using `census_api.fetch_acs()`.
+
+### 3. Build FIPS identifiers
+- [ ] Zero-pad the `state` column to 2 digits and the `county` column to 3 digits.
+- [ ] Concatenate them to create a 5-digit `fips` column.
+- [ ] Verify that all FIPS codes are exactly 5 characters long.
+
+### 4. Compute derived variables
+- [ ] Calculate `unemployment_rate` = unemployed / in labor force (with safe division to handle zeros).
+- [ ] Calculate `poverty_rate` = poverty count / total population (with safe division).
+- [ ] Verify that rates fall in a reasonable range (roughly 0 to 1).
+
+### 5. Validate the panel structure
+- [ ] Set a `(fips, year)` MultiIndex and sort.
+- [ ] Check for duplicate (fips, year) pairs.
+- [ ] Check whether the panel is balanced (every county appears in every year).
+- [ ] Inspect missing values across columns.
+
+### 6. Save the processed panel
+- [ ] Write the panel to `data/processed/census_county_panel.csv`.
+- [ ] Reload and verify the file is non-empty and the index survived the round-trip.
+
+---
+
+<a id="alternative-example"></a>
+## Alternative Example (Not the Notebook Solution)
+
+This example demonstrates how you might fetch and merge two county-level ACS variables from different tables into a single panel. It uses fabricated data to illustrate the transformations; it does not call the real Census API.
+
 ```python
-# Toy DiD setup (not the notebook data):
-import numpy as np
+# Simulated ACS fetch: county-level education + insurance variables
 import pandas as pd
+import numpy as np
 
-df = pd.DataFrame({
-  'group': ['T']*50 + ['C']*50,
-  'post':  [0]*25 + [1]*25 + [0]*25 + [1]*25,
-})
-df['treated'] = (df['group'] == 'T').astype(int)
-df['D'] = df['treated'] * df['post']
+np.random.seed(42)
+
+# Suppose we fetched education data (bachelor's degree attainment)
+# from table B15003 for 3 counties over 3 years.
+education_records = []
+for year in [2018, 2019, 2020]:
+    for state, county, name in [("06", "001", "Alameda"),
+                                 ("12", "086", "Miami-Dade"),
+                                 ("36", "061", "New York")]:
+        education_records.append({
+            "state": state,
+            "county": county,
+            "year": year,
+            "NAME": name,
+            "B15003_022E": np.random.randint(50000, 200000),   # bachelor's degree
+            "B15003_001E": np.random.randint(400000, 1200000), # total 25+
+        })
+
+edu_df = pd.DataFrame(education_records)
+
+# Suppose we also fetched insurance data from table B27001.
+insurance_records = []
+for year in [2018, 2019, 2020]:
+    for state, county in [("06", "001"), ("12", "086"), ("36", "061")]:
+        insurance_records.append({
+            "state": state,
+            "county": county,
+            "year": year,
+            "B27001_001E": np.random.randint(400000, 1200000), # total civilian
+            "B27001_005E": np.random.randint(10000, 80000),    # uninsured
+        })
+
+ins_df = pd.DataFrame(insurance_records)
+
+# Merge on (state, county, year)
+merged = edu_df.merge(ins_df, on=["state", "county", "year"], how="outer")
+
+# Build FIPS
+merged["fips"] = merged["state"].str.zfill(2) + merged["county"].str.zfill(3)
+
+# Compute rates
+merged["pct_bachelors"] = merged["B15003_022E"] / merged["B15003_001E"]
+merged["uninsured_rate"] = merged["B27001_005E"] / merged["B27001_001E"]
+
+# Set panel index
+panel = merged.set_index(["fips", "year"]).sort_index()
+print(panel[["NAME", "pct_bachelors", "uninsured_rate"]])
 ```
 
+This pattern -- fetch separate tables, merge on geography + time, build identifiers, compute rates, set panel index -- is the same workflow the notebook uses with real ACS data.
+
+---
 
 <a id="technical"></a>
-## Technical Explanations (Code + Math + Interpretation)
+## Technical Explanations
 
-### Core Causal Inference: From Questions → Identification → Estimation
+### 1. What makes data "panel-shaped"
 
-This project’s causal modules are built around one idea:
+Panel data has a specific structure: every row is uniquely identified by an **(entity, time)** pair. The entity dimension provides cross-sectional variation (differences across units), and the time dimension provides longitudinal variation (changes within units).
 
-> **If you cannot clearly state the counterfactual, you cannot interpret a coefficient causally.**
+In health economics, common panel structures include:
 
-Below is a “lecture-notes” walkthrough of the causal vocabulary you will reuse in FE / DiD / IV.
+| Entity | Time | Example research question |
+|--------|------|--------------------------|
+| Counties | Years | Does Medicaid expansion reduce county-level uninsurance? |
+| Patients | Visits | Does a new drug protocol reduce readmission rates? |
+| Hospitals | Quarters | Do pay-for-performance incentives improve quality metrics? |
+| States | Months | Does a smoking ban reduce ER visits for respiratory illness? |
 
-#### 1) Intuition (plain English): what problem are we solving?
+The county-year panel in this project has:
+- **Entity**: U.S. counties, identified by 5-digit FIPS codes.
+- **Time**: Calendar years (2014--2022 in the default configuration).
+- **Variables**: Population, income, rent, home values, labor force counts, poverty counts.
 
-In **prediction**, you ask:
-- “Given what I observe today, what will happen next?”
+In pandas, panel structure is represented as a MultiIndex:
 
-In **causal inference**, you ask:
-- “If I intervened and changed something, what would happen instead?”
+```python
+panel = df.set_index(["fips", "year"]).sort_index()
+# panel.index is a MultiIndex with levels (fips, year)
+# panel.loc["06001", 2018] returns one row: Alameda County in 2018
+```
 
-**Story example (micro):** What is the effect of *one more year of schooling* on earnings?
-- Prediction: people with more schooling earn more; you can forecast earnings from schooling.
-- Causality: if we forcibly increased a person’s schooling by one year, would earnings rise? By how much?
+The helper `to_panel_index()` in `src/causal.py` standardizes this: it ensures the entity column is a string, attempts to cast the time column to int, and sets/sorts the MultiIndex.
 
-**Story example (macro/policy):** What is the effect of a change in monetary policy on unemployment?
-- Prediction: unemployment and interest rates move together in time series.
-- Causality: if the policy rate were higher *holding everything else fixed*, what would unemployment have been?
+### 2. The American Community Survey (ACS)
 
-The difference is the missing world we never observe.
+The ACS is administered continuously by the U.S. Census Bureau. Each year, approximately 3.5 million households are surveyed. The results are published as estimates (not raw counts) with accompanying margins of error.
 
-#### 2) Notation + setup: potential outcomes (define every symbol)
+**1-year vs. 5-year estimates**
 
-We index:
-- units by $i = 1,\\dots,N$ (counties, states, people, firms, …),
-- time by $t = 1,\\dots,T$ (years, quarters, …).
+| Feature | 1-year estimates | 5-year estimates |
+|---------|-----------------|-----------------|
+| Sample size | Single year of responses | Five years pooled |
+| Geographic coverage | Only areas with 65,000+ population | All areas (down to block groups) |
+| Precision | Higher variance | Lower variance (larger sample) |
+| Currency | Most current | Lagged (centered on midpoint of 5-year window) |
+| Use case | Large counties/metros | Small counties, rural areas |
 
-Let:
-- $D_{it} \\in \\{0,1\\}$ be a treatment indicator (treated vs not treated).
-- $Y_{it}(1)$ be the outcome *if treated*.
-- $Y_{it}(0)$ be the outcome *if not treated*.
+This project uses **5-year estimates** (`acs/acs5`) because it needs data for all U.S. counties, including those with populations below 65,000.
 
-We observe only one outcome per unit-time:
+**Key variable tables for health economics**
 
-$$
-Y_{it} = D_{it} \\cdot Y_{it}(1) + (1 - D_{it}) \\cdot Y_{it}(0).
-$$
+| ACS Table | What it contains |
+|-----------|-----------------|
+| B01003 | Total population |
+| B19013 | Median household income |
+| B17001 | Poverty status (counts below poverty line) |
+| B23025 | Employment status (labor force, employed, unemployed) |
+| B25064 | Median gross rent |
+| B25077 | Median home value |
+| B27001 | Health insurance coverage |
+| B15003 | Educational attainment |
+| B02001 | Race |
+| B03003 | Hispanic or Latino origin |
 
-**What each term means**
-- $Y_{it}$: observed outcome (e.g., poverty rate in county $i$ in year $t$).
-- $D_{it}$: whether the unit is treated at time $t$.
-- $Y_{it}(1), Y_{it}(0)$: two “parallel universes” outcomes.
+Variable names follow a convention: the table code, an underscore, a sequence number, and a suffix. The suffix `E` means "estimate" and `M` means "margin of error." For example, `B19013_001E` is the estimate of median household income, and `B19013_001M` is its margin of error.
 
-The **individual causal effect** is:
-$$
-\\tau_{it} = Y_{it}(1) - Y_{it}(0),
-$$
-but we never observe both terms for the same $(i,t)$.
+**Geographic levels**
 
-Common estimands:
+The ACS provides data at many geographic levels: nation, state, county, tract, block group, metropolitan statistical area, congressional district, and more. This project queries at the county level using:
+- `for_geo = "county:*"` (all counties)
+- `in_geo = "state:*"` (within all states)
 
-$$
-\\text{ATE} = \\mathbb{E}[Y(1) - Y(0)],
-\\qquad
-\\text{ATT} = \\mathbb{E}[Y(1) - Y(0) \\mid D=1].
-$$
+The `fetch_acs()` function in `src/census_api.py` constructs the API request. The Census API returns rows with `state` and `county` columns as separate fields, which you then combine into FIPS codes.
 
-**What each term means**
-- ATE: average effect in the population of interest.
-- ATT: average effect for treated units (often what DiD identifies).
+### 3. FIPS codes: structure and pitfalls
 
-#### 3) Identification vs estimation (and why this distinction matters)
+A county FIPS code is a 5-digit string composed of:
+- **State FIPS** (2 digits): e.g., 06 = California, 36 = New York, 48 = Texas.
+- **County FIPS** (3 digits): e.g., 001, 013, 059.
 
-> **Identification** answers: “Which assumptions turn observed data into a causal effect?”
+The `make_fips()` helper in `src/causal.py` constructs this:
 
-> **Estimation** answers: “Given those assumptions, how do we compute the effect?”
+```python
+def make_fips(state: str | int, county: str | int) -> str:
+    return str(state).zfill(2) + str(county).zfill(3)
+```
 
-Example:
-- DiD identification assumption: **parallel trends** (treated and control would have evolved similarly absent treatment).
-- DiD estimator: a difference of differences (or a TWFE regression).
+**Common pitfalls with FIPS codes**
 
-Regression output (a coefficient + p-value) is **estimation**. It is *not* identification.
+1. **Leading zeros**: States like Alabama (01), Connecticut (09), and others have FIPS codes that start with zero. If you read a CSV without specifying `dtype=str`, pandas will interpret "01001" as the integer 1001. Always either read FIPS as strings or zero-pad after reading:
+   ```python
+   df["state"] = df["state"].astype(str).str.zfill(2)
+   df["county"] = df["county"].astype(str).str.zfill(3)
+   ```
 
-#### 4) Selection bias in one equation (why naive comparisons fail)
+2. **Connecticut planning regions**: In 2022, Connecticut replaced its 8 counties with 9 planning regions for statistical purposes. The Census Bureau updated FIPS codes accordingly. If your panel spans pre- and post-2022 data, Connecticut county codes may not match across years. For a simple solution, either drop Connecticut or create a crosswalk mapping old county FIPS to new planning region FIPS.
 
-A naive “treated vs control” difference in observed means is:
-$$
-\\mathbb{E}[Y \\mid D=1] - \\mathbb{E}[Y \\mid D=0].
-$$
+3. **Alaska borough changes**: Alaska periodically reorganizes its boroughs and census areas. The Valdez-Cordova Census Area (02261) was split into the Chugach Census Area (02063) and the Copper River Census Area (02066) effective 2019. Similar issues arise when counties merge or split.
 
-Add and subtract $\\mathbb{E}[Y(0) \\mid D=1]$ to decompose it:
+4. **Shannon County, South Dakota**: Renamed to Oglala Lakota County in 2015, changing its FIPS from 46113 to 46102. Both old and new codes may appear in different vintages of ACS data.
 
-$$
-\\underbrace{\\mathbb{E}[Y(1) \\mid D=1] - \\mathbb{E}[Y(0) \\mid D=1]}_{\\text{ATT}}
-\\; + \\;
-\\underbrace{\\mathbb{E}[Y(0) \\mid D=1] - \\mathbb{E}[Y(0) \\mid D=0]}_{\\text{selection bias}}.
-$$
+5. **Independent cities**: Virginia has independent cities that are separate FIPS entities from their surrounding counties. This is unique to Virginia and can cause confusion if you expect all FIPS entities to be "counties."
 
-**What each term means**
-- The first bracket is the causal effect for treated units.
-- The second bracket is the difference in untreated potential outcomes between treated and control units.
+### 4. Panel data validation
 
-If treated units would have had different outcomes *even without treatment*, the naive comparison is biased.
+After constructing the panel, you must verify its structure before using it in any analysis.
 
-#### 5) Core causal assumptions you will see repeatedly
+**Check 1: No duplicate (entity, time) pairs**
 
-You will see versions of these assumptions across FE/DiD/IV:
+Each (fips, year) combination should appear exactly once. Duplicates mean a merge went wrong or a year was double-counted.
 
-1) **Consistency**
-- If a unit is treated ($D=1$), the observed outcome equals $Y(1)$; if not, it equals $Y(0)$.
+```python
+dupes = panel.index.duplicated(keep=False)
+assert not dupes.any(), f"Found {dupes.sum()} duplicate (fips, year) rows"
+```
 
-2) **SUTVA (no interference + well-defined treatment)**
-- My treatment does not change your outcome (no spillovers).
-- “Treatment” is a specific, comparable intervention (not a vague label).
+**Check 2: Balanced vs. unbalanced**
 
-3) **Exchangeability / exogeneity (design-specific)**
-- Some condition that makes the treatment “as good as random” *after conditioning or differencing*.
-  - FE uses within-unit changes to remove time-invariant confounding.
-  - DiD uses parallel trends to remove common time shocks.
-  - IV uses exclusion + relevance to isolate quasi-random variation in treatment.
+In a balanced panel, every entity appears in every time period.
 
-4) **Overlap (when conditioning is used)**
-- There are both treated and untreated units for the covariate patterns you analyze.
+```python
+n_entities = panel.index.get_level_values("fips").nunique()
+n_years = panel.index.get_level_values("year").nunique()
+expected_rows = n_entities * n_years
+is_balanced = len(panel) == expected_rows
+print(f"Entities: {n_entities}, Years: {n_years}, "
+      f"Expected: {expected_rows}, Actual: {len(panel)}, "
+      f"Balanced: {is_balanced}")
+```
 
-#### 6) Estimation mechanics (high level): mapping designs → estimators
+If the panel is unbalanced, investigate why. Common reasons:
+- A county was created or dissolved during the panel period.
+- ACS suppressed estimates for a county in some years (small population).
+- A merge dropped rows due to mismatched identifiers.
 
-This repo focuses on three workhorse designs:
+**Check 3: Missing values within existing rows**
 
-- **Panel fixed effects (FE / TWFE)**  
-  Model: $Y_{it} = \\beta'X_{it} + \\alpha_i + \\gamma_t + \\varepsilon_{it}$  
-  Identifying variation: within-unit changes over time.
+Even in a balanced panel, individual cells may be missing (NaN). This is different from missing rows. Suppressed ACS cells are often returned as negative values (e.g., -666666666) or null.
 
-- **Difference-in-differences (DiD / event study)**  
-  Model: $Y_{it} = \\beta D_{it} + \\alpha_i + \\gamma_t + \\varepsilon_{it}$  
-  Identifying variation: treated vs control *changes*.
+```python
+print(panel.isnull().sum().sort_values(ascending=False))
+```
 
-- **Instrumental variables (IV / 2SLS)**  
-  Structural: $Y = \\beta X + u$ with $\\mathrm{Cov}(X,u) \\neq 0$  
-  Instrument: $Z$ shifts $X$ but is excluded from $Y$ except through $X$.
+**Check 4: Consistent entity identifiers across time**
 
-#### 7) Inference: why standard errors are part of the design
+Verify that the set of FIPS codes does not change unexpectedly across years:
 
-Even if your estimator is unbiased under identification assumptions, **inference can fail** if you treat dependent observations as independent.
+```python
+fips_by_year = panel.groupby("year")["fips"].apply(set)
+common_fips = set.intersection(*fips_by_year)
+print(f"Counties in all years: {len(common_fips)}")
+print(f"Total unique counties: {panel['fips'].nunique()}")
+```
 
-Common dependence patterns:
-- counties in the same state share shocks → errors correlated within state,
-- repeated observations over time → serial correlation.
+### 5. Variable selection for health economics
 
-That is why causal notebooks emphasize **clustered standard errors** and “number of clusters” reporting.
+The ACS provides a large number of variables. For health economics research at the county level, the most commonly used categories are:
 
-#### 8) Diagnostics + robustness (minimum set you should practice)
+**Economic variables**
+- *Median household income* (`B19013_001E`): Proxy for economic well-being. Often used as a control or to define income quartiles.
+- *Poverty counts* (`B17001_002E` / `B01003_001E`): The poverty rate is a standard measure of economic deprivation and a key predictor of health outcomes.
+- *Employment status* (`B23025_002E` labor force, `B23025_004E` employed, `B23025_005E` unemployed): Unemployment rate captures labor market conditions that affect health insurance access and stress-related health outcomes.
 
-At least three diagnostics should become habits:
+**Demographic variables**
+- *Total population* (`B01003_001E`): Needed as a denominator for rates and as a control for scale.
+- *Age distribution* (table `B01001`): Age structure matters because health care utilization is heavily age-dependent.
+- *Race and ethnicity* (tables `B02001`, `B03003`): Health disparities research requires these breakdowns.
 
-1) **Design diagnostic:** does the identifying assumption look plausible?
-   - DiD: pre-trends / leads in an event study.
-   - IV: first-stage strength and exclusion plausibility.
+**Housing variables**
+- *Median gross rent* (`B25064_001E`): Housing cost burden is linked to health outcomes through stress, displacement, and neighborhood quality.
+- *Median home value* (`B25077_001E`): Proxy for local wealth and neighborhood socioeconomic status.
 
-2) **Specification sensitivity:** does the estimate move a lot if you change the spec?
-   - add/remove plausible controls,
-   - change time window,
-   - change clustering level.
+**Health-related variables**
+- *Insurance coverage* (table `B27001`): Available at the county level in 5-year estimates. Critical for studies of coverage expansions (ACA, Medicaid).
+- *Disability status* (table `B18101`): Prevalence of disability by age and sex.
 
-3) **Falsification / placebo:** does the method “find effects” where none should exist?
-   - fake treatment dates,
-   - outcomes that should not respond,
-   - never-treated placebo groups.
+**Education variables**
+- *Educational attainment* (table `B15003`): Education is a strong predictor of health behaviors and outcomes. Often used as a control or stratification variable.
 
-#### 9) Interpretation + reporting (how to write results honestly)
+The project's default configuration (`configs/census_panel.yaml`) includes population, income, rent, home value, poverty, and employment variables. You can expand this by adding table codes to the `get` list in the YAML file.
 
-Good causal write-ups answer these questions explicitly:
-- What is the **causal question** (intervention, population, time horizon)?
-- What is the **estimand** (ATE, ATT, dynamic effects)?
-- What is the **identification assumption** (in one sentence)?
-- What is the **estimation method** (FE/DiD/IV; SE choice)?
-- What diagnostics/robustness checks support or weaken the claim?
+### 6. Worked example: building a small panel from scratch
 
-**What this does NOT mean**
-- A significant coefficient does **not** prove a causal story.
-- “Controls” do **not** automatically eliminate bias.
-- Better fit ($R^2$) does **not** imply better identification.
+This walkthrough shows the data transformations step by step, using a tiny dataset. The goal is to make the logic transparent.
 
-#### 10) Why this repo uses “semi-synthetic” exercises
+**Step 1: Raw ACS response (one year)**
 
-Some notebooks add a **known treatment effect** to a real outcome to create a semi-synthetic truth.
-That lets you verify whether an estimator can recover the known effect, without pretending the dataset is a real policy evaluation.
+Suppose the Census API returns this for 2018:
 
-<details>
-<summary>Optional: very light DAG intuition (one paragraph)</summary>
+| NAME | B01003_001E | B17001_002E | state | county |
+|------|------------|------------|-------|--------|
+| Alameda County, CA | 1666753 | 178619 | 6 | 1 |
+| Miami-Dade County, FL | 2761581 | 430175 | 12 | 86 |
+| New York County, NY | 1632480 | 267231 | 36 | 61 |
 
-A causal diagram (DAG) is a picture of assumptions: arrows represent direct causal links.
-Confounding is “backdoor paths” from $D$ to $Y$ (e.g., ability affects both schooling and earnings).
-Designs like FE/DiD/IV are ways to block backdoor paths using time differencing, group comparisons, or instruments.
+**Step 2: Zero-pad and build FIPS**
 
-</details>
+| fips | year | NAME | B01003_001E | B17001_002E |
+|------|------|------|------------|------------|
+| 06001 | 2018 | Alameda County, CA | 1666753 | 178619 |
+| 12086 | 2018 | Miami-Dade County, FL | 2761581 | 430175 |
+| 36061 | 2018 | New York County, NY | 1632480 | 267231 |
 
-#### Exercises (do these with the matching notebooks)
+Notice that state "6" became "06" and county "1" became "001". Without zero-padding, "6" + "1" = "61", which would collide with New York County (state 36, county 061) in string concatenation.
 
-- [ ] Pick one notebook question and write the potential outcomes $Y(1), Y(0)$ in words.
-- [ ] Define whether you care about ATE or ATT in that notebook and explain why.
-- [ ] Write the selection-bias decomposition for a naive comparison in your context.
-- [ ] List 3 threats to identification for your design (confounding, anticipation, spillovers, measurement error, …).
-- [ ] Write one placebo test you could run and what a “failure” would look like.
-- [ ] Explain in 4 sentences why a p-value is not a substitute for identification.
+**Step 3: Repeat for 2019 and 2020, then stack**
 
-### Panel Fixed Effects (FE): “Compare a unit to itself over time”
+After fetching and processing all three years, concatenate the DataFrames:
 
-Fixed effects are one of the most common ways to reduce bias from **time-invariant unobservables** in panel data.
+```python
+panel = pd.concat([df_2018, df_2019, df_2020], ignore_index=True)
+```
 
-#### 1) Intuition (plain English)
+The result has 9 rows: 3 counties x 3 years.
 
-Panels are powerful because they let you control for factors that differ across units but are roughly constant over time:
-- geography,
-- long-run institutions,
-- baseline demographics,
-- “culture” or other hard-to-measure features.
+**Step 4: Compute derived rates**
 
-**Story example:** Counties differ in baseline poverty for many persistent reasons.  
-If you want to study how changes in unemployment relate to changes in poverty, it is more credible to compare:
-- *the same county in different years*  
-than to compare two different counties once.
+```python
+panel["poverty_rate"] = panel["B17001_002E"] / panel["B01003_001E"]
+```
 
-#### 2) Notation + setup (define symbols)
+Use safe division to handle any county where the denominator might be zero or missing:
 
-Let:
-- $i = 1,\\dots,N$ index entities (counties),
-- $t = 1,\\dots,T$ index time (years),
-- $Y_{it}$ be the outcome,
-- $X_{it}$ be a $K \\times 1$ vector of regressors,
-- $\\alpha_i$ be an entity-specific intercept (unit FE),
-- $\\gamma_t$ be a time-specific intercept (time FE),
-- $\\varepsilon_{it}$ be the remaining error.
+```python
+def safe_div(num, den):
+    den = den.replace({0: pd.NA})
+    return (num / den).astype(float)
+```
 
-The two-way fixed effects (TWFE) model is:
+**Step 5: Set the panel index**
 
-$$
-Y_{it} = X_{it}'\\beta + \\alpha_i + \\gamma_t + \\varepsilon_{it}.
-$$
+```python
+panel = panel.set_index(["fips", "year"]).sort_index()
+```
 
-**What each term means**
-- $X_{it}'\\beta$: the part explained by observed covariates.
-- $\\alpha_i$: all time-invariant determinants of $Y$ for entity $i$ (observed or unobserved).
-- $\\gamma_t$: shocks common to all entities in time $t$ (recessions, nationwide policy, measurement changes).
-- $\\varepsilon_{it}$: idiosyncratic shocks not captured above.
+The resulting MultiIndex ensures that `panel.loc["06001", 2019]` returns exactly one row.
 
-Matrix form (stack observations by time within entity):
+**Step 6: Validate**
 
-$$
-\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{A}\\alpha + \\mathbf{G}\\gamma + \\varepsilon
-$$
+```python
+assert not panel.index.duplicated().any()        # no duplicate (fips, year)
+assert len(panel) == 3 * 3                        # 3 counties x 3 years
+assert panel.index.get_level_values("fips").str.len().eq(5).all()  # all FIPS are 5 chars
+```
 
-where:
-- $\\mathbf{A}$ is the entity-dummy design matrix,
-- $\\mathbf{G}$ is the time-dummy design matrix.
+### 7. Common data quality issues
 
-#### 3) What FE “assumes” (identification conditions)
+**Suppressed cells**: For counties with very small populations, the Census Bureau may suppress estimates to protect respondent confidentiality. Suppressed values may appear as negative sentinel values (e.g., -666666666) or as null. Always check for these before computing rates:
 
-FE is not magic; it removes *time-invariant* confounding, not everything.
+```python
+sentinel_mask = panel["B19013_001E"] < 0
+print(f"Suppressed median income cells: {sentinel_mask.sum()}")
+panel.loc[sentinel_mask, "B19013_001E"] = pd.NA
+```
 
-A common identification condition is **strict exogeneity**:
+**Margin of error (MOE)**: Every ACS estimate has an associated MOE. For small counties, the MOE can be large relative to the estimate. If you request `B19013_001M` alongside `B19013_001E`, you can construct 90% confidence intervals: estimate +/- MOE. In health econ research, ignoring MOE for small-county estimates can lead to imprecise or misleading results. Consider weighting by population or dropping counties below a population threshold.
 
-$$
-\\mathbb{E}[\\varepsilon_{it} \\mid X_{i1}, \\dots, X_{iT}, \\alpha_i] = 0
-\\quad \\text{for all } t.
-$$
+**Changing geographies over time**: As noted in the FIPS section, county boundaries and codes can change. When building a multi-year panel, always check whether the set of FIPS codes is stable across your time window. If not, you need a geographic crosswalk (the Census Bureau publishes these) or you must restrict to counties that exist in all years.
 
-**What this means**
-- After controlling for unit FE, time FE, and the full history of $X$, the remaining shocks are mean-zero.
-- If today’s shock changes future $X$ (feedback), strict exogeneity can fail.
+**Mixed vintages of 5-year estimates**: Each 5-year ACS dataset (e.g., 2015-2019) is a pooled estimate, not a single-year value. The 2018 5-year estimate covers 2014-2018, while the 2019 5-year estimate covers 2015-2019. These overlapping windows mean adjacent years share 4 out of 5 years of underlying data, introducing serial correlation. This is a known issue in panel analyses using 5-year ACS data. Some researchers use only non-overlapping windows (e.g., 2010-2014 and 2015-2019) to avoid this problem.
 
-Other requirements:
-- **Within-unit variation:** the regressor must change over time within entities.
-- **No perfect multicollinearity:** you cannot include variables fully determined by FE (e.g., a pure time trend plus full time FE can collide depending on spec).
+---
 
-<details>
-<summary>Optional: dynamic panels (why lagged Y can be tricky)</summary>
+<a id="diagnostics"></a>
+## Diagnostics Checklist
 
-If you include $Y_{i,t-1}$ as a regressor, FE can create “Nickell bias” when $T$ is small.
-This repo does not focus on dynamic panel estimators (Arellano–Bond), but you should know this pitfall exists.
+Run these checks after building your panel and before passing it to any estimation notebook.
 
-</details>
+### Panel shape verification
+- [ ] Confirm the DataFrame has a `(fips, year)` MultiIndex.
+- [ ] Verify the number of unique entities and time periods matches expectations.
+- [ ] Check total row count = (expected entities) x (expected years) if aiming for a balanced panel.
 
-#### 4) Estimation mechanics: the “within” transformation (derivation)
+### Duplicate check
+- [ ] `panel.index.duplicated().sum()` should be 0.
+- [ ] If duplicates exist, inspect the offending rows and trace back to the merge or concatenation step.
 
-The FE estimator can be understood as OLS after removing means.
+### Missing data patterns
+- [ ] Print `panel.isnull().sum()` for all columns.
+- [ ] Check for sentinel values (negative numbers in count/income fields).
+- [ ] Examine whether missingness is concentrated in specific years (data availability) or specific counties (suppression).
 
-**Entity FE only (simpler to see):**
+### Cross-sectional vs. time variation
+- [ ] For each key variable, compute the between-entity standard deviation (variation across counties in a given year) and the within-entity standard deviation (variation across years for a given county).
+- [ ] Variables with zero within-entity variation cannot be identified by fixed effects.
 
-Start with:
-$$
-Y_{it} = X_{it}'\\beta + \\alpha_i + \\varepsilon_{it}.
-$$
+```python
+# Within and between variation
+within = panel.groupby("fips")["poverty_rate"].std().mean()
+between = panel.groupby("year")["poverty_rate"].std().mean()
+print(f"Avg within-county std: {within:.4f}")
+print(f"Avg between-county std (by year): {between:.4f}")
+```
 
-Take the time average within each entity:
-$$
-\\bar{Y}_i = \\bar{X}_i'\\beta + \\alpha_i + \\bar{\\varepsilon}_i.
-$$
+### Summary statistics by entity and time
+- [ ] Compute means per year to check for time trends or suspicious jumps.
+- [ ] Compute means per entity to check for outlier counties.
+- [ ] Plot at least one variable over time for a few counties to visually inspect the panel.
 
-Subtract the entity mean equation from the original:
+---
 
-$$
-Y_{it} - \\bar{Y}_i = (X_{it} - \\bar{X}_i)'\\beta + (\\varepsilon_{it} - \\bar{\\varepsilon}_i).
-$$
+<a id="common-mistakes"></a>
+## Common Mistakes
 
-**What this achieves**
-- The term $\\alpha_i$ disappears (it is constant within entity).
-- Identification comes from deviations from the entity’s own average.
+1. **Losing leading zeros in FIPS codes.** Reading a CSV without `dtype={"state": str, "county": str}` converts "06" to 6 and "001" to 1. The resulting FIPS "61" is wrong. Always read geographic identifiers as strings or zero-pad immediately after loading.
 
-TWFE (“two-way”) uses a version of demeaning that removes both:
-- entity averages, and
-- time averages,
-often implemented by “absorbing” FE rather than explicitly constructing every dummy.
+2. **Ignoring the ACS margin of error.** ACS estimates for small counties can have margins of error that are 50% or more of the estimate itself. Using these point estimates without acknowledging uncertainty overstates the precision of your analysis. At minimum, report population-weighted results or restrict to counties above a population threshold.
 
-#### 5) Frisch–Waugh–Lovell (FWL) interpretation (how software implements FE)
+3. **Not checking panel balance.** If your panel is unbalanced and you did not intend it to be, something went wrong in the data build. Unbalanced panels are not inherently a problem, but they require intentional handling (e.g., understanding whether missingness is related to the outcome).
 
-FWL says: if you want $\\beta$ in a regression with controls, you can:
-1) residualize $Y$ on the controls,
-2) residualize $X$ on the controls,
-3) regress residualized $Y$ on residualized $X$.
+4. **Mixing 1-year and 5-year ACS estimates.** The 1-year ACS covers only counties with 65,000+ population. The 5-year ACS covers all counties. Mixing them within a panel creates a sample that changes composition across years. Use one or the other consistently.
 
-In FE models, “controls” include thousands of entity/time dummies. Software (like `linearmodels`) uses the same logic efficiently.
+5. **Using wrong geographic identifiers.** Some datasets use Census tract FIPS (11 digits), some use county FIPS (5 digits), some use state FIPS (2 digits). Merging on the wrong level silently drops rows or creates duplicates. Always verify the geographic level before merging.
 
-#### 6) Inference: why clustering is common in panels
+6. **Ignoring overlapping 5-year windows.** Adjacent 5-year ACS estimates share 4 years of underlying survey data. This induces mechanical serial correlation that is separate from any economic process. Clustering standard errors at the county level helps, but some researchers prefer non-overlapping windows.
 
-Panel errors are often correlated:
-- within entity over time (serial correlation),
-- within higher-level groups (e.g., state shocks),
-- within time (common shocks).
+7. **Not validating derived rates.** After computing `poverty_rate = poverty_count / total_population`, check that the values are between 0 and 1. Values outside this range indicate a data quality issue (mismatched numerator/denominator tables, sentinel values, or a merge error).
 
-Robust (HC) SE handle heteroskedasticity but not arbitrary within-cluster correlation.
-That’s why you often see **clustered SE** in applied FE work.
+8. **Treating repeated cross-sections as a true panel.** The ACS surveys different households each year. A county-year panel is a panel of *places*, not *people*. The composition of residents changes over time due to migration and demographic change. This matters for interpretation: county fixed effects absorb time-invariant county characteristics, but they do not control for changing population composition within a county.
 
-#### 7) Diagnostics + robustness (at least 3)
-
-1) **Pooled vs FE comparison**
-- Fit pooled OLS and FE; if coefficients move a lot, unobserved heterogeneity likely mattered.
-
-2) **Within-variation check**
-- For each regressor, confirm it varies within entity. If not, FE cannot estimate it.
-
-3) **Sensitivity to time FE**
-- Add/remove time FE; if results change materially, time shocks matter and must be modeled.
-
-4) **Influential units**
-- Check whether a handful of entities drive the estimate (outliers / leverage).
-
-#### 8) Interpretation + reporting (what FE coefficients mean)
-
-In a TWFE regression, interpret $\\beta_j$ as:
-
-> the association between *within-entity changes* in $x_j$ and *within-entity changes* in $Y$, after removing common time shocks.
-
-**What this does NOT mean**
-- FE does **not** guarantee causality (time-varying omitted variables can remain).
-- FE does **not** solve reverse causality (shocks can affect both $X$ and $Y$).
-- FE does **not** “fix” measurement error (it can make some bias worse).
-
-#### Exercises
-
-- [ ] Take one regressor in the panel notebook and compute $x_{it} - \\bar{x}_i$ manually; confirm the mean is ~0 within each entity.
-- [ ] Explain in words what variation identifies $\\beta$ in a TWFE model.
-- [ ] Name one time-invariant variable you *wish* you could estimate and explain why FE absorbs it.
-- [ ] Fit pooled OLS and TWFE; write 3 sentences explaining why the coefficients differ.
-- [ ] Try adding time FE and report whether the coefficient on your main regressor is stable.
-
-### Project Code Map
-- `src/causal.py`: panel + IV helpers (`to_panel_index`, `fit_twfe_panel_ols`, `fit_iv_2sls`)
-- `scripts/build_datasets.py`: ACS panel builder (writes data/processed/census_county_panel.csv)
-- `src/census_api.py`: Census/ACS client (`fetch_acs`)
-- `configs/census_panel.yaml`: panel config (years + variables)
-- `data/sample/census_county_panel_sample.csv`: offline panel dataset
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
-
-### Common Mistakes
-- Jumping to regression output without writing identification assumptions.
-- Treating Granger-type correlations as causal effects (wrong question).
-- Ignoring clustered/serial correlation and using overly small SE.
-- For DiD: not checking pre-trends (leads) before interpreting effects.
-- For IV: using weak instruments (no meaningful first stage).
+---
 
 <a id="summary"></a>
-## Summary + Suggested Readings
+## Summary
 
-You now have a toolkit for causal estimation under explicit assumptions (FE/DiD/IV).
-The goal is disciplined thinking: identification first, estimation second.
+This guide covers the process of building a county-level panel dataset from American Community Survey data. The key steps are: (1) choose years and variables from the ACS, (2) fetch or cache the data, (3) construct stable FIPS identifiers with proper zero-padding, (4) compute derived rates with safe division, (5) validate the panel structure for duplicates, balance, and missing data, and (6) save the processed panel for use in downstream causal notebooks.
 
+The panel you build here is the input for the fixed effects, difference-in-differences, and other causal inference notebooks in this module. Getting the data right at this stage prevents subtle errors that propagate through every subsequent analysis.
 
-Suggested readings:
-- Angrist & Pischke: Mostly Harmless Econometrics (design-based causal inference)
-- Wooldridge: Econometric Analysis of Cross Section and Panel Data (FE/IV foundations)
+### Project Code Map
+
+- `src/causal.py`: panel setup helpers (`to_panel_index`, `make_fips`)
+- `scripts/build_datasets.py`: ACS panel builder (`build_census_county_panel`)
+- `src/census_api.py`: Census/ACS client (`fetch_acs`, `fetch_variables`)
+- `configs/census_panel.yaml`: panel configuration (years, variables, geography)
+- `data/sample/census_county_panel_sample.csv`: offline sample panel dataset
+
+### Suggested Readings
+
+- **ACS documentation**: U.S. Census Bureau, *Understanding and Using American Community Survey Data: What All Data Users Need to Know* (census.gov). Covers survey methodology, margins of error, and proper interpretation of estimates.
+- **Census API documentation**: developer.census.gov. Reference for variable names, geography codes, and API query syntax.
+- **ACS variable search**: data.census.gov. Interactive tool for finding ACS table codes and understanding variable definitions.
+- **FIPS code reference**: Census Bureau FIPS Codes page. Complete list of state and county FIPS codes with vintage information.
+- **Wooldridge, J.M.**: *Econometric Analysis of Cross Section and Panel Data*, Chapter 10 (Basic Linear Unobserved Effects Panel Data Models). Covers the econometric foundations for the panel methods that will consume this dataset.
+- **Angrist, J.D. and Pischke, J.-S.**: *Mostly Harmless Econometrics*, Chapter 5 (Panel Data Methods). Practical treatment of fixed effects and related designs.
+- **Baum-Snow, N. and Ferreira, F.** (2015): "Causal Inference in Urban and Regional Economics" in *Handbook of Regional and Urban Economics*, Vol. 5. Discusses county-level panel data construction for applied research.

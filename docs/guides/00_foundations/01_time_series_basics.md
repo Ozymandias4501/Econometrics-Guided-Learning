@@ -80,10 +80,10 @@ Most mistakes in applied econometrics + ML come from confusing these three quest
 #### 2) Notation + setup (define symbols)
 
 Time index:
-- $t = 1,\\dots,T$ indexes time (months/quarters).
+- $t = 1,\dots,T$ indexes time (months/quarters).
 
 Forecast horizon:
-- $h \\ge 1$ is how far ahead you predict.
+- $h \ge 1$ is how far ahead you predict.
 
 Features and target:
 - $X_t$ is the feature vector available at time $t$.
@@ -92,7 +92,7 @@ Features and target:
 The forecasting problem is:
 
 $$
-\\text{learn a function } f \\text{ such that } \\hat y_{t+h} = f(X_t).
+\text{learn a function } f \text{ such that } \hat y_{t+h} = f(X_t).
 $$
 
 **What each term means**
@@ -123,11 +123,11 @@ If the evaluation scheme does not match the real timing of the task, the estimat
 If you use a walk-forward scheme, conceptually you are estimating:
 
 $$
-\\text{future error} \\approx \\frac{1}{M} \\sum_{m=1}^{M} \\ell(\\hat y_{t_m+h}, y_{t_m+h})
+\text{future error} \approx \frac{1}{M} \sum_{m=1}^{M} \ell(\hat y_{t_m+h}, y_{t_m+h})
 $$
 
 where:
-- $\\ell$ is a loss function (squared error, log loss, …),
+- $\ell$ is a loss function (squared error, log loss, …),
 - $t_m$ are evaluation times in the future relative to training.
 
 #### 5) Leakage (the #1 silent killer)
@@ -204,13 +204,13 @@ Random splits answer a different question: “Can I interpolate within a mixed p
 #### 2) Notation + setup (define symbols)
 
 Let:
-- data be ordered by time $t=1,\\dots,T$,
-- training window be $t \\le t_{train}$,
+- data be ordered by time $t=1,\dots,T$,
+- training window be $t \le t_{train}$,
 - test window be $t > t_{train}$.
 
 A basic time split is:
-- Train: $\\{1,\\dots,t_{train}\\}$
-- Test: $\\{t_{train}+1,\\dots,T\\}$
+- Train: $\{1,\dots,t_{train}\}$
+- Test: $\{t_{train}+1,\dots,T\}$
 
 #### 3) Assumptions (what time splits assume)
 
@@ -285,7 +285,7 @@ Let:
 The core question for every feature is:
 
 $$
-\\text{Was this feature value knowable at time } t \\text{ when predicting } y_{t+h}?
+\text{Was this feature value knowable at time } t \text{ when predicting } y_{t+h}?
 $$
 
 If “no,” it is leakage.

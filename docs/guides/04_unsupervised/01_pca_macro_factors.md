@@ -74,18 +74,18 @@ These outputs are best treated as hypotheses you can investigate, not as causal 
 
 #### 2) Notation + setup (define symbols)
 
-Let $X$ be an $n \\times p$ feature matrix:
+Let $X$ be an $n \times p$ feature matrix:
 - rows: time periods or entities,
 - columns: standardized indicators.
 
 Standardization is often essential:
 
 $$
-\\tilde x_{ij} = \\frac{x_{ij} - \\bar x_j}{s_j}
+\tilde x_{ij} = \frac{x_{ij} - \bar x_j}{s_j}
 $$
 
 **What each term means**
-- $\\bar x_j$: mean of feature $j$,
+- $\bar x_j$: mean of feature $j$,
 - $s_j$: standard deviation of feature $j$,
 - standardization prevents high-variance features from dominating.
 
@@ -113,6 +113,7 @@ Common failure modes:
 
 2) **Stability**
 - do PCA loadings or cluster assignments change a lot if you change the sample period?
+- **Practical check:** fit PCA separately on the first half and second half of the sample. Compute the correlation between the PC1 loading vectors from each half. If the correlation exceeds ~0.8, the factor structure is reasonably stable. If it falls below ~0.5, the underlying relationships have shifted materially and you should investigate whether a structural break (e.g., the Great Moderation, COVID) is driving the change.
 
 3) **Interpretability**
 - can you label factors/clusters with economic meaning using external context?
@@ -156,35 +157,35 @@ Treat PCA as descriptive: it finds variance directions, not causal drivers.
 
 #### 2) Notation + setup (define symbols)
 
-Let $X$ be an $n \\times p$ matrix of features:
+Let $X$ be an $n \times p$ matrix of features:
 - rows: observations (time periods),
 - columns: indicators (standardized).
 
 Standardization:
 $$
-\\tilde X_{ij} = \\frac{X_{ij} - \\bar X_j}{s_j}.
+\tilde X_{ij} = \frac{X_{ij} - \bar X_j}{s_j}.
 $$
 
 Sample covariance matrix (for standardized data):
 $$
-S = \\frac{1}{n}\\tilde X'\\tilde X.
+S = \frac{1}{n}\tilde X'\tilde X.
 $$
 
 PCA finds eigenvectors of $S$:
 $$
-S w_k = \\lambda_k w_k,
+S w_k = \lambda_k w_k,
 $$
-with eigenvalues $\\lambda_1 \\ge \\lambda_2 \\ge \\cdots$.
+with eigenvalues $\lambda_1 \ge \lambda_2 \ge \cdots$.
 
 PC scores:
 $$
-z_{ik} = \\tilde x_i' w_k,
+z_{ik} = \tilde x_i' w_k,
 $$
-where $\\tilde x_i$ is row $i$ of $\\tilde X$.
+where $\tilde x_i$ is row $i$ of $\tilde X$.
 
 **What each term means**
 - $w_k$: loading vector for component $k$ (how indicators combine).
-- $\\lambda_k$: variance explained by component $k$.
+- $\lambda_k$: variance explained by component $k$.
 - $z_{ik}$: component score (latent factor value for observation $i$).
 
 #### 3) Assumptions (and what can go wrong)
@@ -202,12 +203,12 @@ Common pitfalls:
 
 Most implementations use SVD:
 $$
-\\tilde X = U \\Sigma V'.
+\tilde X = U \Sigma V'.
 $$
 
 Then:
 - loadings are columns of $V$,
-- explained variance relates to singular values in $\\Sigma$.
+- explained variance relates to singular values in $\Sigma$.
 
 #### 5) Inference: uncertainty is about stability, not p-values
 

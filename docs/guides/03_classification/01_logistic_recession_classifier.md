@@ -79,24 +79,24 @@ Probabilities let you:
 #### 2) Notation + setup (define symbols)
 
 Let:
-- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $y_i \in \{0,1\}$ be the true label (1 = recession),
 - $x_i$ be features,
-- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
 
 Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
+\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
 $$
 
 Equivalently:
 
 $$
-p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
+p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
 $$
 
 **What each term means**
-- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- $\sigma(\cdot)$ maps real numbers to (0,1).
 - coefficients move probabilities through the log-odds scale.
 
 #### 3) Assumptions (and what “probability model” means)
@@ -112,12 +112,12 @@ But calibration can suffer, so we measure it.
 #### 4) Estimation mechanics (how the model is fit)
 
 Logistic regression is typically fit by maximum likelihood:
-- choose $\\beta$ to maximize the probability of the observed labels.
+- choose $\beta$ to maximize the probability of the observed labels.
 
 The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
 $$
-\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+\ell(\beta) = -\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
 $$
 
 In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
@@ -139,18 +139,18 @@ At minimum, treat these as standard:
 - **PR-AUC:** often more informative when positives are rare.
 - **Brier score:** mean squared error of probabilities:
 $$
-\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+\text{Brier} = \frac{1}{n} \sum_i (p_i - y_i)^2.
 $$
 - **Calibration plots:** do predicted probabilities match observed frequencies?
 
 #### 7) Thresholding is a decision rule (not a model property)
 
-A threshold $\\tau$ converts probability to a hard label:
+A threshold $\tau$ converts probability to a hard label:
 $$
-\\hat y_i = 1[p_i \\ge \\tau].
+\hat y_i = 1[p_i \ge \tau].
 $$
 
-Choosing $\\tau$ should reflect costs:
+Choosing $\tau$ should reflect costs:
 - false positives (crying wolf),
 - false negatives (missing recessions).
 
@@ -202,29 +202,29 @@ Probabilities let you compare risk over time and choose thresholds based on cost
 #### 2) Notation + setup (define symbols)
 
 Let:
-- $y_i \\in \\{0,1\\}$ be the label,
-- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+- $y_i \in \{0,1\}$ be the label,
+- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
 
 Define odds:
 $$
-\\text{odds}_i = \\frac{p_i}{1-p_i}.
+\text{odds}_i = \frac{p_i}{1-p_i}.
 $$
 
 Define log-odds:
 $$
-\\log\\left(\\frac{p_i}{1-p_i}\\right).
+\log\left(\frac{p_i}{1-p_i}\right).
 $$
 
 Logistic regression assumes:
 
 $$
-\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
+\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
 $$
 
 Equivalently:
 
 $$
-p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
+p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
 $$
 
 #### 3) Assumptions (what this model assumes)
@@ -241,7 +241,7 @@ Misspecification is common; the model can still be useful for ranking risk, but 
 Logistic regression is typically fit by maximizing the log-likelihood:
 
 $$
-\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
 $$
 
 In practice you use libraries; the key is to interpret outputs correctly.
@@ -249,14 +249,14 @@ In practice you use libraries; the key is to interpret outputs correctly.
 #### 5) Inference: interpreting coefficients
 
 Coefficient meaning:
-- a 1-unit increase in $x_j$ changes log-odds by $\\beta_j$ (holding other features fixed).
-- odds multiply by $e^{\\beta_j}$.
+- a 1-unit increase in $x_j$ changes log-odds by $\beta_j$ (holding other features fixed).
+- odds multiply by $e^{\beta_j}$.
 
 Example:
-- if $\\beta_j = 0.7$, odds multiply by $e^{0.7} \\approx 2.0$.
+- if $\beta_j = 0.7$, odds multiply by $e^{0.7} \approx 2.0$.
 
 Probability marginal effects depend on baseline probability:
-- the same $\\beta_j$ can correspond to different probability changes at different risk levels.
+- the same $\beta_j$ can correspond to different probability changes at different risk levels.
 
 #### 6) Diagnostics + robustness (minimum set)
 
@@ -282,7 +282,7 @@ Report:
 
 #### Exercises
 
-- [ ] Convert a coefficient to an odds ratio ($e^{\\beta}$) and interpret it in words.
+- [ ] Convert a coefficient to an odds ratio ($e^{\beta}$) and interpret it in words.
 - [ ] Show how a fixed log-odds change maps to different probability changes at p=0.1 vs p=0.9.
 - [ ] Fit logistic regression and produce a calibration plot; interpret over/under-confidence.
 

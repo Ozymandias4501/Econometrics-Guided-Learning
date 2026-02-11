@@ -1,9 +1,15 @@
-# Guide: 02_difference_in_differences_event_study
+# Guide: Difference-in-Differences and Event Studies
 
 ## Table of Contents
 - [Intro of Concept Explained](#intro)
 - [Step-by-Step and Alternative Examples](#step-by-step)
 - [Technical Explanations (Code + Math + Interpretation)](#technical)
+  - [Difference-in-Differences (DiD)](#did)
+  - [Event Studies (Leads/Lags)](#event-studies)
+  - [Staggered Adoption and Modern DiD](#staggered)
+  - [Diagnostics and Robustness](#diagnostics)
+  - [Practical Code Templates](#code-templates)
+- [Common Mistakes](#common-mistakes)
 - [Summary + Suggested Readings](#summary)
 
 <a id="intro"></a>
@@ -11,629 +17,679 @@
 
 This guide accompanies the notebook `notebooks/07_causal/02_difference_in_differences_event_study.ipynb`.
 
-This module adds identification-focused econometrics: panels, DiD/event studies, and IV.
+**Prerequisites.** This guide assumes you have read
+[Guide 01: Panel Fixed Effects and Clustered SE](01_panel_fixed_effects_clustered_se.md),
+which covers the Core Causal Inference primer (potential outcomes, selection bias,
+identification vs estimation, the ATE/ATT distinction) and the full treatment of
+clustered standard errors (sandwich estimator, few-clusters problem, choosing the
+cluster level). We will not repeat that material here. If terms like "parallel
+trends" or "ATT" feel unfamiliar, start with Guide 01 first.
 
-### Key Terms (defined)
-- **Identification**: assumptions that justify a causal interpretation.
-- **Fixed effects (FE)**: controls for time-invariant unit differences.
-- **Clustered SE**: allows correlated errors within groups (e.g., state).
-- **DiD**: compares changes over time between treated and control units.
-- **IV/2SLS**: uses an instrument to address endogeneity.
+**Why DiD dominates health economics.** Difference-in-differences is the single
+most common identification strategy in modern health economics and health
+services research. The reason is institutional: health policy changes at discrete
+moments in time for identifiable groups of people, creating natural experiments.
+Medicaid expansions happen in some states but not others. The ACA dependent
+coverage mandate applied to adults under 26 but not those over 26. Hospital
+mergers affect some markets but leave neighboring markets untouched. Certificate-
+of-need law repeals happen in specific states in specific years. In each case,
+DiD compares changes in outcomes for affected units against changes for unaffected
+units, removing both permanent group differences and common time trends.
 
+This guide covers two closely related tools:
+1. **Difference-in-differences (DiD)** -- the foundational design.
+2. **Event studies (leads/lags)** -- the dynamic extension that shows how effects
+   evolve and provides the key diagnostic for the identifying assumption.
+
+### Key Terms (DiD-specific)
+
+- **Treatment group**: units that receive the intervention (e.g., Medicaid expansion states).
+- **Control group**: units that do not receive the intervention (non-expansion states).
+- **Pre-period**: time before treatment begins.
+- **Post-period**: time after treatment begins.
+- **Parallel trends**: the assumption that treated and control groups would have followed the same trajectory in the absence of treatment.
+- **Treatment adoption**: the moment a unit switches from untreated to treated.
+- **Staggered adoption**: different units adopt treatment at different times.
+- **Event time**: calendar time re-centered around each unit's adoption date ($k = t - T_i$).
+- **Leads**: event-time dummies for periods before adoption ($k < 0$); used to diagnose pre-trends.
+- **Lags**: event-time dummies for periods after adoption ($k \ge 0$); these capture the treatment effect path.
+- **Anticipation effects**: changes in behavior before formal treatment onset (e.g., hospitals adjusting staffing before a policy takes effect).
+- **Pre-trends**: differential trends between treated and control units before treatment; a red flag for the parallel trends assumption.
+- **TWFE (two-way fixed effects)**: a regression with unit fixed effects and time fixed effects, the standard DiD estimator.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Use **Technical Explanations** for the math, assumptions, and interpretation.
+- Open any `<details>` blocks for optional depth on advanced topics.
 - Then return to the notebook and write a short interpretation note after each section.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Synthetic adoption + treatment
-- Complete notebook section: TWFE DiD
-- Complete notebook section: Event study (leads/lags)
-- Complete notebook section: Diagnostics: pre-trends + placebo
-- Write the causal question and identification assumptions before estimating.
-- Run at least one diagnostic/falsification (pre-trends, placebo, weak-IV check).
-- Report clustered SE (and number of clusters) when appropriate.
+- [ ] State the causal question: what treatment, what outcome, what population, what time horizon?
+- [ ] Identify the treatment and control groups and justify why the control group is a plausible counterfactual.
+- [ ] Write the parallel trends assumption in words for your specific setting.
+- [ ] Plot raw group means over time (treated vs control) and visually assess whether pre-trends look parallel.
+- [ ] Complete notebook section: Synthetic adoption + treatment assignment.
+- [ ] Complete notebook section: TWFE DiD estimation with clustered SE.
+- [ ] Complete notebook section: Event study (leads/lags) estimation.
+- [ ] Complete notebook section: Diagnostics -- pre-trends test and placebo checks.
+- [ ] Report: point estimate, clustered SE, cluster level, number of clusters, and event study plot.
 
-### Alternative Example (Not the Notebook Solution)
+### Alternative Example: A Complete 2x2 DiD Calculation
+
+This example is separate from the notebook data. It walks through a Medicaid
+expansion DiD from start to finish.
+
+**Setting.** Suppose 10 states expanded Medicaid in 2014 ("treated") and 10 did
+not ("control"). We measure the uninsurance rate (%) in 2013 (pre) and 2015 (post).
+
 ```python
-# Toy DiD setup (not the notebook data):
 import numpy as np
 import pandas as pd
 
-df = pd.DataFrame({
-  'group': ['T']*50 + ['C']*50,
-  'post':  [0]*25 + [1]*25 + [0]*25 + [1]*25,
-})
-df['treated'] = (df['group'] == 'T').astype(int)
-df['D'] = df['treated'] * df['post']
+# 2x2 group means (uninsurance rate, %)
+data = {
+    'Group':   ['Expansion', 'Expansion', 'Non-expansion', 'Non-expansion'],
+    'Period':  ['Pre (2013)',  'Post (2015)', 'Pre (2013)',    'Post (2015)'],
+    'Uninsurance_Rate': [15.0, 9.0, 18.0, 16.0],
+}
+table = pd.DataFrame(data)
+print(table.to_string(index=False))
+#        Group       Period  Uninsurance_Rate
+#    Expansion   Pre (2013)              15.0
+#    Expansion  Post (2015)               9.0
+# Non-expansion  Pre (2013)              18.0
+# Non-expansion Post (2015)              16.0
 ```
 
+**Step 1: Within-group changes.**
+- Expansion states: 9.0 - 15.0 = **-6.0 pp** (uninsurance fell 6 points).
+- Non-expansion states: 16.0 - 18.0 = **-2.0 pp** (uninsurance fell 2 points).
+
+**Step 2: Difference-in-differences.**
+$$
+\hat{\tau}_{\text{DiD}} = (-6.0) - (-2.0) = -4.0 \text{ pp}.
+$$
+
+**Step 3: Interpretation.** The DiD estimate is -4.0 percentage points. This
+means that, relative to the secular decline in uninsurance that both groups
+experienced (approximated by the -2.0 pp change in non-expansion states),
+expansion states saw an *additional* 4.0 pp reduction in uninsurance
+attributable to the Medicaid expansion -- under the assumption that without
+the expansion, expansion states would have experienced the same -2.0 pp
+decline as non-expansion states (parallel trends).
+
+Note that expansion and non-expansion states started at different *levels*
+(15% vs 18%). That is fine. DiD does not require equal levels, only equal
+trends in the absence of treatment.
+
+```python
+# The same calculation in code:
+treated_change = 9.0 - 15.0   # -6.0
+control_change = 16.0 - 18.0  # -2.0
+did_estimate = treated_change - control_change  # -4.0
+print(f"DiD estimate: {did_estimate:.1f} pp")
+```
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Causal Inference: From Questions → Identification → Estimation
-
-This project’s causal modules are built around one idea:
-
-> **If you cannot clearly state the counterfactual, you cannot interpret a coefficient causally.**
-
-Below is a “lecture-notes” walkthrough of the causal vocabulary you will reuse in FE / DiD / IV.
-
-#### 1) Intuition (plain English): what problem are we solving?
-
-In **prediction**, you ask:
-- “Given what I observe today, what will happen next?”
-
-In **causal inference**, you ask:
-- “If I intervened and changed something, what would happen instead?”
-
-**Story example (micro):** What is the effect of *one more year of schooling* on earnings?
-- Prediction: people with more schooling earn more; you can forecast earnings from schooling.
-- Causality: if we forcibly increased a person’s schooling by one year, would earnings rise? By how much?
-
-**Story example (macro/policy):** What is the effect of a change in monetary policy on unemployment?
-- Prediction: unemployment and interest rates move together in time series.
-- Causality: if the policy rate were higher *holding everything else fixed*, what would unemployment have been?
-
-The difference is the missing world we never observe.
-
-#### 2) Notation + setup: potential outcomes (define every symbol)
-
-We index:
-- units by $i = 1,\\dots,N$ (counties, states, people, firms, …),
-- time by $t = 1,\\dots,T$ (years, quarters, …).
-
-Let:
-- $D_{it} \\in \\{0,1\\}$ be a treatment indicator (treated vs not treated).
-- $Y_{it}(1)$ be the outcome *if treated*.
-- $Y_{it}(0)$ be the outcome *if not treated*.
-
-We observe only one outcome per unit-time:
-
-$$
-Y_{it} = D_{it} \\cdot Y_{it}(1) + (1 - D_{it}) \\cdot Y_{it}(0).
-$$
-
-**What each term means**
-- $Y_{it}$: observed outcome (e.g., poverty rate in county $i$ in year $t$).
-- $D_{it}$: whether the unit is treated at time $t$.
-- $Y_{it}(1), Y_{it}(0)$: two “parallel universes” outcomes.
-
-The **individual causal effect** is:
-$$
-\\tau_{it} = Y_{it}(1) - Y_{it}(0),
-$$
-but we never observe both terms for the same $(i,t)$.
-
-Common estimands:
-
-$$
-\\text{ATE} = \\mathbb{E}[Y(1) - Y(0)],
-\\qquad
-\\text{ATT} = \\mathbb{E}[Y(1) - Y(0) \\mid D=1].
-$$
-
-**What each term means**
-- ATE: average effect in the population of interest.
-- ATT: average effect for treated units (often what DiD identifies).
-
-#### 3) Identification vs estimation (and why this distinction matters)
-
-> **Identification** answers: “Which assumptions turn observed data into a causal effect?”
-
-> **Estimation** answers: “Given those assumptions, how do we compute the effect?”
-
-Example:
-- DiD identification assumption: **parallel trends** (treated and control would have evolved similarly absent treatment).
-- DiD estimator: a difference of differences (or a TWFE regression).
-
-Regression output (a coefficient + p-value) is **estimation**. It is *not* identification.
-
-#### 4) Selection bias in one equation (why naive comparisons fail)
-
-A naive “treated vs control” difference in observed means is:
-$$
-\\mathbb{E}[Y \\mid D=1] - \\mathbb{E}[Y \\mid D=0].
-$$
-
-Add and subtract $\\mathbb{E}[Y(0) \\mid D=1]$ to decompose it:
-
-$$
-\\underbrace{\\mathbb{E}[Y(1) \\mid D=1] - \\mathbb{E}[Y(0) \\mid D=1]}_{\\text{ATT}}
-\\; + \\;
-\\underbrace{\\mathbb{E}[Y(0) \\mid D=1] - \\mathbb{E}[Y(0) \\mid D=0]}_{\\text{selection bias}}.
-$$
-
-**What each term means**
-- The first bracket is the causal effect for treated units.
-- The second bracket is the difference in untreated potential outcomes between treated and control units.
-
-If treated units would have had different outcomes *even without treatment*, the naive comparison is biased.
-
-#### 5) Core causal assumptions you will see repeatedly
-
-You will see versions of these assumptions across FE/DiD/IV:
-
-1) **Consistency**
-- If a unit is treated ($D=1$), the observed outcome equals $Y(1)$; if not, it equals $Y(0)$.
-
-2) **SUTVA (no interference + well-defined treatment)**
-- My treatment does not change your outcome (no spillovers).
-- “Treatment” is a specific, comparable intervention (not a vague label).
-
-3) **Exchangeability / exogeneity (design-specific)**
-- Some condition that makes the treatment “as good as random” *after conditioning or differencing*.
-  - FE uses within-unit changes to remove time-invariant confounding.
-  - DiD uses parallel trends to remove common time shocks.
-  - IV uses exclusion + relevance to isolate quasi-random variation in treatment.
-
-4) **Overlap (when conditioning is used)**
-- There are both treated and untreated units for the covariate patterns you analyze.
-
-#### 6) Estimation mechanics (high level): mapping designs → estimators
-
-This repo focuses on three workhorse designs:
-
-- **Panel fixed effects (FE / TWFE)**  
-  Model: $Y_{it} = \\beta'X_{it} + \\alpha_i + \\gamma_t + \\varepsilon_{it}$  
-  Identifying variation: within-unit changes over time.
-
-- **Difference-in-differences (DiD / event study)**  
-  Model: $Y_{it} = \\beta D_{it} + \\alpha_i + \\gamma_t + \\varepsilon_{it}$  
-  Identifying variation: treated vs control *changes*.
-
-- **Instrumental variables (IV / 2SLS)**  
-  Structural: $Y = \\beta X + u$ with $\\mathrm{Cov}(X,u) \\neq 0$  
-  Instrument: $Z$ shifts $X$ but is excluded from $Y$ except through $X$.
-
-#### 7) Inference: why standard errors are part of the design
-
-Even if your estimator is unbiased under identification assumptions, **inference can fail** if you treat dependent observations as independent.
-
-Common dependence patterns:
-- counties in the same state share shocks → errors correlated within state,
-- repeated observations over time → serial correlation.
-
-That is why causal notebooks emphasize **clustered standard errors** and “number of clusters” reporting.
-
-#### 8) Diagnostics + robustness (minimum set you should practice)
-
-At least three diagnostics should become habits:
-
-1) **Design diagnostic:** does the identifying assumption look plausible?
-   - DiD: pre-trends / leads in an event study.
-   - IV: first-stage strength and exclusion plausibility.
-
-2) **Specification sensitivity:** does the estimate move a lot if you change the spec?
-   - add/remove plausible controls,
-   - change time window,
-   - change clustering level.
-
-3) **Falsification / placebo:** does the method “find effects” where none should exist?
-   - fake treatment dates,
-   - outcomes that should not respond,
-   - never-treated placebo groups.
-
-#### 9) Interpretation + reporting (how to write results honestly)
-
-Good causal write-ups answer these questions explicitly:
-- What is the **causal question** (intervention, population, time horizon)?
-- What is the **estimand** (ATE, ATT, dynamic effects)?
-- What is the **identification assumption** (in one sentence)?
-- What is the **estimation method** (FE/DiD/IV; SE choice)?
-- What diagnostics/robustness checks support or weaken the claim?
-
-**What this does NOT mean**
-- A significant coefficient does **not** prove a causal story.
-- “Controls” do **not** automatically eliminate bias.
-- Better fit ($R^2$) does **not** imply better identification.
-
-#### 10) Why this repo uses “semi-synthetic” exercises
-
-Some notebooks add a **known treatment effect** to a real outcome to create a semi-synthetic truth.
-That lets you verify whether an estimator can recover the known effect, without pretending the dataset is a real policy evaluation.
-
-<details>
-<summary>Optional: very light DAG intuition (one paragraph)</summary>
-
-A causal diagram (DAG) is a picture of assumptions: arrows represent direct causal links.
-Confounding is “backdoor paths” from $D$ to $Y$ (e.g., ability affects both schooling and earnings).
-Designs like FE/DiD/IV are ways to block backdoor paths using time differencing, group comparisons, or instruments.
-
-</details>
-
-#### Exercises (do these with the matching notebooks)
-
-- [ ] Pick one notebook question and write the potential outcomes $Y(1), Y(0)$ in words.
-- [ ] Define whether you care about ATE or ATT in that notebook and explain why.
-- [ ] Write the selection-bias decomposition for a naive comparison in your context.
-- [ ] List 3 threats to identification for your design (confounding, anticipation, spillovers, measurement error, …).
-- [ ] Write one placebo test you could run and what a “failure” would look like.
-- [ ] Explain in 4 sentences why a p-value is not a substitute for identification.
-
-### Difference-in-Differences (DiD): learning from “changes vs changes”
-
-DiD is a workhorse design for causal inference when treatment is not randomized but changes over time for some units.
-
-#### 1) Intuition (plain English)
-
-If treated units and control units start at different levels, a raw comparison is not credible.
-DiD fixes *level differences* by comparing **changes**:
-- how much did outcomes change in treated units after treatment?
-- how much did outcomes change in control units over the same period?
-
-**Story example:** A policy is adopted in some states in 2018 but not others.  
-We compare outcome changes in adopting states vs non-adopting states.
-
-#### 2) Notation + setup (2×2 first, define symbols)
-
-Let:
-- groups $g \\in \\{T, C\\}$ for treated vs control group,
-- time $t \\in \\{0, 1\\}$ for pre vs post,
-- $Y_{gt}$ be the average observed outcome in group $g$ at time $t$.
-
-Potential outcomes:
-- $Y_{gt}(1)$: outcome if treated,
-- $Y_{gt}(0)$: outcome if not treated.
-
-In the 2×2 setting, only the treated-post cell is treated:
-- treated group in post: observed $Y_{T1} = Y_{T1}(1)$,
-- everything else: observed is $Y(0)$.
-
-#### 3) The DiD estimand (and what each term means)
+<a id="did"></a>
+### Difference-in-Differences (DiD): Learning from "Changes vs Changes"
+
+DiD is a workhorse design for causal inference when treatment is not randomized
+but changes over time for some units. It removes time-invariant confounders
+(through group differencing) and common time shocks (through time differencing).
+
+#### 1) Intuition: Why Compare Changes, Not Levels
+
+If treated and control units differ at baseline -- and they almost always do --
+a raw post-treatment comparison conflates the treatment effect with pre-existing
+differences. DiD compares *changes*: how much did outcomes change in the treated
+group vs the control group over the same period? The difference between those
+two changes isolates the treatment effect, because any permanent group difference
+cancels out and any common time shock (recession, national policy, seasonal flu)
+also cancels out.
+
+#### 2) The 2x2 Framework: Notation and Setup
+
+Define:
+- Groups $g \in \{T, C\}$ for treated and control.
+- Time periods $t \in \{0, 1\}$ for pre and post.
+- $Y_{gt}$ as the average observed outcome in group $g$ at time $t$.
+- $Y_{gt}(0)$ as the average potential outcome *without treatment*.
+- $Y_{gt}(1)$ as the average potential outcome *with treatment*.
+
+Only the treated group in the post-period receives treatment:
+- $Y_{T1} = Y_{T1}(1)$ (treated group, post-period: treated, so we observe $Y(1)$).
+- $Y_{T0} = Y_{T0}(0)$ (treated group, pre-period: not yet treated).
+- $Y_{C0} = Y_{C0}(0)$ and $Y_{C1} = Y_{C1}(0)$ (control group: never treated).
 
 The DiD estimand is:
 
 $$
-\\widehat{\\tau}_{\\text{DiD}}
-= (Y_{T1} - Y_{T0}) - (Y_{C1} - Y_{C0}).
+\hat{\tau}_{\text{DiD}} = (Y_{T1} - Y_{T0}) - (Y_{C1} - Y_{C0}).
 $$
 
-**What each piece means**
-- $Y_{T1} - Y_{T0}$: change in treated group (pre → post).
-- $Y_{C1} - Y_{C0}$: change in control group (same calendar time).
-- Subtracting removes common shocks that affect both groups.
+**What each piece means:**
+- $Y_{T1} - Y_{T0}$: total change in the treated group (includes both the treatment effect and any common time trend).
+- $Y_{C1} - Y_{C0}$: change in the control group (captures the common time trend only).
+- Subtracting the second from the first removes the common trend, leaving the treatment effect.
 
-#### 4) Identification: the parallel trends assumption
+**Worked example (from above):**
 
-DiD becomes causal under **parallel trends**:
+|                 | Pre (2013) | Post (2015) | Change |
+|-----------------|-----------|------------|--------|
+| Expansion       | 15.0%     | 9.0%       | -6.0 pp |
+| Non-expansion   | 18.0%     | 16.0%      | -2.0 pp |
+| **Difference**  |           |            | **-4.0 pp** |
 
-$$
-\\mathbb{E}[Y_{T1}(0) - Y_{T0}(0)] = \\mathbb{E}[Y_{C1}(0) - Y_{C0}(0)].
-$$
+The -4.0 pp is the ATT: the average treatment effect on the treated states.
 
-**What this says**
-- In the absence of treatment, treated and control would have evolved similarly over time.
-- This is a statement about *counterfactual trends*, not about levels.
+#### 3) The Parallel Trends Assumption: Deep Treatment
 
-Other common supporting assumptions:
-- **No anticipation:** treatment does not affect outcomes before it occurs.
-- **No spillovers:** treatment of one group does not directly change outcomes of the other.
-- **Stable composition:** the definition of the groups does not change in a way that creates artificial trends.
-
-#### 5) Regression form: DiD as a fixed-effects model
-
-With many units and time periods, DiD is often estimated via a TWFE regression:
+Parallel trends is the core identifying assumption of DiD:
 
 $$
-Y_{it} = \\alpha_i + \\gamma_t + \\beta D_{it} + \\varepsilon_{it}.
+E[Y_{T1}(0) - Y_{T0}(0)] = E[Y_{C1}(0) - Y_{C0}(0)].
 $$
 
-**What each term means**
-- $\\alpha_i$: unit fixed effects (remove time-invariant differences).
-- $\\gamma_t$: time fixed effects (remove common time shocks).
-- $D_{it}$: treatment indicator (1 if treated at time $t$).
-- $\\beta$: average effect under the DiD identification assumptions.
+**In words:** absent treatment, the treated group would have experienced the
+same change over time as the control group.
 
-In the 2×2 case, this regression coefficient equals the DiD difference-of-differences number.
+**What parallel trends requires:**
+- The *trends* (slopes, changes over time) must be the same across groups in the
+  counterfactual world without treatment.
+- It does NOT require that the groups have the same *levels*. Expansion states
+  can start at 15% and non-expansion at 18% -- that is perfectly fine, because
+  DiD removes level differences.
 
-#### 6) Inference: why clustering is standard in DiD
+**When parallel trends is plausible:**
+- Units face similar macro shocks and secular trends.
+- Treatment assignment is driven by something (e.g., political composition) that does not also cause differential outcome trends.
 
-DiD settings often have serial correlation (outcomes persist over time).
-If you treat panel rows as independent, SE can be badly understated.
+**When parallel trends is suspect:**
+- Treated and control units are fundamentally different in ways that generate different trajectories (e.g., large urban hospitals vs small rural clinics face different market forces).
+- Adoption is driven by the outcome itself -- if states expanded Medicaid *because* their uninsurance was rising faster, treated states were already on a different trajectory.
 
-Practical rule:
-- cluster at (or above) the level of treatment assignment / shared shocks (often state).
+**The fundamental untestability problem:**
+Parallel trends is a statement about the *counterfactual* -- what would have happened absent treatment. We can check pre-period trends, but pre-period parallelism does not guarantee post-period parallelism.
 
-#### 7) Diagnostics + robustness (minimum set)
+**"Pre-trends are necessary but not sufficient":** Suppose two groups have perfectly parallel uninsurance trends from 2008-2013. In 2014, one group expands Medicaid. Pre-trends look great. But if the expansion states also experienced an unrelated local economic boom starting in 2014, your DiD estimate would wrongly attribute the boom's effect to Medicaid. Pre-trends were fine; parallel trends failed in the post-period. DiD is always an *assumption-based* claim, not a proof.
 
-1) **Pre-trends / leads (event study)**
-- If treated units were already trending differently before treatment, parallel trends is doubtful.
+#### 4) The TWFE Regression: Connecting the 2x2 Math to Regression
 
-2) **Placebo interventions**
-- Assign fake treatment dates or fake treated groups; you should not “find” big effects.
+With many units and time periods, DiD is estimated via a two-way fixed effects
+(TWFE) regression:
 
-3) **Window sensitivity**
-- Re-estimate using different pre/post windows; large sensitivity suggests fragility.
+$$
+Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \varepsilon_{it}.
+$$
 
-4) **Outcome sanity**
-- Try an outcome that should not respond (if available). If it “responds,” your design is suspicious.
+**What each term does:**
+- $\alpha_i$ (unit FE): absorb time-invariant differences between units.
+- $\gamma_t$ (time FE): absorb common time shocks.
+- $D_{it}$: treatment indicator (1 if unit $i$ is treated at time $t$).
+- $\beta$: the DiD coefficient -- the average treatment effect under parallel trends.
 
-#### 8) Interpretation + reporting
+**Equivalence to the 2x2 formula.** In the simple 2x2 case (two groups, two
+periods), the OLS coefficient $\hat{\beta}$ from this regression is *exactly*
+equal to the difference-of-differences:
 
-Good DiD reporting includes:
-- the estimand (ATT? average post effect? dynamic effects?),
-- the identifying assumption (parallel trends) and evidence you provide,
-- SE choice (cluster level + number of clusters),
-- a figure (trend plot and/or event-study plot).
+$$
+\hat{\beta} = (\bar{Y}_{T,\text{post}} - \bar{Y}_{T,\text{pre}}) - (\bar{Y}_{C,\text{post}} - \bar{Y}_{C,\text{pre}}).
+$$
 
-**What this does NOT mean**
-- A TWFE coefficient is not automatically causal if parallel trends fails.
-- Controlling for many covariates does not rescue a failing design.
+**What happens if you omit one set of fixed effects?**
+- *Only entity FE (no time FE):* removes level differences but not common time shocks -- a recession would be attributed to treatment.
+- *Only time FE (no entity FE):* removes common shocks but not level differences -- you are comparing treated vs control levels, biased at baseline.
+- *Neither:* a pooled regression that confounds everything.
 
-<details>
-<summary>Optional: modern caveat — TWFE pitfalls with staggered adoption</summary>
+TWFE uses *both* because each set removes a different source of confounding.
 
-When different units adopt treatment at different times (“staggered adoption”), the simple TWFE regression can produce misleading averages if treatment effects vary over time or across cohorts.
-Modern alternatives (e.g., cohort-specific DiD estimators) address this.
+#### 5) Adding Covariates in DiD: When and Why
 
-In this repo, we use semi-synthetic adoption/effects to learn mechanics; for real research you should study these newer estimators.
+The basic TWFE regression can include time-varying covariates:
 
-</details>
+$$
+Y_{it} = \alpha_i + \gamma_t + \beta D_{it} + \mathbf{X}_{it}'\delta + \varepsilon_{it}.
+$$
 
-#### Exercises
+**When covariates help:**
+- *Precision:* Covariates that predict the outcome but are unrelated to treatment reduce residual variance (e.g., county age composition when studying health outcomes).
+- *Conditional parallel trends:* Sometimes parallel trends holds only after conditioning on $X$. Controlling for time-varying economic indicators can make the assumption more credible when expansion and non-expansion states differ on baseline demographics.
 
-- [ ] Draw a 2×2 table and compute the DiD estimand from hypothetical numbers you choose.
-- [ ] Write the parallel trends assumption in words for your dataset (what would have happened absent treatment?).
-- [ ] Plot group means over time (treated vs control) and visually assess pre-trends.
-- [ ] Run one placebo test and explain what you expected vs what you found.
-- [ ] Write a short paragraph explaining why clustering matters in DiD.
+**The "bad controls" warning:**
+Do NOT control for variables affected by the treatment (post-treatment variables / mediators).
+- Bad: controlling for insurance enrollment when studying Medicaid expansion's effect on health (enrollment is the *mechanism*).
+- Bad: controlling for hospital capacity when studying a merger's effect on prices, if the merger changed capacity.
+- Good: controlling for county unemployment rate (an economic confounder not caused by the policy).
 
-### Event Studies (Leads/Lags): dynamics + pre-trends in one picture
+**Rule of thumb:** Ask "could this variable be affected by the treatment?" If yes, exclude it. If unsure, show results with and without.
 
-Event studies generalize DiD by estimating how effects evolve before and after adoption.
+#### 6) Health Economics Applications of DiD
 
-#### 1) Intuition (plain English)
+DiD is everywhere in health economics. Key examples:
 
-A single DiD coefficient answers: “What is the average post-treatment effect?”
+**Medicaid expansion:** Finkelstein et al. (2012) used an Oregon Medicaid lottery; Sommers et al. (2012) used the 2006 Massachusetts reform. The ACA Medicaid expansion (2014+) generated hundreds of DiD studies comparing expansion vs non-expansion states on coverage, utilization, health outcomes, and finances.
 
-An event study answers:
-- “Do we see effects **before** adoption (bad sign / anticipation / confounding)?”
-- “How do effects evolve **after** adoption (ramp up, fade out, persist)?”
+**ACA dependent coverage mandate (age 26 provision):** Antwi, Moriya, and Simon (2013) used the age-26 cutoff -- adults 19-25 (treated) vs 27-29 (control), before and after 2010.
 
-**Story example:** A policy starts in 2018.  
-If outcomes in treated states start moving in 2016 relative to controls, your design is suspect.
+**Hospital mergers:** Dafny (2009) compared markets with mergers to similar markets without, measuring price effects. Post-merger quality studies use the same treated-vs-matched-control structure.
 
-#### 2) Notation + setup (define symbols)
+**State policy changes:** Tobacco taxes and smoking cessation; scope-of-practice laws for nurse practitioners; certificate-of-need law repeals and hospital entry.
 
-Let:
-- $T_i$ be the adoption time for unit $i$ (if it adopts),
-- event time $k = t - T_i$ (years relative to adoption),
-- $1[\\cdot]$ be an indicator function.
+#### 7) Inference in DiD
 
-We build lead/lag dummies for a window $k \\in \\{-K,\\dots,-2,0,\\dots,L\\}$.
-We omit one pre-treatment period (often $k=-1$) as the reference category.
+Inference in DiD requires clustered standard errors. See
+[Guide 01](01_panel_fixed_effects_clustered_se.md) for the full treatment of
+the cluster-robust sandwich estimator, the few-clusters problem, and choosing
+the cluster level.
+
+The short version for DiD:
+- Cluster at (or above) the level of treatment assignment. If treatment is
+  assigned at the state level, cluster at the state level.
+- Report the number of clusters. If $G < 30$, be cautious; consider
+  wild cluster bootstrap for more reliable inference.
+- Bertrand, Duflo, and Mullainathan (2004) showed that ignoring serial
+  correlation in DiD panels can produce severely misleading standard errors.
+
+<a id="event-studies"></a>
+### Event Studies (Leads/Lags): Dynamics and Pre-Trends in One Picture
+
+Event studies generalize DiD by estimating how effects evolve before and after
+treatment adoption. They are the primary tool for both assessing the parallel
+trends assumption and characterizing the dynamics of the treatment effect.
+
+#### 1) Why Event Studies Are Better Than Pooled DiD
+
+A single DiD coefficient answers "What is the average post-treatment effect?"
+An event study answers three richer questions:
+
+**a) Dynamics.** Does the effect appear immediately, ramp up, fade out, or persist? Medicaid expansion might reduce uninsurance immediately but improve health outcomes only after years of chronic disease management.
+
+**b) Pre-trends diagnostic.** If lead coefficients are systematically nonzero, parallel trends is suspect. This is the most important visual diagnostic in applied DiD.
+
+**c) Anticipation effects.** Units may change behavior before the formal treatment date (hospitals adjust staffing, patients delay procedures). Event studies reveal these in near-treatment leads.
+
+#### 2) Building Event-Time Dummies: Step by Step
+
+**Step 1: Define adoption year.** Each treated unit $i$ has an adoption year $T_i$. For never-treated units, $T_i$ is undefined.
+
+**Step 2: Compute event time.** For each treated unit-period, compute $k = t - T_i$. Negative $k$ = pre-treatment (leads); $k = 0$ = treatment onset; positive $k$ = post-treatment (lags).
+
+**Step 3: Create dummies.** For a chosen window $k \in \{-K, \dots, -2, 0, 1, \dots, L\}$, create indicators $D_{it}^{(k)} = \mathbf{1}[t - T_i = k]$. Each dummy equals 1 only for treated units at exactly that event time.
+
+**Step 4: Choose the reference period.** Omit one period to avoid collinearity. The standard choice is $k = -1$ (one period before treatment), the last "clean" pre-treatment period. All coefficients are then interpreted *relative to the period just before treatment began*.
+
+**Step 5: Handle never-treated units.** These units have no $T_i$, so all event-time dummies are zero. They serve as pure controls, helping pin down the common time trend via the time fixed effects.
+
+**Step 6: Bin endpoints.** Observations far from treatment ($k \le -K$ or $k \ge L$) are often grouped into single endpoint bins to avoid estimating coefficients from very few observations.
+
+#### 3) The Event Study Regression
 
 The standard event-study regression is:
 
 $$
-Y_{it} = \\alpha_i + \\gamma_t + \\sum_{k \\neq -1} \\beta_k \\cdot 1[t - T_i = k] + \\varepsilon_{it}.
+Y_{it} = \alpha_i + \gamma_t + \sum_{k \neq -1} \beta_k \cdot \mathbf{1}[t - T_i = k] + \varepsilon_{it}.
 $$
 
-**What each term means**
-- $\\alpha_i$: unit FE (levels).
-- $\\gamma_t$: time FE (common shocks).
-- $\\beta_k$: effect at event time $k$ relative to the reference period.
-- Reference period $k=-1$: all other coefficients are relative to this baseline.
+**What each term means:**
+- $\alpha_i$: unit fixed effects (absorb permanent unit differences).
+- $\gamma_t$: time fixed effects (absorb common time shocks).
+- $\beta_k$: the effect at event time $k$, relative to the reference period $k = -1$.
+- The omitted $k = -1$ is normalized to zero; all $\beta_k$ are relative to it.
 
-#### 3) Identification: what you need for an event study to be credible
+**What $\beta_k$ represents:**
+- For $k < 0$ (leads): $\beta_k$ measures whether there was a differential change between treated and control units at $k$ periods before treatment, relative to $k = -1$. Under parallel trends + no anticipation, these should all be zero.
+- For $k \ge 0$ (lags): $\beta_k$ measures the treatment effect at $k$ periods after adoption.
 
-Event studies inherit DiD assumptions plus some extras:
+#### 4) Reading an Event Study Plot: Detailed Walkthrough
 
-- **Parallel trends in the pre-period:** lead coefficients should be near zero (no differential pre-trends).
-- **No anticipation:** treatment should not affect outcomes before adoption.
-- **No spillovers/interference:** other units are not affected directly by others’ adoption.
-- **Stable treatment definition:** the “treatment” is comparable across cohorts.
+An event study plot is the single most important figure in a DiD paper.
 
-#### 4) Estimation mechanics (how you build the design matrix)
+**Anatomy of the plot:**
+- *X-axis:* event time $k$ (periods relative to treatment). A vertical dashed line marks treatment onset.
+- *Y-axis:* estimated coefficients $\hat{\beta}_k$, in outcome units (e.g., percentage points). A horizontal line at zero means "no effect relative to baseline."
+- *Dots:* point estimates at each event time.
+- *Error bars / bands:* 95% confidence intervals. If the CI includes zero, the estimate is not statistically distinguishable from no effect.
 
-The core construction is the event-time dummies:
-- compute $k = t - T_i$,
-- for each $k$ in your window create a dummy $D_{it}^k = 1[k=t-T_i]$ for treated units,
-- omit $k=-1$ (or another base) to avoid collinearity.
+**Reading pre-trends (leads, $k < -1$):**
+- Under parallel trends + no anticipation, lead coefficients should hover near zero.
+- A "good" pattern: dots bounce randomly around zero with no systematic drift.
+- A "bad" pattern: dots trend toward the eventual post-treatment direction -- this suggests treated units were already diverging before treatment.
 
-Then run FE regression with clustered SE.
+**Reading the treatment effect path (lags, $k \ge 0$):**
+- *Immediate effect:* sharp jump at $k = 0$ that persists (e.g., price cap).
+- *Ramp-up:* effect starts small and grows (e.g., insurance coverage improving chronic disease management over years).
+- *Fade-out:* effect appears then shrinks toward zero (adaptation, non-compliance, or temporary intervention).
+- *Permanent shift:* effect stabilizes at a new level.
 
-#### 5) Inference: multiple coefficients, multiple comparisons
+**Good vs bad plots:**
+- Good: flat pre-trends, clear break at treatment, consistently nonzero post-treatment coefficients, reasonably tight CIs.
+- Bad: pre-trends drifting in the same direction as the "effect," huge CIs everywhere, or erratic pattern with no clear break at treatment.
 
-Event studies estimate many $\\beta_k$’s.
-That raises two practical issues:
+#### 5) Identification for Event Studies
 
-1) **Statistical uncertainty increases** (many parameters).
-2) **Multiple testing** risk: some coefficients will look significant by chance.
+Event studies inherit the DiD assumptions with some refinements:
 
-In this repo, treat the event-study plot primarily as:
-- a diagnostic (pre-trends),
-- and an effect-shape description (not a fishing expedition).
+- **Parallel trends in the pre-period:** Lead coefficients should be jointly
+  near zero. This is necessary (but not sufficient) evidence for the assumption.
+- **No anticipation:** Treatment should not affect outcomes before the formal
+  adoption date. If anticipation is plausible (e.g., a policy was announced a
+  year before taking effect), you may need to shift the reference period earlier,
+  such as using $k = -2$ as the base instead of $k = -1$.
+- **No spillovers:** Other units are not affected by one unit's adoption.
+- **Stable treatment definition:** The "treatment" means the same thing across
+  cohorts and over time. If early adopters face a different version of the
+  policy than late adopters, pooling their event-study coefficients is misleading.
 
-#### 6) Diagnostics + robustness (minimum set)
+#### 6) Inference in Event Studies
 
-1) **Pre-trends check (leads)**
-- Are lead coefficients jointly near 0? (informally: do they bounce around 0 with wide CI?)
+Event studies estimate many $\beta_k$'s. Individual coefficients have wider CIs than the pooled DiD estimate, and with many coefficients some will look "significant" by chance (multiple testing). Do not cherry-pick individual leads -- look at the overall pattern and consider a joint F-test (see Diagnostics below). The shape of the event study matters more than any single dot.
 
-2) **Placebo adoption**
-- Shift adoption dates earlier or assign adoption to never-treated units; you should not see “effects.”
+<a id="staggered"></a>
+### Staggered Adoption and Modern DiD
 
-3) **Window/bins sensitivity**
-- Change the event window; bin far leads/lags; check if conclusions are stable.
+#### 1) What Is Staggered Adoption?
 
-4) **Cohort heterogeneity**
-- Compare early adopters vs late adopters; big differences can indicate heterogeneous effects.
+In many health economics settings, treatment arrives at different times: Medicaid expansion in 2014 for some states, 2015 for others, 2019 for still others. TWFE handles this mechanically -- $D_{it}$ switches on at different times -- but there is a subtle problem.
 
-#### 7) Interpretation + reporting
+#### 2) The TWFE Problem with Heterogeneous Effects
 
-When you report an event study:
-- Always show the plot (coefficients + CI).
-- State the base period.
-- Emphasize what the leads say about pre-trends.
-- Summarize post-treatment dynamics (when does effect start? peak? persist?).
+Goodman-Bacon (2021) showed that the TWFE estimator $\hat{\beta}$ in staggered
+settings is a weighted average of *all possible 2x2 DiD comparisons* in the
+data. This includes three types:
 
-**What this does NOT mean**
-- A flat pre-trend is supportive evidence, not proof.
-- A significant lead coefficient is a warning sign, not a “cool finding.”
+- **Early treated vs never treated** (clean comparison).
+- **Late treated vs never treated** (clean comparison).
+- **Late treated vs early treated** (problematic: uses already-treated units as "controls").
 
-<details>
-<summary>Optional: staggered adoption warning (one paragraph)</summary>
+The third type is the problem. When you use early adopters as "controls" for
+late adopters, the early adopters are already treated. If their treatment
+effect is changing over time (growing, shrinking), that time-varying effect
+contaminates the "control" trend.
 
-With staggered adoption and heterogeneous effects, classic TWFE event studies can mix comparisons across cohorts and time in subtle ways.
-Modern event-study estimators avoid some of these pitfalls; study them if you apply this to real policy evaluation.
+#### 3) The Negative Weighting Problem in Plain English
 
-</details>
+Imagine State A expanded Medicaid in 2014 and State B expanded in 2019. TWFE partly estimates State B's effect by comparing State B (before vs after 2019) against State A (2014-2019 vs 2019+). But State A has been treated since 2014. If State A's treatment effect was *growing* over that period, State A's outcomes were rising for treatment-related reasons. TWFE interprets this rise as "the control trend," making State B's effect look smaller -- or even negative.
 
-#### Exercises
+In extreme cases, some 2x2 comparisons receive *negative weights*, entering the overall average with the wrong sign. The pooled $\hat{\beta}$ can be negative even if every unit has a positive treatment effect.
 
-- [ ] Build an event-time variable and confirm it equals 0 in the adoption year for treated units.
-- [ ] Choose a base period and explain (in words) what “relative to base” means.
-- [ ] Plot the event-study coefficients and write 4 sentences interpreting (a) leads and (b) lags.
-- [ ] Run one placebo adoption test and explain whether it supports the design.
+#### 4) Modern Solutions (Know They Exist)
 
-### Clustered Standard Errors: Inference when observations move together
+Several estimators address these issues. You do not need to implement them here, but should know they exist:
 
-Clustered standard errors are about **honest uncertainty** when errors are correlated within groups.
+- **Callaway and Sant'Anna (2021):** Group-time-specific ATTs, aggregated; avoids using already-treated units as controls.
+- **Sun and Abraham (2021):** Interaction-weighted estimator robust to heterogeneous effects.
+- **de Chaisemartin and D'Haultfoeuille (2020):** Estimators that avoid negative weights.
+- **Borusyak, Jaravel, and Spiess (2024):** Imputation estimator that builds counterfactuals from untreated observations.
 
-#### 1) Intuition (plain English)
+#### 5) When Classic TWFE Is Still Fine
 
-Regression formulas for standard errors often assume each row is “independent.”
-In economics, that is frequently false.
+Classic TWFE works well when: (a) treatment timing is uniform (the 2x2 case), (b) effects are homogeneous across cohorts and over time, or (c) a large never-treated group dominates the comparisons. This repo's semi-synthetic exercises use simple adoption structures where TWFE is appropriate. For real research with staggered adoption, use (or at least check) modern estimators.
 
-**Story example:** Counties in the same state share:
-- state policy changes,
-- state-level business cycles,
-- housing markets and migration flows.
+<a id="diagnostics"></a>
+### Diagnostics and Robustness
 
-If your residuals are correlated within states and you ignore that, your standard errors are often too small, making effects look “significant” when they are not.
+#### 1) Pre-Trends Tests
 
-#### 2) Notation + setup (define symbols)
+**Visual test.** Plot the event study and examine lead coefficients. This is
+the most common and most informative diagnostic. A clear upward or downward
+drift in pre-treatment coefficients is a red flag.
 
-Consider a linear regression in stacked form:
+**Joint F-test on leads.** Test the null hypothesis $H_0: \beta_{-K} = \beta_{-K+1} = \dots = \beta_{-2} = 0$ (all lead coefficients are jointly zero).
+A rejection suggests differential pre-trends. But note: failure to reject does
+not prove parallel trends -- it could reflect low power (too few pre-periods
+or noisy data).
 
-$$
-\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{u}.
-$$
+```python
+# After estimating the event study, test joint significance of leads:
+from scipy import stats
 
-Let:
-- $n$ be the number of observations (rows),
-- $K$ be the number of regressors,
-- $g \\in \\{1,\\dots,G\\}$ index clusters (e.g., states),
-- $\\mathbf{X}_g$ be the rows of $\\mathbf{X}$ in cluster $g$,
-- $\\mathbf{u}_g$ be the residual vector in cluster $g$.
+# Suppose lead_coefs is a vector of pre-treatment beta_k estimates
+# and lead_vcov is their variance-covariance matrix
+# F = lead_coefs' @ inv(lead_vcov) @ lead_coefs / num_leads
+# Compare to F(num_leads, df_residual) distribution
+```
 
-#### 3) What clustering assumes (and what it relaxes)
+#### 2) Placebo Treatments
 
-Cluster-robust SE relax the “independent errors” assumption **within** clusters:
-- errors can be heteroskedastic and correlated in arbitrary ways within a cluster.
+**Fake treatment dates.** Shift the treatment date earlier (e.g., pretend
+treatment happened in 2011 instead of 2014) and re-estimate. If you "find"
+a significant effect at the fake date, your design is suspect -- the treated
+group was already trending differently.
 
-But they still assume something like **independence across clusters**:
-- cluster $g$ shocks are independent of cluster $h$ shocks (for $g \\neq h$).
+**Fake outcomes.** Use an outcome that should not be affected by the treatment.
+If studying Medicaid expansion's effect on uninsurance, try an outcome like
+traffic fatalities. If DiD finds a "significant effect" on traffic fatalities,
+something is wrong with your comparison group.
 
-This is why **choosing the right cluster level is part of the design**, not a technical afterthought.
+**Fake treatment groups.** Assign treatment randomly among control units. The
+DiD estimate should be near zero. This is a permutation-style placebo that
+tests whether your method is prone to false positives.
 
-#### 4) Estimation mechanics: the cluster-robust covariance (sandwich form)
+#### 3) Sensitivity Analysis: What if Parallel Trends Is Slightly Violated?
 
-The OLS coefficient estimate $\\hat\\beta$ does not change when you change SE.
-What changes is the estimated variance of $\\hat\\beta$.
+Rambachan and Roth (2023) formalize a sensitivity analysis: "What if parallel
+trends is violated, but only by a small amount?" They construct bounds on the
+treatment effect under the assumption that violations are bounded (e.g., the
+differential trend is at most $\bar{M}$ per period). This is conceptually
+similar to Oster's (2019) approach for omitted variable bias, but tailored to
+DiD.
 
-The cluster-robust (one-way) covariance estimator is:
+At minimum, you should informally assess: "If the small pre-trend I see
+continued into the post-period, how much would it change my estimate?"
 
-$$
-\\widehat{\\mathrm{Var}}_{\\text{CL}}(\\hat\\beta)
-= (\\mathbf{X}'\\mathbf{X})^{-1}
-\\left(\\sum_{g=1}^{G} \\mathbf{X}_g' \\hat{\\mathbf{u}}_g \\hat{\\mathbf{u}}_g' \\mathbf{X}_g \\right)
-(\\mathbf{X}'\\mathbf{X})^{-1}.
-$$
+#### 4) Window Sensitivity
 
-**What each term means**
-- “Bread”: $(\\mathbf{X}'\\mathbf{X})^{-1}$ is the same matrix you see in OLS.
-- “Meat”: the sum over clusters aggregates within-cluster residual covariance.
-- This estimator reduces to robust (HC) SE when each observation is its own cluster.
+Re-estimate the event study with different pre/post windows:
+- Shorten the pre-period: does the estimate change?
+- Shorten the post-period: does the effect persist or fade?
+- Extend the window: does the estimate remain stable, or do distant periods
+  introduce noise?
 
-Many libraries also apply small-sample corrections (especially when $G$ is not huge).
+If conclusions are highly sensitive to the window choice, the result is fragile.
 
-#### 5) Mapping to code (statsmodels / linearmodels)
+<a id="code-templates"></a>
+### Practical Code Templates
 
-In `statsmodels`, you can request clustered SE via `cov_type='cluster'` with a `groups` vector.
+#### Template 1: DiD Estimation with linearmodels
 
-In `linearmodels` (PanelOLS), clustering is common:
-- build a `clusters` Series aligned to the panel index,
-- use `cov_type='clustered'`.
+```python
+import pandas as pd
+import numpy as np
+from linearmodels.panel import PanelOLS
 
-#### 6) Inference pitfalls (important!)
+# --- Data setup ---
+# Assume df has columns: unit_id, year, outcome, treated (0/1), post (0/1)
+# Treatment indicator: D = treated * post
+df['D'] = df['treated'] * df['post']
 
-1) **Few clusters problem**
-- When the number of clusters $G$ is small (rule of thumb: < 30–50), cluster-robust inference can be unreliable.
-- In serious applied work, people use remedies like wild cluster bootstrap; we do not implement that here, but you should know it exists.
+# Set panel index
+df = df.set_index(['unit_id', 'year'])
 
-2) **Wrong clustering level**
-- If treatment is assigned at the state level, clustering below that (e.g., county) can be too optimistic.
-- A common rule: cluster at the level of treatment assignment or the level of correlated shocks.
+# --- TWFE DiD ---
+mod = PanelOLS.from_formula(
+    'outcome ~ D + EntityEffects + TimeEffects',
+    data=df,
+    check_rank=False,
+)
+res = mod.fit(cov_type='clustered', cluster_entity=True)
+print(res.summary)
 
-3) **Serial correlation in DiD**
-- Classic results (e.g., Bertrand et al.) show naive SE can be severely biased in DiD with serial correlation.
-- Clustering is often the minimum fix.
+# The coefficient on D is the DiD estimate.
+# cluster_entity=True clusters SE at the unit (entity) level.
+# If treatment is at a higher level (e.g., state), create a state
+# variable and use clusters=df['state'] instead.
+```
 
-#### 7) Diagnostics + robustness (at least 3)
+#### Template 2: Event Study Estimation and Plot
 
-1) **Report cluster count**
-- Always report $G$ (number of clusters). If $G$ is tiny, treat inference as fragile.
+```python
+import pandas as pd, numpy as np, matplotlib.pyplot as plt
+from linearmodels.panel import PanelOLS
 
-2) **Sensitivity to clustering level**
-- Try clustering by county vs by state (or time). If SE change a lot, dependence is important.
+# Assume df has: unit_id, year, outcome, adopt_year (NaN if never treated)
+df['event_time'] = df['year'] - df['adopt_year']
+K_pre, K_post = 5, 5
+df['event_time_binned'] = df['event_time'].clip(lower=-K_pre, upper=K_post)
 
-3) **Residual dependence check**
-- Plot residuals by cluster over time or compute within-cluster autocorrelation.
+# Create dummies (drop k=-1 as reference; never-treated get all zeros)
+for k in range(-K_pre, K_post + 1):
+    if k == -1:
+        continue
+    col = f'k_{k}' if k < 0 else f'k_plus_{k}'
+    df[col] = ((df['event_time_binned'] == k) & df['adopt_year'].notna()).astype(int)
 
-4) **Aggregation robustness (DiD-style)**
-- As a sanity check, aggregate to the treatment-assignment level and see if conclusions are similar.
+dummy_cols = [c for c in df.columns if c.startswith('k_')]
+formula = 'outcome ~ ' + ' + '.join(dummy_cols) + ' + EntityEffects + TimeEffects'
+df_panel = df.set_index(['unit_id', 'year'])
+res = PanelOLS.from_formula(formula, data=df_panel, check_rank=False)\
+      .fit(cov_type='clustered', cluster_entity=True)
 
-#### 8) Interpretation + reporting
+# Extract coefficients + CIs
+coefs = []
+for k in range(-K_pre, K_post + 1):
+    if k == -1:
+        coefs.append({'k': k, 'beta': 0.0, 'ci_lo': 0.0, 'ci_hi': 0.0})
+        continue
+    col = f'k_{k}' if k < 0 else f'k_plus_{k}'
+    b, se = res.params[col], res.std_errors[col]
+    coefs.append({'k': k, 'beta': b, 'ci_lo': b - 1.96*se, 'ci_hi': b + 1.96*se})
+coef_df = pd.DataFrame(coefs)
 
-Clustered SE change your uncertainty, not your point estimate.
-So the right way to write results is:
-- coefficient (effect size),
-- clustered SE (uncertainty),
-- cluster level and number of clusters,
-- design assumptions.
+# Plot
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.errorbar(coef_df['k'], coef_df['beta'],
+            yerr=[coef_df['beta']-coef_df['ci_lo'], coef_df['ci_hi']-coef_df['beta']],
+            fmt='o', capsize=3, color='steelblue')
+ax.axhline(0, color='black', lw=0.8, ls='--')
+ax.axvline(-0.5, color='red', lw=0.8, ls=':', label='Treatment onset')
+ax.set_xlabel('Event time (k)'); ax.set_ylabel('Coefficient (rel. to k=-1)')
+ax.set_title('Event Study Plot'); ax.legend(); plt.tight_layout(); plt.show()
+```
 
-**What this does NOT mean**
-- Clustering does not fix bias from confounding or misspecification.
-- Clustering does not “prove” causality; it only helps prevent overconfident inference.
+#### Template 3: Pre-Trends Joint Test
 
-#### Exercises
+```python
+import numpy as np
+from scipy import stats
 
-- [ ] In a panel regression, compute naive (HC) SE and clustered SE; compare the ratio for your main coefficient.
-- [ ] Explain in words why state-level shocks make county-level rows dependent.
-- [ ] Try clustering by entity vs by state; write 3 sentences about which is more defensible and why.
-- [ ] If you had only 8 states, what would make you cautious about cluster-robust p-values?
+# After estimation, extract lead coefficients and their covariance
+lead_names = [f'k_{k}' for k in range(-K_pre, -1)]
+lead_betas = np.array([res.params[n] for n in lead_names])
+lead_vcov = res.cov.loc[lead_names, lead_names].values
+
+# Wald test: beta' @ inv(V) @ beta ~ chi-squared(len(leads))
+wald_stat = lead_betas @ np.linalg.solve(lead_vcov, lead_betas)
+p_value = 1 - stats.chi2.cdf(wald_stat, df=len(lead_betas))
+print(f"Joint pre-trends test: Wald = {wald_stat:.2f}, p = {p_value:.4f}")
+# If p < 0.05, pre-trends are jointly significant -- a warning sign.
+```
 
 ### Project Code Map
-- `src/causal.py`: panel + IV helpers (`to_panel_index`, `fit_twfe_panel_ols`, `fit_iv_2sls`)
-- `scripts/build_datasets.py`: ACS panel builder (writes data/processed/census_county_panel.csv)
-- `src/census_api.py`: Census/ACS client (`fetch_acs`)
-- `configs/census_panel.yaml`: panel config (years + variables)
-- `data/sample/census_county_panel_sample.csv`: offline panel dataset
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/causal.py`: panel + IV helpers (`to_panel_index`, `fit_twfe_panel_ols`, `fit_iv_2sls`).
+- `scripts/build_datasets.py`: ACS panel builder. `src/census_api.py`: Census/ACS client.
+- `configs/census_panel.yaml`: panel config. `data/sample/census_county_panel_sample.csv`: offline dataset.
+- `src/data.py`: caching helpers. `src/features.py`: feature engineering. `src/evaluation.py`: splits + metrics.
 
-### Common Mistakes
-- Jumping to regression output without writing identification assumptions.
-- Treating Granger-type correlations as causal effects (wrong question).
-- Ignoring clustered/serial correlation and using overly small SE.
-- For DiD: not checking pre-trends (leads) before interpreting effects.
-- For IV: using weak instruments (no meaningful first stage).
+<a id="common-mistakes"></a>
+### Common Mistakes in DiD and Event Studies
+
+1. **Not checking pre-trends before interpreting effects.**
+   The event study plot is not optional decoration. If you skip the pre-trends
+   check and report a pooled DiD coefficient, reviewers will (rightly) question
+   whether your parallel trends assumption is credible.
+
+2. **Controlling for post-treatment variables.**
+   Adding insurance enrollment as a control when studying Medicaid expansion's
+   effect on health is controlling for a *mediator*. This biases the estimate
+   and changes the estimand from the total effect to something difficult to
+   interpret. Only control for variables that are not affected by treatment.
+
+3. **Using the wrong comparison group.**
+   The control group must be a plausible counterfactual. Comparing states that
+   expanded Medicaid to states that *could not* expand due to fundamentally
+   different political/economic structures may violate parallel trends. Look for
+   control units that are similar on observables and pre-treatment trends.
+
+4. **Ignoring staggered adoption issues.**
+   If treatment rolls out at different times and you use classic TWFE without
+   thinking about heterogeneous effects, your estimate may be misleading or even
+   wrong-signed. At minimum, check whether your results are sensitive to
+   dropping early adopters or late adopters.
+
+5. **Not clustering at the right level.**
+   If treatment is assigned at the state level, you must cluster standard errors
+   at the state level (or higher). Clustering at a finer level (county, individual)
+   produces standard errors that are too small, leading to false rejections.
+   See [Guide 01](01_panel_fixed_effects_clustered_se.md) for the full treatment.
+
+6. **Confusing the pre-trends statistical test with the untestable assumption.**
+   Failing to reject the null of zero pre-trends does NOT prove parallel trends
+   holds. It may simply reflect low statistical power (small samples, noisy data,
+   few pre-periods). Conversely, small but statistically significant pre-trends
+   with a large sample may not be economically meaningful. The test informs but
+   does not resolve the identification question.
+
+7. **Cherry-picking the event window.**
+   Showing only a narrow event window that looks clean while hiding a wider
+   window with problematic pre-trends is p-hacking. Report a reasonable window
+   and show sensitivity to alternatives.
+
+8. **Interpreting every event-study coefficient literally.**
+   Individual $\hat{\beta}_k$ estimates can be noisy. The *pattern* matters more
+   than any single coefficient. Do not write "the effect was 2.3 pp at $k = 3$
+   but 1.8 pp at $k = 4$, showing a decline" if the difference is well within
+   the confidence intervals.
+
+#### Exercises
+
+- [ ] Draw a 2x2 table with your own hypothetical numbers and compute the DiD estimate by hand.
+- [ ] Write the parallel trends assumption in plain English for a Medicaid expansion study.
+- [ ] List two scenarios where pre-trends could look fine but parallel trends still fails.
+- [ ] Build event-time dummies from a panel dataset and confirm $k = 0$ corresponds to the adoption year.
+- [ ] Plot an event study and write four sentences interpreting (a) the leads and (b) the lags.
+- [ ] Run a placebo test using a fake treatment date and explain what you expected vs what you found.
+- [ ] Explain in three sentences why using already-treated units as controls in staggered DiD is problematic.
+- [ ] Look up one health economics DiD paper and identify: the treatment, the control group, the parallel trends argument, and the event study diagnostic.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You now have a toolkit for causal estimation under explicit assumptions (FE/DiD/IV).
-The goal is disciplined thinking: identification first, estimation second.
+This guide covered the two most important tools in the applied health economics
+causal toolkit: difference-in-differences and event studies. The key ideas:
 
+- DiD removes time-invariant confounders and common time shocks by comparing
+  changes across groups.
+- The identifying assumption (parallel trends) is powerful but fundamentally
+  untestable. Pre-trends evidence is necessary but not sufficient.
+- Event studies extend DiD by showing how effects evolve dynamically and by
+  providing the primary pre-trends diagnostic.
+- Staggered adoption creates subtle problems for classic TWFE; modern estimators
+  address these but classic TWFE is fine in simpler settings.
+- Inference requires clustered standard errors at (or above) the treatment level.
 
-Suggested readings:
-- Angrist & Pischke: Mostly Harmless Econometrics (design-based causal inference)
-- Wooldridge: Econometric Analysis of Cross Section and Panel Data (FE/IV foundations)
+### Suggested Readings
+
+**Textbooks:**
+- Angrist and Pischke, *Mostly Harmless Econometrics* (2009), Ch. 5: DiD foundations.
+- Cunningham, *Causal Inference: The Mixtape* (2021), Ch. 9: DiD and event studies with code.
+- Huntington-Klein, *The Effect* (2021), Ch. 18: DiD with intuitive explanations.
+
+**Key methodological papers:**
+- Bertrand, Duflo, and Mullainathan (2004), "How Much Should We Trust Differences-in-Differences Estimates?" -- the foundational paper on serial correlation and inference in DiD.
+- Goodman-Bacon (2021), "Difference-in-Differences with Variation in Treatment Timing" -- the decomposition theorem for staggered TWFE.
+- Callaway and Sant'Anna (2021), "Difference-in-Differences with Multiple Time Periods" -- modern estimator for staggered adoption.
+- Sun and Abraham (2021), "Estimating Dynamic Treatment Effects in Event Studies with Heterogeneous Treatment Effects" -- interaction-weighted estimator.
+- Rambachan and Roth (2023), "A More Credible Approach to Parallel Trends" -- sensitivity analysis for violations.
+- Roth (2022), "Pretest with Caution: Event-Study Estimates after Testing for Parallel Trends" -- why pre-testing can distort inference.
+
+**Health economics applications:**
+- Finkelstein et al. (2012), "The Oregon Health Insurance Experiment: Evidence from the First Year" -- QJE.
+- Sommers, Long, and Baicker (2012), "Changes in Utilization and Health Status after Massachusetts Health Reform."
+- Antwi, Moriya, and Simon (2013), "Effects of Federal Policy to Insure Young Adults" -- ACA age-26 provision.
+- Dafny (2009), "Estimation and Identification of Merger Effects" -- hospital mergers and prices.

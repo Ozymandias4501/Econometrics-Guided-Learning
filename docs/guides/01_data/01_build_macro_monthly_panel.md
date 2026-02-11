@@ -195,22 +195,28 @@ Let:
 Resampling defines a function that maps monthly values inside quarter $q$ into a quarterly feature:
 
 $$
-\\tilde x_q = g\\left(\\{x_t^{(M)} : t \\in q\\}\\right).
+\tilde x_q = g\left(\{x_t^{(M)} : t \in q\}\right).
 $$
 
 Common choices:
-- $g=\\text{mean}$ (quarter average),
-- $g=\\text{last}$ (end-of-quarter value).
+- $g=\text{mean}$ (quarter average),
+- $g=\text{last}$ (end-of-quarter value).
+
+**Concrete example:** Monthly unemployment rates for Q2: April = 3.8%, May = 3.9%, June = 4.1%.
+- `.mean()` gives 3.93% — the quarter's *typical* labor market condition.
+- `.last()` gives 4.1% — the most recent reading available at the quarter boundary.
+
+For predicting next-quarter GDP growth, `.last()` is often preferred because it captures the most recent information that a forecaster would actually have at the decision point. But if you are modeling the quarter's *average* economic environment (e.g., for a structural regression), `.mean()` may be more appropriate.
 
 #### 3) Assumptions (what your resampling choice implies)
 
 Choosing `.mean()` assumes:
-- the quarter’s “typical” level matters.
+- the quarter's "typical" level matters.
 
 Choosing `.last()` assumes:
 - the quarter-end level is what matters (or is what was known at quarter-end).
 
-Neither is universally correct; you must choose based on measurement and use case.
+Neither is universally correct; you must choose based on the economic question and the information set you want to represent.
 
 #### 4) Mechanics: practical alignment steps
 

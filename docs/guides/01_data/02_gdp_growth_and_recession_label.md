@@ -194,20 +194,20 @@ Let:
 Quarter-over-quarter (QoQ) growth (simple form):
 
 $$
-g_t^{qoq} = \\frac{GDP_t - GDP_{t-1}}{GDP_{t-1}}.
+g_t^{qoq} = \frac{GDP_t - GDP_{t-1}}{GDP_{t-1}}.
 $$
 
 Year-over-year (YoY) growth:
 
 $$
-g_t^{yoy} = \\frac{GDP_t - GDP_{t-4}}{GDP_{t-4}}.
+g_t^{yoy} = \frac{GDP_t - GDP_{t-4}}{GDP_{t-4}}.
 $$
 
 Technical recession label (common rule of thumb):
 - recession at $t$ if GDP growth is negative for two consecutive quarters:
 
 $$
-R_t = 1[g_t^{qoq} < 0 \\;\\text{and}\\; g_{t-1}^{qoq} < 0].
+R_t = 1[g_t^{qoq} < 0 \;\text{and}\; g_{t-1}^{qoq} < 0].
 $$
 
 **What each term means**

@@ -29,25 +29,33 @@ This data module builds the datasets used throughout the project: a macro panel 
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Browse variables
-- Complete notebook section: Fetch county data
-- Complete notebook section: Derived rates
-- Complete notebook section: Save processed data
-- Fetch or load sample data and inspect schemas (columns, dtypes, index).
-- Build the GDP growth series and recession label exactly as specified.
-- Create a quarterly modeling table with `target_recession_next_q` and no obvious leakage.
+- Complete notebook section: Browse variables (explore the ACS variable list for your state/geography).
+- Complete notebook section: Fetch county data (call the Census API or load sample data).
+- Complete notebook section: Derived rates (compute poverty rates, employment shares, income ratios from raw counts).
+- Complete notebook section: Save processed data (write cleaned county-level DataFrame to `data/processed/`).
+- Inspect schemas after fetching: confirm columns, dtypes, and geography codes (FIPS).
+- Validate derived rates are between 0 and 1 (or 0% and 100%) and no negative counts exist.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Toy GDP growth + technical recession label (not real GDP):
+# Toy county-level Census merge (not the real notebook data):
 import pandas as pd
 
-idx = pd.date_range('2018-03-31', periods=12, freq='QE')
-gdp = pd.Series([100, 101, 102, 101, 100, 99, 100, 101, 102, 103, 104, 105], index=idx)
+# Two ACS tables for the same counties
+pop = pd.DataFrame({
+    'fips': ['01001', '01003', '01005'],
+    'total_pop': [55000, 220000, 27000],
+    'pop_below_poverty': [8250, 26400, 5670],
+})
+income = pd.DataFrame({
+    'fips': ['01001', '01003', '01005'],
+    'median_hh_income': [52000, 58000, 37000],
+})
 
-growth_qoq = 100 * (gdp / gdp.shift(1) - 1)
-recession = ((growth_qoq < 0) & (growth_qoq.shift(1) < 0)).astype(int)
-target_next_q = recession.shift(-1)
+# Merge on FIPS code and derive a rate
+county = pop.merge(income, on='fips')
+county['poverty_rate'] = county['pop_below_poverty'] / county['total_pop']
+assert (county['poverty_rate'] >= 0).all() and (county['poverty_rate'] <= 1).all()
 ```
 
 
@@ -191,15 +199,15 @@ Caching turns “a query” into “a saved dataset artifact.”
 Think of your ingestion as a function:
 
 $$
-\\text{data} = F(\\text{endpoint}, \\text{params}).
+\text{data} = F(\text{endpoint}, \text{params}).
 $$
 
 Caching adds a persistent mapping:
 
 $$
-\\text{cache\_key} = H(\\text{endpoint}, \\text{params}),
-\\quad
-\\text{cache}[\\text{cache\_key}] = \\text{data}.
+\text{cache\_key} = H(\text{endpoint}, \text{params}),
+\quad
+\text{cache}[\text{cache\_key}] = \text{data}.
 $$
 
 **What each term means**

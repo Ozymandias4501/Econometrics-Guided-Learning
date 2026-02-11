@@ -78,24 +78,24 @@ Probabilities let you:
 #### 2) Notation + setup (define symbols)
 
 Let:
-- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $y_i \in \{0,1\}$ be the true label (1 = recession),
 - $x_i$ be features,
-- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
 
 Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
+\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
 $$
 
 Equivalently:
 
 $$
-p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
+p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
 $$
 
 **What each term means**
-- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- $\sigma(\cdot)$ maps real numbers to (0,1).
 - coefficients move probabilities through the log-odds scale.
 
 #### 3) Assumptions (and what “probability model” means)
@@ -111,12 +111,12 @@ But calibration can suffer, so we measure it.
 #### 4) Estimation mechanics (how the model is fit)
 
 Logistic regression is typically fit by maximum likelihood:
-- choose $\\beta$ to maximize the probability of the observed labels.
+- choose $\beta$ to maximize the probability of the observed labels.
 
 The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
 $$
-\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+\ell(\beta) = -\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
 $$
 
 In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
@@ -138,18 +138,18 @@ At minimum, treat these as standard:
 - **PR-AUC:** often more informative when positives are rare.
 - **Brier score:** mean squared error of probabilities:
 $$
-\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+\text{Brier} = \frac{1}{n} \sum_i (p_i - y_i)^2.
 $$
 - **Calibration plots:** do predicted probabilities match observed frequencies?
 
 #### 7) Thresholding is a decision rule (not a model property)
 
-A threshold $\\tau$ converts probability to a hard label:
+A threshold $\tau$ converts probability to a hard label:
 $$
-\\hat y_i = 1[p_i \\ge \\tau].
+\hat y_i = 1[p_i \ge \tau].
 $$
 
-Choosing $\\tau$ should reflect costs:
+Choosing $\tau$ should reflect costs:
 - false positives (crying wolf),
 - false negatives (missing recessions).
 
@@ -206,8 +206,8 @@ Let:
 - $h$ be forecast horizon,
 - $W$ be a training window length (optional).
 
-A walk-forward scheme produces folds indexed by $m=1,\\dots,M$:
-- Train on $\\{1,\\dots,t_m\\}$ (or last $W$ periods),
+A walk-forward scheme produces folds indexed by $m=1,\dots,M$:
+- Train on $\{1,\dots,t_m\}$ (or last $W$ periods),
 - Test on $t_m+h$ (or a short future window).
 
 #### 3) Assumptions
@@ -222,7 +222,7 @@ Walk-forward assumes:
 Walk-forward estimates expected future error by averaging over many future evaluation points:
 
 $$
-\\widehat{\\mathrm{Err}} = \\frac{1}{M} \\sum_{m=1}^{M} \\ell(\\hat y_{t_m+h}, y_{t_m+h}).
+\widehat{\mathrm{Err}} = \frac{1}{M} \sum_{m=1}^{M} \ell(\hat y_{t_m+h}, y_{t_m+h}).
 $$
 
 This is closer to the real “live” error than a random split.

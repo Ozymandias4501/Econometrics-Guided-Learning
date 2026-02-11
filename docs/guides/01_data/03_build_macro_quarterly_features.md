@@ -198,17 +198,17 @@ $$
 
 - Difference:
 $$
-\\Delta x_t = x_t - x_{t-1}
+\Delta x_t = x_t - x_{t-1}
 $$
 
 - Percent change (approx):
 $$
-\\%\\Delta x_t \\approx \\frac{x_t - x_{t-1}}{x_{t-1}}
+\\%\Delta x_t \approx \frac{x_t - x_{t-1}}{x_{t-1}}
 $$
 
 - Rolling mean over $k$ quarters (past-only):
 $$
-\\overline{x}_{t,k} = \\frac{1}{k}\\sum_{j=0}^{k-1} x_{t-j}
+\overline{x}_{t,k} = \frac{1}{k}\sum_{j=0}^{k-1} x_{t-j}
 $$
 
 #### 3) Assumptions

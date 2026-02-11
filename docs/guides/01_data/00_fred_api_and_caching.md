@@ -191,15 +191,15 @@ Caching turns “a query” into “a saved dataset artifact.”
 Think of your ingestion as a function:
 
 $$
-\\text{data} = F(\\text{endpoint}, \\text{params}).
+\text{data} = F(\text{endpoint}, \text{params}).
 $$
 
 Caching adds a persistent mapping:
 
 $$
-\\text{cache\_key} = H(\\text{endpoint}, \\text{params}),
-\\quad
-\\text{cache}[\\text{cache\_key}] = \\text{data}.
+\text{cache\_key} = H(\text{endpoint}, \text{params}),
+\quad
+\text{cache}[\text{cache\_key}] = \text{data}.
 $$
 
 **What each term means**

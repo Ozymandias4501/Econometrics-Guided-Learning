@@ -39,18 +39,27 @@ This foundations module builds core intuition you will reuse in every later note
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Toy leakage example (not the notebook data):
+# Toy confounding example (not the notebook data):
 import numpy as np
 import pandas as pd
 
-idx = pd.date_range('2020-01-01', periods=200, freq='D')
-y = pd.Series(np.sin(np.linspace(0, 12, len(idx))) + 0.1*np.random.randn(len(idx)), index=idx)
+rng = np.random.default_rng(42)
+n = 500
 
-# Correct feature: yesterday
-x_lag1 = y.shift(1)
+# Z is a common cause (confounder)
+z = rng.normal(size=n)
+x = 0.8 * z + rng.normal(scale=0.5, size=n)  # Z -> X
+y = 1.2 * z + rng.normal(scale=0.5, size=n)  # Z -> Y (X does NOT cause Y)
 
-# Leakage feature: tomorrow (do NOT do this)
-x_leak = y.shift(-1)
+# Naive correlation is strong, but it's not causal
+print(f"Correlation(x, y): {np.corrcoef(x, y)[0, 1]:.3f}")
+
+# Controlling for Z removes the spurious association
+import statsmodels.api as sm
+X_naive = sm.add_constant(pd.DataFrame({'x': x}))
+X_ctrl  = sm.add_constant(pd.DataFrame({'x': x, 'z': z}))
+print("Naive coef on x:", sm.OLS(y, X_naive).fit().params['x'].round(3))
+print("Controlled coef on x:", sm.OLS(y, X_ctrl).fit().params['x'].round(3))
 ```
 
 
@@ -78,10 +87,10 @@ Most mistakes in applied econometrics + ML come from confusing these three quest
 #### 2) Notation + setup (define symbols)
 
 Time index:
-- $t = 1,\\dots,T$ indexes time (months/quarters).
+- $t = 1,\dots,T$ indexes time (months/quarters).
 
 Forecast horizon:
-- $h \\ge 1$ is how far ahead you predict.
+- $h \ge 1$ is how far ahead you predict.
 
 Features and target:
 - $X_t$ is the feature vector available at time $t$.
@@ -90,7 +99,7 @@ Features and target:
 The forecasting problem is:
 
 $$
-\\text{learn a function } f \\text{ such that } \\hat y_{t+h} = f(X_t).
+\text{learn a function } f \text{ such that } \hat y_{t+h} = f(X_t).
 $$
 
 **What each term means**
@@ -121,11 +130,11 @@ If the evaluation scheme does not match the real timing of the task, the estimat
 If you use a walk-forward scheme, conceptually you are estimating:
 
 $$
-\\text{future error} \\approx \\frac{1}{M} \\sum_{m=1}^{M} \\ell(\\hat y_{t_m+h}, y_{t_m+h})
+\text{future error} \approx \frac{1}{M} \sum_{m=1}^{M} \ell(\hat y_{t_m+h}, y_{t_m+h})
 $$
 
 where:
-- $\\ell$ is a loss function (squared error, log loss, …),
+- $\ell$ is a loss function (squared error, log loss, …),
 - $t_m$ are evaluation times in the future relative to training.
 
 #### 5) Leakage (the #1 silent killer)
@@ -208,16 +217,16 @@ That does not imply raising rates increases inflation; the correlation can refle
 Correlation between random variables $X$ and $Y$:
 
 $$
-\\rho_{XY} = \\frac{\\mathrm{Cov}(X,Y)}{\\sqrt{\\mathrm{Var}(X)\\mathrm{Var}(Y)}}.
+\rho_{XY} = \frac{\mathrm{Cov}(X,Y)}{\sqrt{\mathrm{Var}(X)\mathrm{Var}(Y)}}.
 $$
 
 **What each term means**
-- $\\mathrm{Cov}(X,Y)$: whether $X$ and $Y$ co-move.
+- $\mathrm{Cov}(X,Y)$: whether $X$ and $Y$ co-move.
 - correlation is unit-free and lies in $[-1,1]$.
 
 Correlation is symmetric:
 $$
-\\rho_{XY} = \\rho_{YX}.
+\rho_{XY} = \rho_{YX}.
 $$
 But causal effects are directional.
 
@@ -238,7 +247,7 @@ Consider a simple confounding structure:
 
 One possible DGP:
 $$
-X = aZ + \\eta, \\qquad Y = bZ + \\varepsilon.
+X = aZ + \eta, \qquad Y = bZ + \varepsilon.
 $$
 
 Even if $X$ does not cause $Y$, $X$ and $Y$ will be correlated because they share the common cause $Z$.
@@ -249,7 +258,7 @@ Regression “controls” can help if you measure the confounder, but:
 
 #### 5) Inference: significance is not causality
 
-A small p-value means “incompatible with $\\beta=0$ under the model assumptions.”
+A small p-value means “incompatible with $\beta=0$ under the model assumptions.”
 It does not mean:
 - the model is correct,
 - the effect is causal,
@@ -299,19 +308,19 @@ Overfitting is when performance looks great on training data but poor on new dat
 #### 2) Notation + setup (define symbols)
 
 Let:
-- true outcome be $y = f(x) + \\varepsilon$,
-- model prediction be $\\hat f(x)$,
+- true outcome be $y = f(x) + \varepsilon$,
+- model prediction be $\hat f(x)$,
 - loss be squared error.
 
 For a fixed $x$, the expected prediction error decomposes as:
 
 $$
-\\mathbb{E}[(\\hat f(x) - y)^2]
-= \\underbrace{(\\mathbb{E}[\\hat f(x)] - f(x))^2}_{\\text{bias}^2}
-\\; + \\;
-\\underbrace{\\mathbb{E}[(\\hat f(x) - \\mathbb{E}[\\hat f(x)])^2]}_{\\text{variance}}
-\\; + \\;
-\\underbrace{\\mathrm{Var}(\\varepsilon)}_{\\text{noise}}.
+\mathbb{E}[(\hat f(x) - y)^2]
+= \underbrace{(\mathbb{E}[\hat f(x)] - f(x))^2}_{\text{bias}^2}
+\; + \;
+\underbrace{\mathbb{E}[(\hat f(x) - \mathbb{E}[\hat f(x)])^2]}_{\text{variance}}
+\; + \;
+\underbrace{\mathrm{Var}(\varepsilon)}_{\text{noise}}.
 $$
 
 **What each term means**
@@ -374,284 +383,38 @@ Report:
 - [ ] Plot a learning curve (even crude) by training on increasing time windows.
 - [ ] Explain in 6 sentences how overfitting relates to specification search in econometrics.
 
-### Deep Dive: Multicollinearity and VIF — why coefficients become unstable
+### Multicollinearity and VIF — preview
 
-Multicollinearity is common in economic data and is one of the main reasons coefficient interpretation becomes fragile.
-
-#### 1) Intuition (plain English)
-
-If two predictors contain almost the same information, the regression struggles to decide “which variable deserves the credit.”
-
-**Story example (macro):**
-- many indicators co-move with the business cycle,
-- a multifactor regression may assign unstable signs to “similar” indicators depending on sample period.
-
-Prediction may still be fine, but coefficient stories become unreliable.
-
-#### 2) Notation + setup (define symbols)
-
-Regression in matrix form:
+When predictors are highly correlated, regression coefficients become unstable. The key diagnostic is the **Variance Inflation Factor (VIF)**:
 
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
+\mathrm{VIF}_j = \frac{1}{1 - R_j^2}
 $$
 
-OLS estimator:
-$$
-\\hat\\beta = (X'X)^{-1}X'y.
-$$
+where $R_j^2$ comes from regressing feature $j$ on all other features. VIF > 5 suggests notable collinearity; VIF > 10 suggests serious collinearity.
 
-Under classical assumptions:
-$$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
-$$
+Key points:
+- Multicollinearity inflates SE but does **not** bias coefficients (if exogeneity holds).
+- It makes "holding others fixed" interpretations unrealistic when predictors move together.
+- Solutions: drop redundant variables, use regularization (ridge/lasso), or PCA.
 
-**What each term means**
-- When columns of $X$ are highly correlated, $X'X$ is close to singular.
-- Then $(X'X)^{-1}$ has large entries → coefficient variance inflates.
+> **Full treatment**: See the [regression guide: Multicollinearity and VIF](../02_regression/00_single_factor_regression_micro.md#deep-dive-multicollinearity-and-vif--why-coefficients-become-unstable) for the complete derivation, diagnostics, and exercises.
 
-#### 3) What multicollinearity does (and does not do)
+### Hypothesis Testing — preview
 
-- Often does **not** hurt prediction much.
-- **Does** inflate standard errors (coefficients become noisy).
-- **Does** make coefficients sensitive to small data changes (unstable signs/magnitudes).
-- **Does not** automatically bias coefficients if exogeneity holds; it mostly increases variance.
+Hypothesis tests appear in every regression output. The essentials:
 
-#### 4) VIF (Variance Inflation Factor): what it measures
+- **p-value**: probability of data at least as extreme as observed, **under the null and model assumptions**. It is not the probability the null is true.
+- **t-statistic**: $t_j = \hat\beta_j / \widehat{SE}(\hat\beta_j)$ — how many SEs the coefficient is from zero.
+- **Confidence interval**: $\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j)$ — shows sign and magnitude uncertainty together. Often more informative than p-values.
+- Changing SE estimator (naive → HC3 → HAC → clustered) changes the p-value **without** changing the coefficient.
 
-To compute VIF for feature $j$:
-- regress $x_j$ on all other predictors,
-- record the $R_j^2$ from that auxiliary regression.
+Common pitfalls:
+- Multiple testing / spec search inflates false positives.
+- "Significant" is not "important" and "not significant" is not "no effect."
+- A small p-value is not causal evidence without an identification strategy.
 
-Then:
-
-$$
-\\mathrm{VIF}_j = \\frac{1}{1 - R_j^2}.
-$$
-
-**Interpretation**
-- If $R_j^2$ is near 1, $x_j$ is almost perfectly explained by other predictors.
-- Then $\\mathrm{VIF}_j$ is large → coefficient uncertainty for $\\beta_j$ is inflated.
-
-Rules of thumb (not laws):
-- VIF > 5 suggests notable collinearity.
-- VIF > 10 suggests serious collinearity.
-
-#### 5) Estimation mechanics: “holding others fixed” becomes unrealistic
-
-Coefficient interpretation relies on the counterfactual:
-- “Increase $x_j$ by 1 while holding other predictors fixed.”
-
-If predictors are tightly linked economically, that counterfactual can be meaningless (you cannot change one indicator while freezing another).
-
-So multicollinearity is both:
-- a statistical issue (variance inflation),
-- and an economic interpretation issue (counterfactuals).
-
-#### 6) Diagnostics + robustness (minimum set)
-
-1) **Correlation matrix**
-- identify groups of highly correlated features.
-
-2) **VIF table**
-- quantify redundancy; large VIF → unstable coefficient.
-
-3) **Coefficient stability**
-- fit the regression on different subperiods or bootstrap samples; do signs flip?
-
-4) **Condition number**
-- large condition number of $X$ suggests numerical instability.
-
-#### 7) What to do about multicollinearity
-
-Options (choose based on goals):
-
-- **If you care about interpretation**
-  - drop redundant variables,
-  - combine variables into an index,
-  - use domain-driven composites.
-
-- **If you care about prediction**
-  - use regularization (ridge/lasso),
-  - use dimension reduction (PCA/factors),
-  - use nonlinear models (trees) with care about leakage and evaluation.
-
-#### 8) Interpretation + reporting
-
-When multicollinearity is present, report:
-- VIF or correlation evidence,
-- coefficient instability (if observed),
-- and avoid strong stories about individual coefficients.
-
-#### Exercises
-
-- [ ] Construct two highly correlated predictors and show VIF > 10.
-- [ ] Fit OLS with both predictors; observe coefficient instability vs the true DGP.
-- [ ] Drop one predictor and compare interpretability and fit.
-- [ ] Fit ridge regression and compare coefficient stability to OLS.
-
-### Deep Dive: Hypothesis Testing — how to read p-values without fooling yourself
-
-Hypothesis tests show up everywhere in econometrics output. The goal of this section is not to worship p-values, but to understand what they *are* and what they *are not*.
-
-#### 1) Intuition (plain English)
-
-A hypothesis test is a structured way to ask:
-- “If the true effect were zero, how surprising is my estimate?”
-
-It is **not** a direct answer to:
-- “What is the probability the effect is real?”
-- “Is my model correct?”
-
-**Story example:** You regress unemployment on an interest-rate spread and get a small p-value.
-That might mean:
-- the relationship is real in-sample,
-- or your SE are wrong (autocorrelation),
-- or you tried many specs (multiple testing),
-- or the effect is tiny but precisely estimated.
-
-#### 2) Notation + setup (define symbols)
-
-We usually test a claim about a population parameter $\\theta$ (mean, regression coefficient, difference in means, …).
-
-Define:
-- $H_0$: the **null hypothesis** (default claim),
-- $H_1$: the **alternative hypothesis** (what you consider if evidence contradicts $H_0$),
-- $T$: a **test statistic** computed from data,
-- $\\alpha$: a pre-chosen significance level (e.g., 0.05).
-
-Example in regression:
-- $H_0: \\beta_j = 0$
-- $H_1: \\beta_j \\neq 0$ (two-sided)
-
-#### 3) Assumptions (why tests are conditional statements)
-
-Every p-value is conditional on:
-- the statistical model (e.g., OLS assumptions),
-- the standard error estimator you use (naive vs robust vs HAC vs clustered),
-- the sample and selection process.
-
-If those assumptions fail, the p-value may be meaningless.
-
-#### 4) Estimation mechanics in OLS: where t-stats come from
-
-OLS estimates coefficients:
-
-$$
-\\hat\\beta = (X'X)^{-1}X'y.
-$$
-
-For coefficient $\\beta_j$, you compute an estimated standard error $\\widehat{SE}(\\hat\\beta_j)$.
-
-The t-statistic for testing $H_0: \\beta_j = 0$ is:
-
-$$
-t_j = \\frac{\\hat\\beta_j - 0}{\\widehat{SE}(\\hat\\beta_j)}.
-$$
-
-**What each term means**
-- numerator: your estimated effect.
-- denominator: your uncertainty estimate.
-- large |t| means “many standard errors away from 0.”
-
-Under suitable assumptions, $t_j$ is compared to a t distribution (or asymptotic normal), producing a p-value.
-
-#### 5) What the p-value actually means
-
-> **Definition:** The **p-value** is the probability (under the null and model assumptions) of observing a test statistic at least as extreme as what you observed.
-
-So:
-- p-value is about the *data under the null model*,
-- not about the probability the null is true.
-
-Also: p-values do not measure effect size.
-
-#### 6) Confidence intervals (often more informative than p-values)
-
-A 95% confidence interval is approximately:
-
-$$
-\\hat\\beta_j \\pm t_{0.975} \\cdot \\widehat{SE}(\\hat\\beta_j).
-$$
-
-Interpretation:
-- it is a range of values consistent with the data under assumptions,
-- it shows both sign and magnitude uncertainty.
-
-If the 95% CI excludes 0, the two-sided p-value is typically < 0.05.
-
-#### 7) Robust SE change p-values (without changing coefficients)
-
-Different SE estimators correspond to different assumptions about errors:
-- **Naive OLS SE:** homoskedastic, uncorrelated errors.
-- **HC3:** heteroskedasticity-robust (cross-section).
-- **HAC/Newey–West:** autocorrelation + heteroskedasticity (time series).
-- **Clustered SE:** within-cluster correlated errors (panels/DiD).
-
-**Key idea:** changing SE changes $\\widehat{SE}(\\hat\\beta_j)$ → changes t-stat and p-value, even when $\\hat\\beta_j$ is identical.
-
-#### 8) Diagnostics: how hypothesis testing goes wrong (minimum set)
-
-1) **Multiple testing**
-- If you try many features/specs, some will “work” by chance.
-- A few p-values < 0.05 are expected even if all true effects are 0.
-
-2) **P-hacking / specification search**
-- tweaking the model until p-values look good invalidates the usual interpretation.
-
-3) **Wrong SE (dependence)**
-- autocorrelation or clustering can make naive SE far too small.
-
-4) **Confounding**
-- a “significant” association is not a causal effect without identification.
-
-Practical rule:
-- interpret p-values as one piece of evidence, not a conclusion.
-
-#### 9) Interpretation + reporting (how to write results responsibly)
-
-Good reporting includes:
-- effect size (coefficient) in meaningful units,
-- uncertainty (CI preferred),
-- correct SE choice for the data structure,
-- a note about model limitations and identification.
-
-**What this does NOT mean**
-- “Significant” is not “important.”
-- “Not significant” is not “no effect” (could be low power).
-
-#### 10) Small Python demo (optional)
-
-```python
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-from scipy import stats
-
-rng = np.random.default_rng(0)
-
-# 1) One-sample t-test
-x = rng.normal(loc=0.2, scale=1.0, size=200)
-t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)
-print('t-test t:', t_stat, 'p:', p_val)
-
-# 2) Regression t-test
-n = 300
-x2 = rng.normal(size=n)
-y = 1.0 + 0.5 * x2 + rng.normal(scale=1.0, size=n)
-
-df = pd.DataFrame({'y': y, 'x': x2})
-X = sm.add_constant(df[['x']])
-res = sm.OLS(df['y'], X).fit()
-print(res.summary())
-```
-
-#### Exercises
-
-- [ ] Take one regression output and rewrite it in words: coefficient, CI, and what assumptions the p-value relies on.
-- [ ] Show how p-values change when you switch from naive SE to HC3 or HAC (same coefficient, different uncertainty).
-- [ ] Create a multiple-testing demonstration: test 50 random predictors against random noise and count how many p-values < 0.05.
-- [ ] Write 6 sentences explaining why “statistically significant” is not the same as “economically meaningful.”
+> **Full treatment**: See the [regression guide: Hypothesis Testing](../02_regression/00_single_factor_regression_micro.md#deep-dive-hypothesis-testing--how-to-read-p-values-without-fooling-yourself) for the complete derivation, demos, and exercises.
 
 ### Project Code Map
 - `scripts/scaffold_curriculum.py`: how this curriculum is generated (for curiosity)

@@ -3,7 +3,8 @@
 This is the navigation hub for the full tutorial project.
 
 ## How To Use This Repo
-- Work through the notebooks in order (recommended path below).
+- Work through the notebooks in the **recommended path below** (not necessarily by directory number).
+- Directory numbers (e.g., `03_classification`, `07_causal`) are organizational identifiers. The learning sequence below reorders them for pedagogical flow — econometric methods (causal, time-series) come before ML classification/unsupervised in the recommended path.
 - Each notebook has a matching deep guide under `docs/guides/<category>/`.
 - Notebooks are hands-on: code cells are intentionally incomplete (TODO-driven).
 - Each notebook ends with a collapsed **Solutions (Reference)** section to self-check.
@@ -31,29 +32,39 @@ This is the navigation hub for the full tutorial project.
    Guide: [04_census_api_microdata_fetch](guides/01_data/04_census_api_microdata_fetch.md)
 
 ### Regression (Micro then Macro)
-1. [Notebook: 00_single_factor_regression_micro](../notebooks/02_regression/00_single_factor_regression_micro.ipynb)  
+1. [Notebook: 00_single_factor_regression_micro](../notebooks/02_regression/00_single_factor_regression_micro.ipynb)
    Guide: [00_single_factor_regression_micro](guides/02_regression/00_single_factor_regression_micro.md)
-2. [Notebook: 01_multifactor_regression_micro_controls](../notebooks/02_regression/01_multifactor_regression_micro_controls.ipynb)  
+2. [Notebook: 01_multifactor_regression_micro_controls](../notebooks/02_regression/01_multifactor_regression_micro_controls.ipynb)
    Guide: [01_multifactor_regression_micro_controls](guides/02_regression/01_multifactor_regression_micro_controls.md)
-3. [Notebook: 02_single_factor_regression_macro](../notebooks/02_regression/02_single_factor_regression_macro.ipynb)  
+3. [Notebook: 02_single_factor_regression_macro](../notebooks/02_regression/02_single_factor_regression_macro.ipynb)
    Guide: [02_single_factor_regression_macro](guides/02_regression/02_single_factor_regression_macro.md)
-4. [Notebook: 03_multifactor_regression_macro](../notebooks/02_regression/03_multifactor_regression_macro.ipynb)  
+4. [Notebook: 02a_functional_forms_and_interactions](../notebooks/02_regression/02a_functional_forms_and_interactions.ipynb) *(new)*
+   Functional forms: log-level, level-log, quadratics, interactions, dummy variables
+5. [Notebook: 03_multifactor_regression_macro](../notebooks/02_regression/03_multifactor_regression_macro.ipynb)
    Guide: [03_multifactor_regression_macro](guides/02_regression/03_multifactor_regression_macro.md)
-5. [Notebook: 04_inference_time_series_hac](../notebooks/02_regression/04_inference_time_series_hac.ipynb)  
+6. [Notebook: 04_inference_time_series_hac](../notebooks/02_regression/04_inference_time_series_hac.ipynb)
    Guide: [04_inference_time_series_hac](guides/02_regression/04_inference_time_series_hac.md)
-6. [Notebook: 05_regularization_ridge_lasso](../notebooks/02_regression/05_regularization_ridge_lasso.ipynb)  
+7. [Notebook: 04a_residual_diagnostics](../notebooks/02_regression/04a_residual_diagnostics.ipynb) *(new)*
+   Diagnostic tests: Breusch-Pagan, White, Durbin-Watson, Breusch-Godfrey, RESET, Chow
+8. [Notebook: 05_regularization_ridge_lasso](../notebooks/02_regression/05_regularization_ridge_lasso.ipynb)
    Guide: [05_regularization_ridge_lasso](guides/02_regression/05_regularization_ridge_lasso.md)
-7. [Notebook: 06_rolling_regressions_stability](../notebooks/02_regression/06_rolling_regressions_stability.ipynb)  
+9. [Notebook: 06_rolling_regressions_stability](../notebooks/02_regression/06_rolling_regressions_stability.ipynb)
    Guide: [06_rolling_regressions_stability](guides/02_regression/06_rolling_regressions_stability.md)
+10. [Notebook: 07_gls_weighted_least_squares](../notebooks/02_regression/07_gls_weighted_least_squares.ipynb) *(new)*
+    GLS/WLS: when you know the error structure
 
 ### Causal Inference (Panels + Quasi-Experiments)
-1. [Notebook: 00_build_census_county_panel](../notebooks/07_causal/00_build_census_county_panel.ipynb)  
+1. [Notebook: 00_build_census_county_panel](../notebooks/07_causal/00_build_census_county_panel.ipynb)
    Guide: [00_build_census_county_panel](guides/07_causal/00_build_census_county_panel.md)
-2. [Notebook: 01_panel_fixed_effects_clustered_se](../notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb)  
+2. [Notebook: 01_panel_fixed_effects_clustered_se](../notebooks/07_causal/01_panel_fixed_effects_clustered_se.ipynb)
    Guide: [01_panel_fixed_effects_clustered_se](guides/07_causal/01_panel_fixed_effects_clustered_se.md)
-3. [Notebook: 02_difference_in_differences_event_study](../notebooks/07_causal/02_difference_in_differences_event_study.ipynb)  
+3. [Notebook: 01a_random_effects_hausman](../notebooks/07_causal/01a_random_effects_hausman.ipynb) *(new)*
+   Random Effects vs Fixed Effects and the Hausman test
+4. [Notebook: 02_difference_in_differences_event_study](../notebooks/07_causal/02_difference_in_differences_event_study.ipynb)
    Guide: [02_difference_in_differences_event_study](guides/07_causal/02_difference_in_differences_event_study.md)
-4. [Notebook: 03_instrumental_variables_2sls](../notebooks/07_causal/03_instrumental_variables_2sls.ipynb)  
+5. [Notebook: 02a_endogeneity_sources](../notebooks/07_causal/02a_endogeneity_sources.ipynb) *(new)*
+   Endogeneity: OVB, measurement error, and simultaneity
+6. [Notebook: 03_instrumental_variables_2sls](../notebooks/07_causal/03_instrumental_variables_2sls.ipynb)
    Guide: [03_instrumental_variables_2sls](guides/07_causal/03_instrumental_variables_2sls.md)
 
 ### Time-Series Econometrics (Unit Roots → VAR)

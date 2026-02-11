@@ -78,24 +78,24 @@ Probabilities let you:
 #### 2) Notation + setup (define symbols)
 
 Let:
-- $y_i \\in \\{0,1\\}$ be the true label (1 = recession),
+- $y_i \in \{0,1\}$ be the true label (1 = recession),
 - $x_i$ be features,
-- $p_i = \\Pr(y_i=1 \\mid x_i)$ be the model probability.
+- $p_i = \Pr(y_i=1 \mid x_i)$ be the model probability.
 
 Logistic regression uses the log-odds (“logit”) link:
 
 $$
-\\log\\left(\\frac{p_i}{1-p_i}\\right) = x_i'\\beta.
+\log\left(\frac{p_i}{1-p_i}\right) = x_i'\beta.
 $$
 
 Equivalently:
 
 $$
-p_i = \\sigma(x_i'\\beta) = \\frac{1}{1 + e^{-x_i'\\beta}}.
+p_i = \sigma(x_i'\beta) = \frac{1}{1 + e^{-x_i'\beta}}.
 $$
 
 **What each term means**
-- $\\sigma(\\cdot)$ maps real numbers to (0,1).
+- $\sigma(\cdot)$ maps real numbers to (0,1).
 - coefficients move probabilities through the log-odds scale.
 
 #### 3) Assumptions (and what “probability model” means)
@@ -111,12 +111,12 @@ But calibration can suffer, so we measure it.
 #### 4) Estimation mechanics (how the model is fit)
 
 Logistic regression is typically fit by maximum likelihood:
-- choose $\\beta$ to maximize the probability of the observed labels.
+- choose $\beta$ to maximize the probability of the observed labels.
 
 The negative log-likelihood corresponds to **log loss** (cross-entropy):
 
 $$
-\\ell(\\beta) = -\\sum_i \\left[y_i \\log(p_i) + (1-y_i)\\log(1-p_i)\\right].
+\ell(\beta) = -\sum_i \left[y_i \log(p_i) + (1-y_i)\log(1-p_i)\right].
 $$
 
 In practice you use libraries (`sklearn` or `statsmodels`) rather than coding this by hand.
@@ -138,20 +138,28 @@ At minimum, treat these as standard:
 - **PR-AUC:** often more informative when positives are rare.
 - **Brier score:** mean squared error of probabilities:
 $$
-\\text{Brier} = \\frac{1}{n} \\sum_i (p_i - y_i)^2.
+\text{Brier} = \frac{1}{n} \sum_i (p_i - y_i)^2.
 $$
 - **Calibration plots:** do predicted probabilities match observed frequencies?
 
 #### 7) Thresholding is a decision rule (not a model property)
 
-A threshold $\\tau$ converts probability to a hard label:
+A threshold $\tau$ converts probability to a hard label:
 $$
-\\hat y_i = 1[p_i \\ge \\tau].
+\hat y_i = 1[p_i \ge \tau].
 $$
 
-Choosing $\\tau$ should reflect costs:
+Choosing $\tau$ should reflect costs:
 - false positives (crying wolf),
 - false negatives (missing recessions).
+
+**Worked example:** Suppose missing a recession ($c_{FN}$) is 5 times worse than a false alarm ($c_{FP} = 1$). The cost-optimal threshold balances the two errors:
+
+$$
+\tau^* = \frac{c_{FP}}{c_{FP} + c_{FN}} = \frac{1}{1 + 5} \approx 0.167.
+$$
+
+So you would flag a recession whenever $p_i > 0.167$, not the default 0.50. This dramatically increases recall (catching more recessions) at the cost of more false alarms — which is the right tradeoff when misses are expensive. In practice, plot precision and recall as a function of $\tau$ and pick the threshold that matches your cost story.
 
 #### 8) Diagnostics + robustness (minimum set)
 
@@ -199,12 +207,12 @@ If not, the model is miscalibrated (over- or under-confident).
 
 Let:
 - $p_i$ be predicted probability,
-- $y_i \\in \\{0,1\\}$ be the realized label.
+- $y_i \in \{0,1\}$ be the realized label.
 
 Brier score:
 
 $$
-\\text{Brier} = \\frac{1}{n}\\sum_{i=1}^{n} (p_i - y_i)^2.
+\text{Brier} = \frac{1}{n}\sum_{i=1}^{n} (p_i - y_i)^2.
 $$
 
 **What it measures**

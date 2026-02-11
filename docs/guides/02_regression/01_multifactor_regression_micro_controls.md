@@ -11,213 +11,93 @@
 
 This guide accompanies the notebook `notebooks/02_regression/01_multifactor_regression_micro_controls.ipynb`.
 
-This regression module covers both prediction and inference, with a strong emphasis on interpretation.
+Moving from a single regressor to multiple regressors is where applied economics really begins. The central question shifts from "what is the association?" to "what is the association *after accounting for confounders*?" This guide focuses on what happens when you add control variables and how to think about omitted variable bias, partial correlations, and specification choices.
 
 ### Key Terms (defined)
-- **OLS (Ordinary Least Squares)**: chooses coefficients that minimize squared prediction errors.
-- **Coefficient**: expected change in the target per unit change in a feature (holding others fixed).
-- **Standard error (SE)**: uncertainty estimate for a coefficient.
-- **p-value**: probability of observing an effect at least as extreme if the true effect were zero (under assumptions).
-- **Confidence interval (CI)**: a range of plausible coefficient values under assumptions.
-- **Heteroskedasticity**: non-constant error variance; common in cross-section.
-- **Autocorrelation**: errors correlated over time; common in time series.
-- **HAC/Newey-West**: robust SE for time-series autocorrelation/heteroskedasticity.
-
+- **Omitted variable bias (OVB)**: bias arising when a relevant variable that is correlated with an included regressor is left out of the model.
+- **Control variable**: a regressor included to block a confounding pathway, not because its coefficient is of direct interest.
+- **Confounder**: a variable that causally affects both the treatment/exposure and the outcome, creating a spurious association.
+- **Partial correlation**: the correlation between two variables after removing the linear effect of other variables from both.
+- **Short regression**: the regression that omits one or more relevant controls.
+- **Long regression**: the regression that includes those controls.
+- **VIF (Variance Inflation Factor)**: measures how much a coefficient's variance is inflated by collinearity with other regressors.
+- **Mediator**: a variable on the causal pathway between treatment and outcome; controlling for it removes part of the treatment effect.
+- **Collider**: a variable caused by both treatment and outcome; conditioning on it introduces spurious association.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Use **Technical Explanations** to learn the math and assumptions for adding controls.
 - Then return to the notebook and write a short interpretation note after each section.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Choose controls
-- Complete notebook section: Fit model
-- Complete notebook section: Compare coefficients
-- Fit at least one plain OLS model and one robust-SE variant (HC3 or HAC).
-- Interpret coefficients in units (or standardized units) and explain what they do *not* mean.
-- Run at least one diagnostic: residual plot, VIF table, or rolling coefficient stability plot.
+- Choose a set of control variables with a clear economic rationale (write it down before fitting).
+- Fit a multivariate OLS model with HC3 robust standard errors.
+- Fit the "short" regression (without controls) and the "long" regression (with controls); compare the coefficient of interest.
+- Compute the VIF table; identify any regressors with VIF > 5 and explain why.
+- Use the OVB formula to predict the *direction* of bias from omitting a specific control; verify against your short vs long comparison.
+- Interpret the coefficient of interest in units, with a causal caveat.
 
 ### Alternative Example (Not the Notebook Solution)
+
+This example shows how adding controls changes the estimated return to education in a wage regression.
+
 ```python
-# Toy OLS with robust SE (not the notebook data):
+# Multifactor regression: wage ~ education + experience + female
+# Demonstrates coefficient change when adding controls
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-rng = np.random.default_rng(0)
-x = rng.normal(size=200)
-y = 2.0 + 0.5*x + rng.normal(scale=1 + 0.5*np.abs(x), size=200)  # heteroskedastic errors
-X = sm.add_constant(pd.DataFrame({'x': x}))
-res = sm.OLS(y, X).fit()
-res_hc3 = res.get_robustcov_results(cov_type='HC3')
+rng = np.random.default_rng(42)
+n = 500
+
+# Simulate correlated data
+ability = rng.normal(size=n)                          # unobserved confounder
+education = 12 + 2 * ability + rng.normal(size=n)     # ability -> education
+experience = 25 - 0.8 * education + rng.normal(3, size=n)  # correlated with educ
+female = rng.binomial(1, 0.5, size=n)
+log_wage = (0.08 * education + 0.02 * experience
+            - 0.15 * female + 0.05 * ability
+            + rng.normal(0, 0.4, size=n))
+
+df = pd.DataFrame({
+    'log_wage': log_wage, 'education': education,
+    'experience': experience, 'female': female
+})
+
+# Short regression (education only)
+X_short = sm.add_constant(df[['education']])
+res_short = sm.OLS(df['log_wage'], X_short).fit(cov_type='HC3')
+
+# Long regression (add controls)
+X_long = sm.add_constant(df[['education', 'experience', 'female']])
+res_long = sm.OLS(df['log_wage'], X_long).fit(cov_type='HC3')
+
+print("Short regression — education coeff:", round(res_short.params['education'], 4))
+print("Long  regression — education coeff:", round(res_long.params['education'], 4))
+# Education coefficient changes because experience and gender were confounders.
+
+# VIF check
+vif_df = pd.DataFrame({
+    'feature': X_long.columns[1:],
+    'VIF': [variance_inflation_factor(X_long.values, i+1)
+            for i in range(X_long.shape[1]-1)]
+})
+print(vif_df)
 ```
 
+**What to notice:** The education coefficient in the short regression is biased because it partly absorbs the effects of experience and gender (both correlated with education and predictive of wages). Adding controls moves the coefficient toward the true value of 0.08.
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Regression: mechanics, assumptions, and interpretation (OLS as the baseline)
+### Prerequisites: OLS Foundations (Guide 00)
 
-Linear regression is the baseline model for both econometrics and ML. Even when you use nonlinear models, the regression mindset (assumptions → estimation → inference → diagnostics) remains essential.
-
-#### 1) Intuition (plain English)
-
-Regression answers questions like:
-- “How does $Y$ vary with $X$ on average?”
-- “Holding other observed controls fixed, what is the association between one feature and the outcome?”
-
-In economics we care about two different uses:
-- **prediction:** does a model forecast well out-of-sample?
-- **inference:** what is the estimated relationship and its uncertainty?
-
-#### 2) Notation + setup (define symbols)
-
-Scalar form (observation $i=1,\\dots,n$):
-
-$$
-y_i = \\beta_0 + \\beta_1 x_{i1} + \\cdots + \\beta_K x_{iK} + \\varepsilon_i.
-$$
-
-Matrix form:
-
-$$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
-$$
-
-**What each term means**
-- $\\mathbf{y}$: $n\\times 1$ vector of outcomes.
-- $\\mathbf{X}$: $n\\times (K+1)$ design matrix (includes an intercept column).
-- $\\beta$: $(K+1)\\times 1$ vector of coefficients.
-- $\\varepsilon$: $n\\times 1$ vector of errors (unobserved determinants).
-
-#### 3) Assumptions (what you need for unbiasedness and for inference)
-
-For interpretation and inference, it helps to separate:
-
-**(A) Assumptions for unbiased coefficients**
-
-1) **Linearity in parameters**
-- $y$ is linear in $\\beta$ (you can still include nonlinear transformations of $x$).
-
-2) **No perfect multicollinearity**
-- columns of $X$ are not perfectly linearly dependent.
-
-3) **Exogeneity (key!)**
-$$
-\\mathbb{E}[\\varepsilon \\mid X] = 0.
-$$
-
-This rules out:
-- omitted variable bias,
-- reverse causality,
-- many forms of measurement error problems.
-
-**(B) Assumptions for classical standard errors**
-
-4) **Homoskedasticity**
-$$
-\\mathrm{Var}(\\varepsilon \\mid X) = \\sigma^2 I.
-$$
-
-5) **No autocorrelation (time series)**
-$$
-\\mathrm{Cov}(\\varepsilon_t, \\varepsilon_{t-k}) = 0 \\text{ for } k \\neq 0.
-$$
-
-When (4)–(5) fail, OLS coefficients can remain valid under (A), but naive SE are wrong → robust/HAC/clustered SE.
-
-#### 4) Estimation mechanics: deriving OLS
-
-OLS chooses coefficients to minimize the sum of squared residuals:
-
-$$
-\\hat\\beta = \\arg\\min_{\\beta} \\sum_{i=1}^{n} (y_i - x_i'\\beta)^2
-= \\arg\\min_{\\beta} (\\mathbf{y} - \\mathbf{X}\\beta)'(\\mathbf{y} - \\mathbf{X}\\beta).
-$$
-
-Take derivatives (the “normal equations”):
-
-$$
-\\frac{\\partial}{\\partial \\beta} (\\mathbf{y}-\\mathbf{X}\\beta)'(\\mathbf{y}-\\mathbf{X}\\beta)
-= -2\\mathbf{X}'(\\mathbf{y}-\\mathbf{X}\\beta) = 0.
-$$
-
-Solve:
-$$
-\\mathbf{X}'\\mathbf{X}\\hat\\beta = \\mathbf{X}'\\mathbf{y}
-\\quad \\Rightarrow \\quad
-\\hat\\beta = (\\mathbf{X}'\\mathbf{X})^{-1}\\mathbf{X}'\\mathbf{y}.
-$$
-
-**What each term means**
-- $(X'X)^{-1}$ exists only if there is no perfect multicollinearity.
-- OLS is a projection of $y$ onto the column space of $X$.
-
-#### 5) Coefficient interpretation (and why “holding fixed” is tricky)
-
-In the model, $\\beta_j$ means:
-
-> the expected change in $y$ when $x_j$ increases by one unit, holding other regressors fixed (within the model).
-
-In economics, “holding fixed” can be unrealistic if regressors move together (multicollinearity).
-That is why:
-- coefficient signs can flip,
-- SE can inflate,
-- interpretation must be cautious.
-
-#### 6) Inference: standard errors, t-stats, confidence intervals
-
-Under classical assumptions:
-
-$$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
-$$
-
-In practice we estimate $\\sigma^2$ and compute standard errors:
-- $\\widehat{SE}(\\hat\\beta_j)$
-- t-stat: $t_j = \\hat\\beta_j / \\widehat{SE}(\\hat\\beta_j)$
-- 95% CI: $\\hat\\beta_j \\pm 1.96\\,\\widehat{SE}(\\hat\\beta_j)$ (approx.)
-
-When assumptions fail, use robust SE:
-- **HC3** for cross-section heteroskedasticity,
-- **HAC/Newey–West** for time-series autocorrelation + heteroskedasticity,
-- **clustered SE** for grouped dependence (panels/DiD).
-
-#### 7) Diagnostics + robustness (minimum set)
-
-1) **Residual checks**
-- plot residuals vs fitted values; look for heteroskedasticity/nonlinearity.
-
-2) **Multicollinearity**
-- compute VIF; large VIF → unstable coefficients.
-
-3) **Time-series dependence**
-- check residual autocorrelation; use HAC when needed.
-
-4) **Stability**
-- rolling regressions or sub-sample splits; do coefficients drift?
-
-#### 8) Interpretation + reporting
-
-Always report:
-- coefficient in units (or standardized units),
-- robust SE appropriate to data structure,
-- a short causal warning unless you have a causal design.
-
-**What this does NOT mean**
-- Regression does not “control away” all confounding automatically.
-- A small p-value does not imply economic importance.
-- A high $R^2$ does not imply good forecasting out-of-sample.
-
-#### Exercises
-
-- [ ] Derive the normal equations and explain each step in words.
-- [ ] Fit OLS and HC3 (or HAC) and compare SE; explain why they differ.
-- [ ] Create two correlated regressors and show how multicollinearity affects coefficient stability.
-- [ ] Write a 6-sentence interpretation of one regression output, including what you can and cannot claim.
+This guide builds on the OLS foundations covered in [Guide 00](00_single_factor_regression_micro.md). That guide covers the core regression framework: notation and matrix setup, the five classical assumptions (linearity, no perfect multicollinearity, exogeneity, homoskedasticity, no autocorrelation), the OLS derivation via normal equations, coefficient interpretation, robust standard errors (HC3 and the sandwich estimator), hypothesis testing (t-stats, p-values, confidence intervals), and multicollinearity diagnostics (VIF). Read it first if you have not already. This guide focuses on what happens when you add controls to a regression -- and what can go wrong.
 
 ### Deep Dive: Omitted Variable Bias (OVB) — when a coefficient absorbs a missing cause
 
@@ -228,9 +108,9 @@ OVB is the simplest and most common reason regression coefficients are misleadin
 If you omit a variable that:
 1) affects the outcome, and
 2) is correlated with an included regressor,
-then your estimated coefficient partly picks up the omitted variable’s effect.
+then your estimated coefficient partly picks up the omitted variable's effect.
 
-**Story example:** Education ($x$) and earnings ($y$).  
+**Story example:** Education ($x$) and earnings ($y$).
 Ability ($z$) affects both schooling and earnings. If you omit ability, the schooling coefficient can be biased upward.
 
 #### 2) Notation + setup (define symbols)
@@ -238,7 +118,7 @@ Ability ($z$) affects both schooling and earnings. If you omit ability, the scho
 True model:
 
 $$
-y = \\beta x + \\gamma z + \\varepsilon
+y = \beta x + \gamma z + \varepsilon
 $$
 
 Estimated (misspecified) model that omits $z$:
@@ -251,7 +131,7 @@ $$
 - $y$: outcome.
 - $x$: included regressor of interest.
 - $z$: omitted regressor (confounder).
-- $\\varepsilon$: other unobservables uncorrelated with $x$ under ideal assumptions.
+- $\varepsilon$: other unobservables uncorrelated with $x$ under ideal assumptions.
 - $b$: coefficient you estimate when you omit $z$.
 
 #### 3) Assumptions (when OLS has a causal interpretation)
@@ -259,46 +139,50 @@ $$
 The key identification condition for OLS is:
 
 $$
-\\mathbb{E}[\\varepsilon \\mid x, z] = 0
+\mathbb{E}[\varepsilon \mid x, z] = 0
 $$
 
 If you omit $z$, you generally violate:
 $$
-\\mathbb{E}[u \\mid x] = 0.
+\mathbb{E}[u \mid x] = 0.
 $$
 
 #### 4) Estimation mechanics: deriving the OVB formula
 
-Under standard assumptions, the expected value of the omitted-variable coefficient is:
+**Derivation sketch:** The true model is $y = \beta x + \gamma z + \varepsilon$. If you omit $z$ and run the short regression $y = bx + u$, OLS gives $b = \beta + \gamma \hat\delta$, where $\hat\delta$ is the coefficient from regressing $z$ on $x$. In population:
 
 $$
-\\mathbb{E}[b] = \\beta + \\gamma \\frac{\\mathrm{Cov}(x,z)}{\\mathrm{Var}(x)}.
+\mathbb{E}[b] = \beta + \gamma \frac{\mathrm{Cov}(x,z)}{\mathrm{Var}(x)}.
 $$
+
+The bias term $\gamma \cdot \mathrm{Cov}(x,z)/\mathrm{Var}(x)$ combines two things: (1) how much $z$ affects $y$ (via $\gamma$), and (2) how correlated $z$ is with $x$ (via $\mathrm{Cov}(x,z)/\mathrm{Var}(x)$, which is the slope from regressing $z$ on $x$). If either is zero, there is no bias.
 
 **What each term means**
-- $\\beta$: the “true” causal/structural slope on $x$ (in the true model).
-- $\\gamma$: effect of omitted variable $z$ on $y$.
-- $\\mathrm{Cov}(x,z)/\\mathrm{Var}(x)$: how much $z$ moves with $x$ (the “regression of z on x” slope).
+- $\beta$: the "true" causal/structural slope on $x$ (in the true model).
+- $\gamma$: effect of omitted variable $z$ on $y$.
+- $\mathrm{Cov}(x,z)/\mathrm{Var}(x)$: how much $z$ moves with $x$ (the "regression of z on x" slope).
 
 **Direction-of-bias intuition**
-- If $\\gamma > 0$ and $\\mathrm{Cov}(x,z) > 0$ → upward bias.
-- If $\\gamma > 0$ and $\\mathrm{Cov}(x,z) < 0$ → downward bias.
+- If $\gamma > 0$ and $\mathrm{Cov}(x,z) > 0$ → upward bias.
+- If $\gamma > 0$ and $\mathrm{Cov}(x,z) < 0$ → downward bias.
 - Sign flips are possible.
 
-#### 5) Connection to “adding controls changes coefficients”
+**Numerical example:** Suppose the true return to education is $\beta = 0.05$ (5% per year). Ability ($z$) has a positive effect on wages ($\gamma = 0.03$), and ability is positively correlated with education ($\mathrm{Cov}(x,z)/\mathrm{Var}(x) = 0.8$). Then $\mathbb{E}[b] = 0.05 + 0.03 \times 0.8 = 0.074$. The short regression overestimates the return to education by 48%.
+
+#### 5) Connection to "adding controls changes coefficients"
 
 When you add a control that is correlated with your regressor and predictive of the outcome:
 - you are trying to remove a backdoor path (confounding),
 - the coefficient can move a lot.
 
-This movement is not a “bug.” It is evidence that the omitted variable mattered.
+This movement is not a "bug." It is evidence that the omitted variable mattered.
 
 #### 6) Inference: robust SE do not fix OVB
 
 Robust/clustered/HAC standard errors correct uncertainty calculations under dependence/heteroskedasticity.
-They do **not** make $\\mathbb{E}[u \\mid x]=0$ true.
+They do **not** make $\mathbb{E}[u \mid x]=0$ true.
 
-So you can have a “precise” but biased estimate.
+So you can have a "precise" but biased estimate.
 
 #### 7) Diagnostics + robustness (minimum set)
 
@@ -309,7 +193,7 @@ So you can have a “precise” but biased estimate.
 - write down what could affect both $x$ and $y$ (before running regressions).
 
 3) **Placebo / negative-control outcomes**
-- test an outcome that should not be affected by $x$; if you see strong “effects,” confounding is likely.
+- test an outcome that should not be affected by $x$; if you see strong "effects," confounding is likely.
 
 4) **Panel methods / FE**
 - if confounding is time-invariant, FE can help; if it is time-varying, FE may not solve it.
@@ -317,308 +201,80 @@ So you can have a “precise” but biased estimate.
 #### 8) Interpretation + reporting
 
 When coefficients change with controls:
-- report the sequence of specifications (“spec curve” thinking),
+- report the sequence of specifications ("spec curve" thinking),
 - explain which omitted variables the controls are proxying for,
 - avoid claiming causality unless you have a design.
 
 **What this does NOT mean**
-- “I controlled for a lot of variables” is not a guarantee.
+- "I controlled for a lot of variables" is not a guarantee.
 - Over-controlling can also introduce bias if you control for mediators or colliders.
 
 #### Exercises
 
 - [ ] Simulate a confounder $z$ that affects both $x$ and $y$; show how omitting $z$ biases $b$.
-- [ ] Use the OVB formula to predict the direction of bias given signs of $\\gamma$ and $\\mathrm{Cov}(x,z)$.
+- [ ] Use the OVB formula to predict the direction of bias given signs of $\gamma$ and $\mathrm{Cov}(x,z)$.
 - [ ] Fit a regression with and without a plausible control in the project data; interpret the change.
-- [ ] Write one paragraph: “Which confounders are most plausible here and why?”
+- [ ] Write one paragraph: "Which confounders are most plausible here and why?"
 
-### Deep Dive: Robust Standard Errors (HC3) for Cross-Sectional Data
+### Adding Controls: What Changes and Why
 
-Robust standard errors are about **honest uncertainty** when error variance differs across observations.
+The OVB formula above tells you *how much* a coefficient changes when you add a control. This section covers the practical thinking around *which* controls to add, when to stop, and how to report results honestly.
 
-#### 1) Intuition (plain English)
+#### Why coefficients change when you add controls
 
-In cross-sectional micro data, the variance of “unexplained” outcomes often differs systematically:
-- income has higher variance at higher education levels,
-- spending variability rises with income,
-- measurement error differs across regions.
-
-If you assume constant error variance when it is not true, your coefficient estimate may be fine, but your **standard errors** can be wrong—often too small.
-
-#### 2) Notation + setup (define symbols)
-
-Regression model:
+Adding a control $z$ to a regression of $y$ on $x$ changes the coefficient on $x$ by exactly the OVB term:
 
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{u}.
+\hat\beta_{long} - \hat\beta_{short} \approx -\hat\gamma \cdot \frac{\mathrm{Cov}(x,z)}{\mathrm{Var}(x)}.
 $$
 
-**What each term means**
-- $\\mathbf{y}$: $n\\times 1$ outcome vector.
-- $\\mathbf{X}$: $n\\times p$ design matrix (includes intercept).
-- $\\beta$: $p\\times 1$ coefficient vector.
-- $\\mathbf{u}$: $n\\times 1$ error vector.
+If the control is both predictive of the outcome ($\gamma \neq 0$) and correlated with $x$, the coefficient moves. If either condition fails, the coefficient is approximately unchanged. This is why "kitchen sink" regressions (throwing in every available variable) are not always helpful: controls uncorrelated with the regressor of interest do not reduce OVB, and controls that are mediators or colliders can *introduce* bias.
 
-Classical OLS inference assumes homoskedasticity:
-$$
-\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\sigma^2 I_n.
-$$
+#### Short vs long regression: when to add controls
 
-Heteroskedasticity means:
-$$
-\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\Omega,
-\\quad \\text{where } \\Omega \\text{ is not } \\sigma^2 I_n.
-$$
+**Good controls** block confounding pathways (common causes of both $x$ and $y$):
+- In a wage regression, controlling for experience removes a confounder because experience is correlated with education and independently affects wages.
+- In a treatment effect study, controlling for baseline health removes a confounder if sicker patients are more likely to receive treatment.
 
-Often $\\Omega$ is diagonal with unequal variances (but we don’t need to specify the exact pattern to build robust SE).
+**Bad controls** are variables that lie on the causal pathway or are consequences of both treatment and outcome:
 
-#### 3) Estimation mechanics: what changes and what does not
+1. **Mediators** (on the causal chain from $x$ to $y$): Suppose education increases cognitive skill, which increases wages. If you control for cognitive skill, you remove part of the *true* education effect. The coefficient on education shrinks not because OVB was fixed, but because you blocked the causal mechanism.
 
-OLS coefficients:
-$$
-\\hat\\beta = (X'X)^{-1}X'y.
-$$
+2. **Colliders** (caused by both $x$ and $y$): Suppose both talent and family connections get you into a prestigious firm. If you condition on "employed at a prestigious firm," you induce a spurious negative association between talent and family connections within that group. Adding a collider as a control opens a bias pathway that was previously closed.
 
-**Key fact**
-- $\\hat\\beta$ is the same whether you use classical or robust SE.
-- What changes is the estimated variance of $\\hat\\beta$ (and therefore t-stats, p-values, and CI).
+**Rule of thumb:** Draw a simple causal diagram (even informally) *before* choosing controls. Only control for pre-treatment common causes. Do not control for post-treatment variables unless you have a specific design reason.
 
-#### 4) The robust “sandwich” covariance estimator
+#### Specification curve thinking
 
-A general heteroskedasticity-robust variance estimator has the form:
+Because the "right" set of controls is rarely obvious, responsible applied work reports results across multiple reasonable specifications:
 
-$$
-\\widehat{\\mathrm{Var}}(\\hat\\beta)
-= (X'X)^{-1} \\left(X'\\hat\\Omega X\\right) (X'X)^{-1}.
-$$
+1. Start with a baseline (no controls beyond the regressor of interest).
+2. Add controls one group at a time (demographics, then economic variables, then institutional variables).
+3. Report how the coefficient and its confidence interval move across specifications.
+4. If the coefficient is stable across reasonable specs, the result is more credible. If it is highly sensitive, flag that as a limitation.
 
-**What each term means**
-- “Bread”: $(X'X)^{-1}$ is the usual OLS matrix.
-- “Meat”: $X'\\hat\\Omega X$ estimates the error variance structure.
+This is sometimes called a "specification curve" or "multiverse analysis." The key discipline is deciding on the set of specifications *before* looking at results, not cherry-picking the one that tells the best story.
 
-Different HC estimators choose different $\\hat\\Omega$.
+#### Health economics example: adding controls to a treatment effect regression
 
-#### 5) Why HC3 specifically? (leverage adjustment)
+Suppose you are estimating the effect of a new medication on hospital length of stay (LOS). Your data include patient demographics, comorbidities, and hospital characteristics.
 
-HC3 is designed to be more conservative in finite samples when some points have high leverage.
+| Specification | Controls added | Medication coeff (days) | 95% CI |
+|---|---|---|---|
+| 1 | None | -2.1 | [-3.0, -1.2] |
+| 2 | + age, sex, BMI | -1.6 | [-2.4, -0.8] |
+| 3 | + comorbidity index | -1.3 | [-2.0, -0.6] |
+| 4 | + hospital fixed effects | -1.2 | [-1.9, -0.5] |
 
-Define:
-- residuals $\\hat u_i$,
-- leverage $h_{ii}$ (diagonal of the hat matrix $H = X(X'X)^{-1}X'$):
-$$
-h_{ii} = x_i'(X'X)^{-1}x_i.
-$$
+**Interpretation:** The raw association (Spec 1) overstates the medication's benefit because sicker patients (who have longer stays) are less likely to receive the new drug. Adding patient demographics and comorbidities reduces the coefficient toward its "true" value. Hospital fixed effects absorb cross-hospital variation in treatment protocols. The coefficient stabilizes around -1.2 to -1.3 days across the last two specs, suggesting residual confounding is modest — but cannot rule out unobserved patient severity.
 
-HC3 uses:
-$$
-\\hat\\Omega_{ii}^{HC3} = \\frac{\\hat u_i^2}{(1-h_{ii})^2}.
-$$
-
-**Interpretation**
-- if a point has high leverage ($h_{ii}$ large), it gets more conservative variance contribution.
-
-#### 6) Mapping to code (statsmodels)
-
-In `statsmodels`, you can request HC3 in two common ways:
-- `res = sm.OLS(y, X).fit(cov_type='HC3')`
-- or `res_hc3 = res.get_robustcov_results(cov_type='HC3')`
-
-#### 7) Diagnostics + robustness (minimum set)
-
-1) **Residual vs fitted plot**
-- look for “fan shapes” where variance increases with fitted values.
-
-2) **Compare naive vs HC3 SE**
-- report the ratio; big changes mean heteroskedasticity mattered.
-
-3) **Leverage / influential points**
-- if a few points dominate, inference is fragile; consider robust checks.
-
-4) **Spec sensitivity**
-- add/remove plausible controls; see if estimates are stable (robust SE does not fix omitted variables).
-
-#### 8) Interpretation + reporting
-
-HC3 improves uncertainty estimates under heteroskedasticity.
-It does **not**:
-- fix bias from confounding,
-- make a coefficient causal,
-- correct misspecification.
-
-Report:
-- coefficient + HC3 SE,
-- sample size,
-- a quick heteroskedasticity diagnostic (plot or comparison).
+**What you should NOT add:** Post-treatment outcomes like "ICU admission during stay" or "in-hospital complications." These are potential mediators or colliders. If the medication reduces complications, and complications lengthen stays, then controlling for complications removes part of the treatment effect you are trying to measure.
 
 #### Exercises
 
-- [ ] Simulate heteroskedastic data and compare naive vs HC3 SE; explain why the coefficient stays similar.
-- [ ] Fit the same regression with HC0/HC1/HC3 (if available) and compare SE; which is most conservative?
-- [ ] Identify a high-leverage point and explain how HC3 changes its influence on uncertainty.
-- [ ] Write 5 sentences: “What robust SE fixes” vs “what it does not fix.”
-
-### Deep Dive: Hypothesis Testing — how to read p-values without fooling yourself
-
-Hypothesis tests show up everywhere in econometrics output. The goal of this section is not to worship p-values, but to understand what they *are* and what they *are not*.
-
-#### 1) Intuition (plain English)
-
-A hypothesis test is a structured way to ask:
-- “If the true effect were zero, how surprising is my estimate?”
-
-It is **not** a direct answer to:
-- “What is the probability the effect is real?”
-- “Is my model correct?”
-
-**Story example:** You regress unemployment on an interest-rate spread and get a small p-value.
-That might mean:
-- the relationship is real in-sample,
-- or your SE are wrong (autocorrelation),
-- or you tried many specs (multiple testing),
-- or the effect is tiny but precisely estimated.
-
-#### 2) Notation + setup (define symbols)
-
-We usually test a claim about a population parameter $\\theta$ (mean, regression coefficient, difference in means, …).
-
-Define:
-- $H_0$: the **null hypothesis** (default claim),
-- $H_1$: the **alternative hypothesis** (what you consider if evidence contradicts $H_0$),
-- $T$: a **test statistic** computed from data,
-- $\\alpha$: a pre-chosen significance level (e.g., 0.05).
-
-Example in regression:
-- $H_0: \\beta_j = 0$
-- $H_1: \\beta_j \\neq 0$ (two-sided)
-
-#### 3) Assumptions (why tests are conditional statements)
-
-Every p-value is conditional on:
-- the statistical model (e.g., OLS assumptions),
-- the standard error estimator you use (naive vs robust vs HAC vs clustered),
-- the sample and selection process.
-
-If those assumptions fail, the p-value may be meaningless.
-
-#### 4) Estimation mechanics in OLS: where t-stats come from
-
-OLS estimates coefficients:
-
-$$
-\\hat\\beta = (X'X)^{-1}X'y.
-$$
-
-For coefficient $\\beta_j$, you compute an estimated standard error $\\widehat{SE}(\\hat\\beta_j)$.
-
-The t-statistic for testing $H_0: \\beta_j = 0$ is:
-
-$$
-t_j = \\frac{\\hat\\beta_j - 0}{\\widehat{SE}(\\hat\\beta_j)}.
-$$
-
-**What each term means**
-- numerator: your estimated effect.
-- denominator: your uncertainty estimate.
-- large |t| means “many standard errors away from 0.”
-
-Under suitable assumptions, $t_j$ is compared to a t distribution (or asymptotic normal), producing a p-value.
-
-#### 5) What the p-value actually means
-
-> **Definition:** The **p-value** is the probability (under the null and model assumptions) of observing a test statistic at least as extreme as what you observed.
-
-So:
-- p-value is about the *data under the null model*,
-- not about the probability the null is true.
-
-Also: p-values do not measure effect size.
-
-#### 6) Confidence intervals (often more informative than p-values)
-
-A 95% confidence interval is approximately:
-
-$$
-\\hat\\beta_j \\pm t_{0.975} \\cdot \\widehat{SE}(\\hat\\beta_j).
-$$
-
-Interpretation:
-- it is a range of values consistent with the data under assumptions,
-- it shows both sign and magnitude uncertainty.
-
-If the 95% CI excludes 0, the two-sided p-value is typically < 0.05.
-
-#### 7) Robust SE change p-values (without changing coefficients)
-
-Different SE estimators correspond to different assumptions about errors:
-- **Naive OLS SE:** homoskedastic, uncorrelated errors.
-- **HC3:** heteroskedasticity-robust (cross-section).
-- **HAC/Newey–West:** autocorrelation + heteroskedasticity (time series).
-- **Clustered SE:** within-cluster correlated errors (panels/DiD).
-
-**Key idea:** changing SE changes $\\widehat{SE}(\\hat\\beta_j)$ → changes t-stat and p-value, even when $\\hat\\beta_j$ is identical.
-
-#### 8) Diagnostics: how hypothesis testing goes wrong (minimum set)
-
-1) **Multiple testing**
-- If you try many features/specs, some will “work” by chance.
-- A few p-values < 0.05 are expected even if all true effects are 0.
-
-2) **P-hacking / specification search**
-- tweaking the model until p-values look good invalidates the usual interpretation.
-
-3) **Wrong SE (dependence)**
-- autocorrelation or clustering can make naive SE far too small.
-
-4) **Confounding**
-- a “significant” association is not a causal effect without identification.
-
-Practical rule:
-- interpret p-values as one piece of evidence, not a conclusion.
-
-#### 9) Interpretation + reporting (how to write results responsibly)
-
-Good reporting includes:
-- effect size (coefficient) in meaningful units,
-- uncertainty (CI preferred),
-- correct SE choice for the data structure,
-- a note about model limitations and identification.
-
-**What this does NOT mean**
-- “Significant” is not “important.”
-- “Not significant” is not “no effect” (could be low power).
-
-#### 10) Small Python demo (optional)
-
-```python
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-from scipy import stats
-
-rng = np.random.default_rng(0)
-
-# 1) One-sample t-test
-x = rng.normal(loc=0.2, scale=1.0, size=200)
-t_stat, p_val = stats.ttest_1samp(x, popmean=0.0)
-print('t-test t:', t_stat, 'p:', p_val)
-
-# 2) Regression t-test
-n = 300
-x2 = rng.normal(size=n)
-y = 1.0 + 0.5 * x2 + rng.normal(scale=1.0, size=n)
-
-df = pd.DataFrame({'y': y, 'x': x2})
-X = sm.add_constant(df[['x']])
-res = sm.OLS(df['y'], X).fit()
-print(res.summary())
-```
-
-#### Exercises
-
-- [ ] Take one regression output and rewrite it in words: coefficient, CI, and what assumptions the p-value relies on.
-- [ ] Show how p-values change when you switch from naive SE to HC3 or HAC (same coefficient, different uncertainty).
-- [ ] Create a multiple-testing demonstration: test 50 random predictors against random noise and count how many p-values < 0.05.
-- [ ] Write 6 sentences explaining why “statistically significant” is not the same as “economically meaningful.”
+- [ ] For the project data, draw an informal causal diagram and identify which variables are confounders, which might be mediators, and which might be colliders.
+- [ ] Fit 3-4 nested specifications (adding controls stepwise) and report how the coefficient of interest changes.
+- [ ] Identify a variable that *should not* be used as a control (mediator or collider) and explain why.
 
 ### Project Code Map
 - `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
@@ -629,20 +285,25 @@ print(res.summary())
 - `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
 
 ### Common Mistakes
-- Interpreting a coefficient as causal without a causal design.
-- Ignoring multicollinearity (high VIF) and over-trusting coefficient signs.
-- Using naive SE on time series and over-trusting p-values.
+- Including a mediator as a control and interpreting the attenuated coefficient as "the real effect."
+- Including a collider as a control and introducing spurious associations.
+- Over-controlling by adding every available variable without a causal rationale.
+- Ignoring multicollinearity (high VIF) when adding many correlated controls.
+- Claiming causality because "I controlled for confounders" without a formal identification strategy.
+- Reporting only the specification with the largest or most significant coefficient.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-Regression is the core bridge between statistics and ML. You should now be able to:
-- fit interpretable linear models,
-- quantify uncertainty (robust SE), and
-- diagnose when coefficients are unstable.
-
+After working through this guide you should be able to:
+- explain OVB using the formula and predict the direction of bias,
+- distinguish good controls (confounders) from bad controls (mediators, colliders),
+- compare short vs long regressions and interpret coefficient changes,
+- report results across multiple specifications honestly, and
+- recognize when "adding controls" is not enough and a causal design is needed.
 
 Suggested readings:
-- Wooldridge: Introductory Econometrics (OLS, robust SE, interpretation)
-- Angrist & Pischke: Mostly Harmless Econometrics (causal thinking)
-- statsmodels docs: robust covariance (HCx, HAC)
+- Angrist & Pischke: *Mostly Harmless Econometrics*, Ch. 3 (OVB, short vs long regression)
+- Cinelli, Forney & Pearl: "A Crash Course in Good and Bad Controls" (2022) — formal treatment of mediators/colliders
+- Wooldridge: *Introductory Econometrics*, Ch. 3 (multiple regression, OVB)
+- Simonsohn, Simmons & Nelson: "Specification Curve Analysis" (2020) — multiverse reporting

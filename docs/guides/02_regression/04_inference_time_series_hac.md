@@ -11,226 +11,96 @@
 
 This guide accompanies the notebook `notebooks/02_regression/04_inference_time_series_hac.ipynb`.
 
-This regression module covers both prediction and inference, with a strong emphasis on interpretation.
+This is the **definitive reference** for hypothesis testing and HAC (Newey-West) standard errors in this project. Other guides cross-reference this one rather than duplicating the content.
 
 ### Key Terms (defined)
-- **OLS (Ordinary Least Squares)**: chooses coefficients that minimize squared prediction errors.
-- **Coefficient**: expected change in the target per unit change in a feature (holding others fixed).
-- **Standard error (SE)**: uncertainty estimate for a coefficient.
-- **p-value**: probability of observing an effect at least as extreme if the true effect were zero (under assumptions).
-- **Confidence interval (CI)**: a range of plausible coefficient values under assumptions.
-- **Heteroskedasticity**: non-constant error variance; common in cross-section.
-- **Autocorrelation**: errors correlated over time; common in time series.
-- **HAC/Newey-West**: robust SE for time-series autocorrelation/heteroskedasticity.
-
+- **Hypothesis test**: a structured procedure for assessing whether observed data are compatible with a specific claim (the null hypothesis).
+- **p-value**: the probability, under the null hypothesis and model assumptions, of observing a test statistic at least as extreme as the one computed from data.
+- **Confidence interval (CI)**: a range of parameter values consistent with the data at a given confidence level (e.g., 95%).
+- **Type I error**: rejecting the null when it is true (false positive). Controlled by significance level $\alpha$.
+- **Type II error**: failing to reject the null when it is false (false negative). Related to statistical power.
+- **Standard error (SE)**: estimated standard deviation of a coefficient estimator; determines the width of CI and the magnitude of t-stats.
+- **HAC (Heteroskedasticity-and-Autocorrelation Consistent)**: a class of SE estimators valid when errors are both heteroskedastic and serially correlated.
+- **Newey-West**: the most common HAC estimator; uses Bartlett (triangular) kernel weights to downweight higher-lag autocovariances.
+- **Kernel bandwidth (maxlags)**: the maximum lag $L$ included in the HAC estimator; a tuning parameter with a bias-variance tradeoff.
+- **Bartlett weights**: the linearly declining weights $w_k = 1 - k/(L+1)$ used in Newey-West to ensure a positive semi-definite covariance matrix.
 
 ### How To Read This Guide
-- Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+- Use **Step-by-Step** for the notebook checklist and a simulation-based alternative example.
+- Use **Technical Explanations** for the full treatment of hypothesis testing, HAC mechanics, and the SE comparison table.
+- For OLS foundations (derivation, assumptions, coefficient interpretation), see [Guide 00](00_single_factor_regression_micro.md#technical).
+- For macro-specific regression issues (stationarity, spurious regression, structural breaks), see [Guide 02](02_single_factor_regression_macro.md#technical).
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Assumptions
-- Complete notebook section: Autocorrelation
-- Complete notebook section: HAC SE
-- Fit at least one plain OLS model and one robust-SE variant (HC3 or HAC).
-- Interpret coefficients in units (or standardized units) and explain what they do *not* mean.
-- Run at least one diagnostic: residual plot, VIF table, or rolling coefficient stability plot.
+- [ ] Fit an OLS regression on the notebook's time-series data.
+- [ ] Plot residuals and inspect the ACF/PACF for evidence of serial correlation.
+- [ ] Compute naive OLS standard errors and note the coefficient p-values.
+- [ ] Re-fit with HAC SE using at least two different `maxlags` values (e.g., 2 and 8).
+- [ ] Compare naive vs HAC standard errors side by side; note which coefficients change significance.
+- [ ] Write a short interpretation: what does the sensitivity to `maxlags` tell you about the reliability of your inference?
 
-### Alternative Example (Not the Notebook Solution)
+### Alternative Example: Simulating AR(1) Errors to Show Naive SE Bias
+
+This example generates data where the true coefficient is known, errors are AR(1), and naive SE systematically understate uncertainty.
+
 ```python
-# Toy OLS with robust SE (not the notebook data):
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
 rng = np.random.default_rng(0)
-x = rng.normal(size=200)
-y = 2.0 + 0.5*x + rng.normal(scale=1 + 0.5*np.abs(x), size=200)  # heteroskedastic errors
+T = 200
+beta_true = 0.5
+
+x = rng.normal(size=T)
+
+# Generate AR(1) errors: u_t = 0.7 * u_{t-1} + e_t
+e = rng.normal(size=T)
+u = np.zeros(T)
+u[0] = e[0]
+for t in range(1, T):
+    u[t] = 0.7 * u[t-1] + e[t]
+
+y = 1.0 + beta_true * x + u
 X = sm.add_constant(pd.DataFrame({'x': x}))
 res = sm.OLS(y, X).fit()
-res_hc3 = res.get_robustcov_results(cov_type='HC3')
+
+# Naive SE vs HAC SE at multiple bandwidths
+print(f"True beta: {beta_true}")
+print(f"Estimated beta: {res.params['x']:.4f}")
+print(f"Naive SE:       {res.bse['x']:.4f}")
+
+for L in [2, 4, 8]:
+    res_hac = res.get_robustcov_results(cov_type='HAC', cov_kwds={'maxlags': L})
+    print(f"HAC SE (L={L}):   {res_hac.bse['x']:.4f}")
 ```
 
+You should see that naive SE are smaller than HAC SE, because the AR(1) errors create positive serial correlation that naive SE ignore. The HAC SE grow somewhat as `maxlags` increases, reflecting the bias-variance tradeoff in bandwidth selection.
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Regression: mechanics, assumptions, and interpretation (OLS as the baseline)
+### Cross-Reference: OLS Foundations
 
-Linear regression is the baseline model for both econometrics and ML. Even when you use nonlinear models, the regression mindset (assumptions → estimation → inference → diagnostics) remains essential.
+The OLS estimator, its derivation, assumptions for unbiasedness, coefficient interpretation, and basic diagnostics are covered in [Guide 00: Single-Factor Regression (Micro)](00_single_factor_regression_micro.md#technical). This guide assumes you have read that material and focuses on **inference** -- the machinery that tells you how uncertain your estimates are.
 
-#### 1) Intuition (plain English)
+---
 
-Regression answers questions like:
-- “How does $Y$ vary with $X$ on average?”
-- “Holding other observed controls fixed, what is the association between one feature and the outcome?”
-
-In economics we care about two different uses:
-- **prediction:** does a model forecast well out-of-sample?
-- **inference:** what is the estimated relationship and its uncertainty?
-
-#### 2) Notation + setup (define symbols)
-
-Scalar form (observation $i=1,\\dots,n$):
-
-$$
-y_i = \\beta_0 + \\beta_1 x_{i1} + \\cdots + \\beta_K x_{iK} + \\varepsilon_i.
-$$
-
-Matrix form:
-
-$$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
-$$
-
-**What each term means**
-- $\\mathbf{y}$: $n\\times 1$ vector of outcomes.
-- $\\mathbf{X}$: $n\\times (K+1)$ design matrix (includes an intercept column).
-- $\\beta$: $(K+1)\\times 1$ vector of coefficients.
-- $\\varepsilon$: $n\\times 1$ vector of errors (unobserved determinants).
-
-#### 3) Assumptions (what you need for unbiasedness and for inference)
-
-For interpretation and inference, it helps to separate:
-
-**(A) Assumptions for unbiased coefficients**
-
-1) **Linearity in parameters**
-- $y$ is linear in $\\beta$ (you can still include nonlinear transformations of $x$).
-
-2) **No perfect multicollinearity**
-- columns of $X$ are not perfectly linearly dependent.
-
-3) **Exogeneity (key!)**
-$$
-\\mathbb{E}[\\varepsilon \\mid X] = 0.
-$$
-
-This rules out:
-- omitted variable bias,
-- reverse causality,
-- many forms of measurement error problems.
-
-**(B) Assumptions for classical standard errors**
-
-4) **Homoskedasticity**
-$$
-\\mathrm{Var}(\\varepsilon \\mid X) = \\sigma^2 I.
-$$
-
-5) **No autocorrelation (time series)**
-$$
-\\mathrm{Cov}(\\varepsilon_t, \\varepsilon_{t-k}) = 0 \\text{ for } k \\neq 0.
-$$
-
-When (4)–(5) fail, OLS coefficients can remain valid under (A), but naive SE are wrong → robust/HAC/clustered SE.
-
-#### 4) Estimation mechanics: deriving OLS
-
-OLS chooses coefficients to minimize the sum of squared residuals:
-
-$$
-\\hat\\beta = \\arg\\min_{\\beta} \\sum_{i=1}^{n} (y_i - x_i'\\beta)^2
-= \\arg\\min_{\\beta} (\\mathbf{y} - \\mathbf{X}\\beta)'(\\mathbf{y} - \\mathbf{X}\\beta).
-$$
-
-Take derivatives (the “normal equations”):
-
-$$
-\\frac{\\partial}{\\partial \\beta} (\\mathbf{y}-\\mathbf{X}\\beta)'(\\mathbf{y}-\\mathbf{X}\\beta)
-= -2\\mathbf{X}'(\\mathbf{y}-\\mathbf{X}\\beta) = 0.
-$$
-
-Solve:
-$$
-\\mathbf{X}'\\mathbf{X}\\hat\\beta = \\mathbf{X}'\\mathbf{y}
-\\quad \\Rightarrow \\quad
-\\hat\\beta = (\\mathbf{X}'\\mathbf{X})^{-1}\\mathbf{X}'\\mathbf{y}.
-$$
-
-**What each term means**
-- $(X'X)^{-1}$ exists only if there is no perfect multicollinearity.
-- OLS is a projection of $y$ onto the column space of $X$.
-
-#### 5) Coefficient interpretation (and why “holding fixed” is tricky)
-
-In the model, $\\beta_j$ means:
-
-> the expected change in $y$ when $x_j$ increases by one unit, holding other regressors fixed (within the model).
-
-In economics, “holding fixed” can be unrealistic if regressors move together (multicollinearity).
-That is why:
-- coefficient signs can flip,
-- SE can inflate,
-- interpretation must be cautious.
-
-#### 6) Inference: standard errors, t-stats, confidence intervals
-
-Under classical assumptions:
-
-$$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
-$$
-
-In practice we estimate $\\sigma^2$ and compute standard errors:
-- $\\widehat{SE}(\\hat\\beta_j)$
-- t-stat: $t_j = \\hat\\beta_j / \\widehat{SE}(\\hat\\beta_j)$
-- 95% CI: $\\hat\\beta_j \\pm 1.96\\,\\widehat{SE}(\\hat\\beta_j)$ (approx.)
-
-When assumptions fail, use robust SE:
-- **HC3** for cross-section heteroskedasticity,
-- **HAC/Newey–West** for time-series autocorrelation + heteroskedasticity,
-- **clustered SE** for grouped dependence (panels/DiD).
-
-#### 7) Diagnostics + robustness (minimum set)
-
-1) **Residual checks**
-- plot residuals vs fitted values; look for heteroskedasticity/nonlinearity.
-
-2) **Multicollinearity**
-- compute VIF; large VIF → unstable coefficients.
-
-3) **Time-series dependence**
-- check residual autocorrelation; use HAC when needed.
-
-4) **Stability**
-- rolling regressions or sub-sample splits; do coefficients drift?
-
-#### 8) Interpretation + reporting
-
-Always report:
-- coefficient in units (or standardized units),
-- robust SE appropriate to data structure,
-- a short causal warning unless you have a causal design.
-
-**What this does NOT mean**
-- Regression does not “control away” all confounding automatically.
-- A small p-value does not imply economic importance.
-- A high $R^2$ does not imply good forecasting out-of-sample.
-
-#### Exercises
-
-- [ ] Derive the normal equations and explain each step in words.
-- [ ] Fit OLS and HC3 (or HAC) and compare SE; explain why they differ.
-- [ ] Create two correlated regressors and show how multicollinearity affects coefficient stability.
-- [ ] Write a 6-sentence interpretation of one regression output, including what you can and cannot claim.
-
-### Deep Dive: Hypothesis Testing — how to read p-values without fooling yourself
+### Hypothesis Testing: How to Read p-values Without Fooling Yourself
 
 Hypothesis tests show up everywhere in econometrics output. The goal of this section is not to worship p-values, but to understand what they *are* and what they *are not*.
 
 #### 1) Intuition (plain English)
 
 A hypothesis test is a structured way to ask:
-- “If the true effect were zero, how surprising is my estimate?”
+- "If the true effect were zero, how surprising is my estimate?"
 
 It is **not** a direct answer to:
-- “What is the probability the effect is real?”
-- “Is my model correct?”
+- "What is the probability the effect is real?"
+- "Is my model correct?"
 
 **Story example:** You regress unemployment on an interest-rate spread and get a small p-value.
 That might mean:
@@ -241,17 +111,17 @@ That might mean:
 
 #### 2) Notation + setup (define symbols)
 
-We usually test a claim about a population parameter $\\theta$ (mean, regression coefficient, difference in means, …).
+We usually test a claim about a population parameter $\theta$ (mean, regression coefficient, difference in means, ...).
 
 Define:
 - $H_0$: the **null hypothesis** (default claim),
 - $H_1$: the **alternative hypothesis** (what you consider if evidence contradicts $H_0$),
 - $T$: a **test statistic** computed from data,
-- $\\alpha$: a pre-chosen significance level (e.g., 0.05).
+- $\alpha$: a pre-chosen significance level (e.g., 0.05).
 
 Example in regression:
-- $H_0: \\beta_j = 0$
-- $H_1: \\beta_j \\neq 0$ (two-sided)
+- $H_0: \beta_j = 0$
+- $H_1: \beta_j \neq 0$ (two-sided)
 
 #### 3) Assumptions (why tests are conditional statements)
 
@@ -267,21 +137,21 @@ If those assumptions fail, the p-value may be meaningless.
 OLS estimates coefficients:
 
 $$
-\\hat\\beta = (X'X)^{-1}X'y.
+\hat\beta = (X'X)^{-1}X'y.
 $$
 
-For coefficient $\\beta_j$, you compute an estimated standard error $\\widehat{SE}(\\hat\\beta_j)$.
+For coefficient $\beta_j$, you compute an estimated standard error $\widehat{SE}(\hat\beta_j)$.
 
-The t-statistic for testing $H_0: \\beta_j = 0$ is:
+The t-statistic for testing $H_0: \beta_j = 0$ is:
 
 $$
-t_j = \\frac{\\hat\\beta_j - 0}{\\widehat{SE}(\\hat\\beta_j)}.
+t_j = \frac{\hat\beta_j - 0}{\widehat{SE}(\hat\beta_j)}.
 $$
 
 **What each term means**
 - numerator: your estimated effect.
 - denominator: your uncertainty estimate.
-- large |t| means “many standard errors away from 0.”
+- large |t| means "many standard errors away from 0."
 
 Under suitable assumptions, $t_j$ is compared to a t distribution (or asymptotic normal), producing a p-value.
 
@@ -300,7 +170,7 @@ Also: p-values do not measure effect size.
 A 95% confidence interval is approximately:
 
 $$
-\\hat\\beta_j \\pm t_{0.975} \\cdot \\widehat{SE}(\\hat\\beta_j).
+\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j).
 $$
 
 Interpretation:
@@ -314,28 +184,27 @@ If the 95% CI excludes 0, the two-sided p-value is typically < 0.05.
 Different SE estimators correspond to different assumptions about errors:
 - **Naive OLS SE:** homoskedastic, uncorrelated errors.
 - **HC3:** heteroskedasticity-robust (cross-section).
-- **HAC/Newey–West:** autocorrelation + heteroskedasticity (time series).
+- **HAC/Newey-West:** autocorrelation + heteroskedasticity (time series).
 - **Clustered SE:** within-cluster correlated errors (panels/DiD).
 
-**Key idea:** changing SE changes $\\widehat{SE}(\\hat\\beta_j)$ → changes t-stat and p-value, even when $\\hat\\beta_j$ is identical.
+**Key idea:** changing SE changes $\widehat{SE}(\hat\beta_j)$ which changes the t-stat and p-value, even when $\hat\beta_j$ is identical.
 
 #### 8) Diagnostics: how hypothesis testing goes wrong (minimum set)
 
 1) **Multiple testing**
-- If you try many features/specs, some will “work” by chance.
+- If you try many features/specs, some will "work" by chance.
 - A few p-values < 0.05 are expected even if all true effects are 0.
 
 2) **P-hacking / specification search**
-- tweaking the model until p-values look good invalidates the usual interpretation.
+- Tweaking the model until p-values look good invalidates the usual interpretation.
 
 3) **Wrong SE (dependence)**
-- autocorrelation or clustering can make naive SE far too small.
+- Autocorrelation or clustering can make naive SE far too small.
 
 4) **Confounding**
-- a “significant” association is not a causal effect without identification.
+- A "significant" association is not a causal effect without identification.
 
-Practical rule:
-- interpret p-values as one piece of evidence, not a conclusion.
+Practical rule: interpret p-values as one piece of evidence, not a conclusion.
 
 #### 9) Interpretation + reporting (how to write results responsibly)
 
@@ -346,10 +215,10 @@ Good reporting includes:
 - a note about model limitations and identification.
 
 **What this does NOT mean**
-- “Significant” is not “important.”
-- “Not significant” is not “no effect” (could be low power).
+- "Significant" is not "important."
+- "Not significant" is not "no effect" (could be low power).
 
-#### 10) Small Python demo (optional)
+#### 10) Small Python demo
 
 ```python
 import numpy as np
@@ -380,9 +249,11 @@ print(res.summary())
 - [ ] Take one regression output and rewrite it in words: coefficient, CI, and what assumptions the p-value relies on.
 - [ ] Show how p-values change when you switch from naive SE to HC3 or HAC (same coefficient, different uncertainty).
 - [ ] Create a multiple-testing demonstration: test 50 random predictors against random noise and count how many p-values < 0.05.
-- [ ] Write 6 sentences explaining why “statistically significant” is not the same as “economically meaningful.”
+- [ ] Write 6 sentences explaining why "statistically significant" is not the same as "economically meaningful."
 
-### Deep Dive: HAC / Newey–West standard errors (time-series inference)
+---
+
+### HAC / Newey-West Standard Errors (Time-Series Inference)
 
 HAC (heteroskedasticity-and-autocorrelation consistent) standard errors are the minimum correction for many time-series regressions.
 
@@ -392,71 +263,81 @@ Time series residuals are rarely independent:
 - shocks persist (serial correlation),
 - variance changes across regimes (heteroskedasticity).
 
-If you use naive OLS SE, you often understate uncertainty and overstate “significance.”
+If you use naive OLS SE, you often understate uncertainty and overstate "significance."
 
 #### 2) Notation + setup (define symbols)
 
 Consider a time-series regression:
 
 $$
-y_t = x_t'\\beta + u_t, \\quad t = 1,\\dots,T.
+y_t = x_t'\beta + u_t, \quad t = 1,\dots,T.
 $$
 
 Stacking:
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{u}.
+\mathbf{y} = \mathbf{X}\beta + \mathbf{u}.
 $$
 
 Classical OLS SE assume:
 $$
-\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\sigma^2 I_T.
+\mathrm{Var}(\mathbf{u} \mid \mathbf{X}) = \sigma^2 I_T.
 $$
 
 But in time series, we often have:
-- $\\mathrm{Var}(u_t)$ changes over time (heteroskedasticity),
-- $\\mathrm{Cov}(u_t, u_{t-k}) \\neq 0$ for some lags $k$ (autocorrelation).
+- $\mathrm{Var}(u_t)$ changes over time (heteroskedasticity),
+- $\mathrm{Cov}(u_t, u_{t-k}) \neq 0$ for some lags $k$ (autocorrelation).
 
 #### 3) Estimation mechanics: coefficients vs uncertainty
 
 OLS coefficients still equal:
 $$
-\\hat\\beta = (X'X)^{-1}X'y.
+\hat\beta = (X'X)^{-1}X'y.
 $$
 
 HAC changes only the variance estimate:
 
 $$
-\\widehat{\\mathrm{Var}}_{HAC}(\\hat\\beta)
-= (X'X)^{-1} \\left(X'\\hat\\Omega X\\right) (X'X)^{-1}.
+\widehat{\mathrm{Var}}_{HAC}(\hat\beta)
+= (X'X)^{-1} \left(X'\hat\Omega X\right) (X'X)^{-1}.
 $$
 
 **What each term means**
-- $\\hat\\Omega$ estimates error covariance across time (including lagged autocovariances).
+- $\hat\Omega$ estimates the error covariance across time (including lagged autocovariances).
+- The "sandwich" structure $(X'X)^{-1} (\cdot) (X'X)^{-1}$ replaces the classical $\sigma^2(X'X)^{-1}$.
 
-#### 4) Newey–West: a common HAC choice
+#### 4) Newey-West: a common HAC choice
 
-Newey–West constructs $\\hat\\Omega$ by combining residual autocovariances up to a maximum lag $L$:
+Newey-West constructs $\hat\Omega$ by combining residual autocovariances up to a maximum lag $L$:
 
 $$
-\\hat\\Omega_{NW} = \\hat\\Gamma_0 + \\sum_{k=1}^{L} w_k (\\hat\\Gamma_k + \\hat\\Gamma_k'),
-\\quad w_k = 1 - \\frac{k}{L+1}.
+\hat\Omega_{NW} = \hat\Gamma_0 + \sum_{k=1}^{L} w_k (\hat\Gamma_k + \hat\Gamma_k'),
+\quad w_k = 1 - \frac{k}{L+1}.
 $$
 
 **What each term means**
-- $\\hat\\Gamma_0$: contemporaneous covariance term.
-- $\\hat\\Gamma_k$: lag-$k$ covariance contribution.
-- $w_k$: Bartlett weights downweight higher lags.
-- $L$: maximum lag included (tuning choice).
+- $\hat\Gamma_0$: contemporaneous covariance term (analogous to HC).
+- $\hat\Gamma_k = \frac{1}{T}\sum_{t=k+1}^{T} \hat{u}_t \hat{u}_{t-k} x_t x_{t-k}'$: lag-$k$ autocovariance contribution.
+- $w_k$: **Bartlett weights** -- linearly declining from 1 toward 0. These ensure $\hat\Omega_{NW}$ is positive semi-definite.
+- $L$: maximum lag included (the tuning parameter).
 
-#### 5) Choosing `maxlags` (why it’s a sensitivity parameter)
+#### 5) Choosing `maxlags` (why it is a sensitivity parameter)
 
-There is no universally correct $L$.
+There is no universally correct $L$. The choice involves a **bias-variance tradeoff**: more lags capture more of the autocorrelation structure (reducing bias in the SE estimate), but each additional lag adds estimation noise (increasing variance). Too few lags leave autocorrelation unaccounted for; too many lags produce an erratic, imprecise SE estimate.
+
+**Rule-of-thumb (Newey-West):** A common automatic choice is:
+
+$$
+L = \lfloor 0.75 \cdot T^{1/3} \rfloor
+$$
+
+where $T$ is the sample size. For example, with $T = 200$ quarterly observations, this gives $L = \lfloor 0.75 \times 5.85 \rfloor = 4$. This is a starting point, not gospel.
+
 Reasonable habits:
 - quarterly data: try 1, 2, 4,
 - monthly data: try 3, 6, 12,
 - report sensitivity if inference changes.
 
-If results flip sign/significance dramatically across plausible $L$, treat inference as fragile.
+If results flip sign/significance dramatically across plausible $L$, treat inference as fragile -- it likely means the autocorrelation structure is strong and sample size is too small for confident conclusions.
 
 #### 6) Mapping to code (statsmodels)
 
@@ -468,19 +349,25 @@ In `statsmodels`:
 res_hac = res.get_robustcov_results(cov_type='HAC', cov_kwds={'maxlags': 4})
 ```
 
+Or equivalently at fit time:
+
+```python
+res_hac = sm.OLS(y, X).fit(cov_type='HAC', cov_kwds={'maxlags': 4})
+```
+
 #### 7) Diagnostics + robustness (minimum set)
 
 1) **Residual autocorrelation**
-- inspect ACF/PACF or Durbin–Watson style diagnostics.
+- Inspect ACF/PACF or Durbin-Watson style diagnostics.
 
 2) **HAC sensitivity**
-- try several `maxlags` values; report if conclusions change.
+- Try several `maxlags` values; report if conclusions change.
 
 3) **Stationarity checks**
-- nonstationarity can create spurious inference even with HAC.
+- Nonstationarity can create spurious inference even with HAC.
 
 4) **Stability**
-- fit on subperiods or rolling windows; do coefficients drift?
+- Fit on subperiods or rolling windows; do coefficients drift?
 
 #### 8) Interpretation + reporting
 
@@ -500,31 +387,58 @@ Report:
 - [ ] Fit a time-series regression and compute naive SE and HAC SE; compare.
 - [ ] Vary `maxlags` across a small set and report sensitivity of your main CI.
 - [ ] Simulate AR(1) errors and show that naive SE are too small relative to HAC.
-- [ ] Write 5 sentences: “When HAC is appropriate” vs “when HAC is not enough.”
+- [ ] Write 5 sentences: "When HAC is appropriate" vs "when HAC is not enough."
+
+---
+
+### SE Comparison Table
+
+Use this table to choose the right standard error for your data structure. The coefficient $\hat\beta$ is **identical** across all four; only the uncertainty estimate changes.
+
+| SE Type | Handles | Best For | Code |
+|---------|---------|----------|------|
+| Classical (naive) | Nothing -- assumes homoskedastic, uncorrelated errors | Textbook exercises only | `sm.OLS(y, X).fit()` |
+| HC3 (robust) | Heteroskedasticity | Cross-section data (wages, health expenditures) | `.fit(cov_type='HC3')` |
+| HAC / Newey-West | Heteroskedasticity + autocorrelation | Time-series data (macro, finance) | `.fit(cov_type='HAC', cov_kwds={'maxlags': L})` |
+| Clustered | Heteroskedasticity + within-group correlation | Panel data, grouped cross-sections, DiD | See [Guide 07_causal/01](../07_causal/01_diff_in_diff.md) |
+
+**When in doubt:**
+- Cross-section with unknown error structure: use HC3 (it is never worse than naive, and only slightly conservative).
+- Time series: use HAC. Check sensitivity to `maxlags`.
+- Panel / grouped data: use clustered SE at the level of the group (e.g., state, firm, individual).
+
+---
 
 ### Project Code Map
 - `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
 - `src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)
-- `src/evaluation.py`: regression metrics helpers
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
 - `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`)
 
 ### Common Mistakes
-- Interpreting a coefficient as causal without a causal design.
-- Ignoring multicollinearity (high VIF) and over-trusting coefficient signs.
-- Using naive SE on time series and over-trusting p-values.
+- Using naive SE on time-series data and treating the resulting p-values as reliable.
+- Choosing `maxlags` to make results "look significant" rather than reporting sensitivity.
+- Confusing "statistically significant" with "economically important" (large sample + tiny effect = small p-value).
+- Treating p > 0.05 as proof of no effect (could be low power).
+- Forgetting that HAC fixes inference only -- it does not fix endogeneity, nonstationarity, or model misspecification.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-Regression is the core bridge between statistics and ML. You should now be able to:
-- fit interpretable linear models,
-- quantify uncertainty (robust SE), and
-- diagnose when coefficients are unstable.
+This guide covers the two core inference tools for time-series econometrics: hypothesis testing and HAC standard errors. You should now be able to:
+- state what a p-value is and is not,
+- construct and interpret confidence intervals,
+- apply Newey-West HAC SE and understand the maxlags tradeoff,
+- choose among classical, HC3, HAC, and clustered SE based on data structure, and
+- recognize when hypothesis testing goes wrong (multiple testing, wrong SE, p-hacking).
 
+**Companion guides:**
+- [Guide 00](00_single_factor_regression_micro.md): OLS foundations (derivation, assumptions, diagnostics)
+- [Guide 02](02_single_factor_regression_macro.md): Macro-specific regression issues (stationarity, spurious regression, structural breaks)
 
 Suggested readings:
-- Wooldridge: Introductory Econometrics (OLS, robust SE, interpretation)
-- Angrist & Pischke: Mostly Harmless Econometrics (causal thinking)
-- statsmodels docs: robust covariance (HCx, HAC)
+- Wooldridge: *Introductory Econometrics*, Ch. 4 (inference), Ch. 12 (serial correlation, HAC)
+- Newey & West (1987): "A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix" -- the original paper
+- Angrist & Pischke: *Mostly Harmless Econometrics*, Ch. 8 (standard errors)
+- statsmodels docs: `get_robustcov_results` and `cov_type` options

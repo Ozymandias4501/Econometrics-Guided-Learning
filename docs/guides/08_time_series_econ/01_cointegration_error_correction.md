@@ -11,380 +11,171 @@
 
 This guide accompanies the notebook `notebooks/08_time_series_econ/01_cointegration_error_correction.ipynb`.
 
-This module covers classical time-series econometrics: stationarity, cointegration/ECM, and VAR/IRFs.
+> **Note:** Cointegration and error correction models are primarily used in **macroeconomics and finance**. For health economics, panel data methods (fixed effects, DiD, IV) are far more central. This guide provides a solid overview for general econometric literacy, but it is not a priority topic for health econ coursework.
+
+**Prerequisite:** [Stationarity guide](00_stationarity_unit_roots.md) — you should understand I(0)/I(1) classification and the ADF test.
 
 ### Key Terms (defined)
-- **Stationarity**: stable statistical properties over time.
-- **Unit root**: nonstationary process where shocks accumulate (random walk-like).
-- **Cointegration**: nonstationary series with a stationary long-run relationship.
-- **VAR**: multivariate autoregression.
-- **IRF**: impulse response function (shock propagation over time).
-
-
-### How To Read This Guide
-- Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+- **Cointegration**: two or more I(1) series are cointegrated if a linear combination of them is I(0). They drift together — deviations from their long-run relationship are temporary.
+- **Equilibrium error**: $u_t = y_t - \beta x_t$ — the deviation from the long-run relationship.
+- **Error correction model (ECM)**: models short-run changes as a function of the lagged equilibrium error plus short-run changes in other variables.
+- **Speed of adjustment ($\alpha$)**: the ECM coefficient on the lagged error. Negative $\alpha$ means the system corrects toward equilibrium.
+- **Engle–Granger procedure**: (1) estimate the long-run relationship by OLS in levels, (2) test whether the residuals are stationary.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Construct cointegrated pair
-- Complete notebook section: Engle-Granger test
-- Complete notebook section: Error correction model
-- Complete notebook section: Interpretation
-- Plot series in levels before running tests.
-- Justify each transformation (diff/logdiff) in words.
-- State what your IRF identification assumes (ordering or structure).
+- Confirm both series are I(1) using ADF + KPSS.
+- Estimate the cointegrating regression: $y_t = a + \beta x_t + u_t$.
+- Plot the residual $\hat{u}_t$ — does it look stationary?
+- Test the residual using `statsmodels.tsa.stattools.coint()` (uses correct critical values).
+- Estimate the ECM: $\Delta y_t = c + \alpha \hat{u}_{t-1} + \gamma \Delta x_t + \varepsilon_t$.
+- Interpret $\hat\alpha$ (speed of adjustment) and $\hat\gamma$ (short-run effect).
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Random walk vs stationary series (ADF intuition):
 import numpy as np
-from statsmodels.tsa.stattools import adfuller
+import pandas as pd
+from statsmodels.tsa.stattools import coint
+import statsmodels.api as sm
 
-rng = np.random.default_rng(0)
-rw = rng.normal(size=400).cumsum()
-st = rng.normal(size=400)
+rng = np.random.default_rng(99)
+T = 300
 
-adf_rw_p = adfuller(rw)[1]
-adf_st_p = adfuller(st)[1]
-adf_rw_p, adf_st_p
+# Common stochastic trend (shared random walk)
+trend = rng.normal(size=T).cumsum()
+income = 50 + trend + rng.normal(scale=0.5, size=T)
+consumption = 10 + 0.8 * trend + rng.normal(scale=1.5, size=T)
+
+# Cointegration test
+t_stat, p_val, crit = coint(consumption, income)
+print(f"Cointegration test: t-stat={t_stat:.3f}, p-value={p_val:.4f}")
+
+# ECM
+df = pd.DataFrame({'c': consumption, 'y': income})
+df['error_lag'] = (df['c'] - 0.8 * df['y']).shift(1)
+df['dc'] = df['c'].diff()
+df['dy'] = df['y'].diff()
+df = df.dropna()
+ecm = sm.OLS(df['dc'], sm.add_constant(df[['error_lag', 'dy']])).fit()
+print(ecm.summary())
 ```
 
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Stationarity and Unit Roots: why levels-on-levels can lie
+### The core idea
 
-Classical time-series econometrics starts with one question:
+The [stationarity guide](00_stationarity_unit_roots.md) established that regressing one I(1) series on another usually produces spurious results. Cointegration is the exception: when two I(1) series share a common stochastic trend, their linear combination can be stationary.
 
-> **Is this series stable enough over time that our regression assumptions make sense?**
+**Economic examples:**
+- Consumption and income (the savings rate is roughly stable over time)
+- Short-term and long-term interest rates (the yield spread is bounded)
+- Wages and productivity (competitive pressures keep them linked)
 
-#### 1) Intuition (plain English)
+The key insight: **differencing destroys the long-run information.** If the series are cointegrated, you want to model both the levels relationship (equilibrium) and the changes (short-run dynamics).
 
-Many macro series in **levels** trend upward over decades (GDP, price level, money supply).
-If two series both trend, they can look strongly related even when one does not cause the other.
+### Formal definition
 
-**Story example:** GDP and total credit both trend up.
-A regression “GDP on credit” in levels can produce a high $R^2$ even if the relationship is spurious.
-
-Stationarity is the formal way to ask:
-- “Do shocks die out (mean reversion)?” or
-- “Do shocks accumulate forever (random walk)?”
-
-#### 2) Notation + setup (define symbols)
-
-Let $\\{y_t\\}_{t=1}^T$ be a time series.
-
-Key population objects:
-- mean: $\\mu = \\mathbb{E}[y_t]$
-- variance: $\\gamma_0 = \\mathrm{Var}(y_t)$
-- autocovariance at lag $k$:
-$$
-\\gamma_k = \\mathrm{Cov}(y_t, y_{t-k}).
-$$
-
-**Weak (covariance) stationarity** means:
-1) $\\mathbb{E}[y_t]$ is constant over time,
-2) $\\mathrm{Var}(y_t)$ is constant over time,
-3) $\\mathrm{Cov}(y_t, y_{t-k})$ depends only on $k$, not on $t$.
-
-**Strict stationarity** is stronger (the full joint distribution is time-invariant). In practice, weak stationarity is the common working definition for linear models.
-
-#### 3) I(0) vs I(1) (integrated processes)
-
-Econometrics often classifies series by how many differences are needed to make them “stationary-ish”:
-
-- $y_t$ is **I(0)** if it is stationary (in levels).
-- $y_t$ is **I(1)** if $\\Delta y_t = y_t - y_{t-1}$ is I(0).
-
-Typical examples:
-- growth rates, inflation rates, spreads: often closer to I(0),
-- price levels, GDP levels: often closer to I(1).
-
-#### 4) Unit roots via AR(1) intuition
-
-Consider an AR(1):
+Let $y_t$ and $x_t$ each be I(1). They are **cointegrated** if there exists $\beta$ such that:
 
 $$
-y_t = \\rho y_{t-1} + \\varepsilon_t,
-\\qquad
-\\varepsilon_t \\sim (0, \\sigma^2).
+u_t = y_t - \beta x_t \quad \text{is I(0)}.
 $$
 
-**What each term means**
-- $\\rho$: persistence parameter.
-- $\\varepsilon_t$: innovation (new shock at time $t$).
+- $\beta$: the long-run relationship (e.g., long-run marginal propensity to consume).
+- $u_t$: equilibrium error — mean-reverting, does not trend.
 
-Cases:
-- If $|\\rho| < 1$, the process is stationary and shocks decay (mean reversion).
-- If $\\rho = 1$, you have a **unit root** (random walk-like behavior).
+### The Engle–Granger procedure
 
-Random walk:
-$$
-y_t = y_{t-1} + \\varepsilon_t
-\\quad \\Rightarrow \\quad
-y_t = y_0 + \\sum_{s=1}^{t} \\varepsilon_s.
-$$
+**Step 1:** Estimate $y_t = a + \beta x_t + u_t$ by OLS.
 
-**Key implication**
-- the variance of $y_t$ grows with $t$ (shocks accumulate),
-- the series does not settle around a fixed mean in levels.
+**Step 2:** Test whether $\hat{u}_t$ is stationary using ADF — but with **cointegration-specific critical values** (more negative than standard ADF). Use `coint()` from statsmodels, which handles this automatically.
 
-Differencing removes the unit root:
-$$
-\\Delta y_t = y_t - y_{t-1} = \\varepsilon_t,
-$$
-which is stationary if innovations are stable.
+**Why nonstandard critical values?** You are testing residuals from an estimated regression, not a raw series. The estimation step makes it easier to "find" stationarity by chance, so the critical values must be stricter to compensate.
 
-#### 5) Why this matters: spurious regression
+**Super-consistency:** When cointegration holds, $\hat\beta$ converges to the true $\beta$ at rate $T$ (not $\sqrt{T}$). The coefficient is very precise. However, OLS standard errors from the cointegrating regression are **not valid for inference** — use the Johansen procedure or DOLS/FMOLS for proper confidence intervals on $\beta$.
 
-If $x_t$ and $y_t$ are both I(1), then a regression like:
+### The Error Correction Model (ECM)
+
+If cointegration holds, the Granger representation theorem guarantees an ECM exists:
 
 $$
-y_t = \\alpha + \\beta x_t + u_t
+\Delta y_t = c + \alpha (y_{t-1} - \beta x_{t-1}) + \gamma \Delta x_t + \varepsilon_t.
 $$
 
-can show:
-- large t-stats,
-- high $R^2$,
-even if $x_t$ and $y_t$ are unrelated in any causal or structural sense.
+| Term | Meaning |
+|---|---|
+| $\alpha (y_{t-1} - \beta x_{t-1})$ | Error correction: pulls $y$ back toward equilibrium |
+| $\gamma \Delta x_t$ | Short-run effect of changes in $x$ |
 
-The reason (intuition):
-- both series share trending behavior,
-- residuals can be highly persistent,
-- classic OLS inference assumptions break.
+**Interpreting $\alpha$:**
+- $\alpha = -0.1$: corrects 10% of the gap each period (half-life $\approx$ 6.6 periods)
+- $\alpha = -0.5$: fast correction (half-life $\approx$ 1.4 periods)
+- $\alpha \approx 0$: no correction — casts doubt on cointegration
+- $\alpha > 0$: diverges from equilibrium — misspecification
 
-**Practical rule:** do not treat a levels-on-levels regression as meaningful until you have checked stationarity / cointegration logic.
+**Numerical example:** Long-run relationship: consumption = 10 + 0.8 × income. At $t-1$: income=100, consumption=95 (equilibrium = 90). Error = +5. With $\alpha = -0.15$: predicted $\Delta$consumption $\approx -0.15 \times 5 = -0.75$.
 
-#### 6) ADF test: what it is actually doing
+### Code template
 
-The Augmented Dickey–Fuller test fits a regression of changes on lagged levels:
+```python
+from statsmodels.tsa.stattools import coint, adfuller
+import statsmodels.api as sm
 
-$$
-\\Delta y_t = a + bt + \\gamma y_{t-1} + \\sum_{j=1}^{p} \\phi_j \\Delta y_{t-j} + e_t.
-$$
+# Test for cointegration
+t_stat, p_val, crit = coint(y_series, x_series, trend='c')
 
-**What each term means**
-- $\\Delta y_t$: change in the series.
-- $a$: intercept (allows non-zero mean).
-- $bt$: trend term (optional).
-- $y_{t-1}$: lagged level (detects unit root).
-- lagged differences: soak up serial correlation in $e_t$.
+# Long-run regression
+lr = sm.OLS(y_series, sm.add_constant(x_series)).fit()
+residuals = lr.resid
 
-Null vs alternative (common interpretation):
-- **Null:** unit root (nonstationary) → roughly $\\gamma = 0$ (equivalently $\\rho = 1$).
-- **Alternative:** stationary (mean-reverting) → $\\gamma < 0$ (equivalently $|\\rho|<1$).
+# ECM
+df['error_lag'] = residuals.shift(1)
+df['dy'] = y_series.diff()
+df['dx'] = x_series.diff()
+df = df.dropna()
+ecm = sm.OLS(df['dy'], sm.add_constant(df[['error_lag', 'dx']])).fit(cov_type='HC3')
+```
 
-Important: ADF has low power in small samples; “fail to reject” does not mean “definitely a unit root.”
+### Diagnostics checklist
 
-#### 7) KPSS test: complementary null
+1. **Confirm both series are I(1)** — if either is I(0), use standard regression instead.
+2. **Plot the equilibrium error** — should look mean-reverting.
+3. **Check $\alpha$ sign** — must be negative for error correction.
+4. **ECM residual autocorrelation** — add lagged $\Delta y$, $\Delta x$ if needed.
+5. **Subsample stability** — does $\hat\beta$ change across periods?
 
-KPSS flips the null:
-- **Null:** stationary,
-- **Alternative:** unit root / nonstationary.
-
-That’s why people often run ADF and KPSS together:
-- ADF rejects + KPSS fails to reject → evidence for stationarity.
-- ADF fails to reject + KPSS rejects → evidence for nonstationarity.
-- Conflicts happen often → treat tests as diagnostics, not commandments.
-
-#### 8) Mapping to code (statsmodels)
-
-In Python:
-- `statsmodels.tsa.stattools.adfuller(x)` returns a test statistic and a p-value.
-- `statsmodels.tsa.stattools.kpss(x, regression='c' or 'ct')` does the KPSS test.
-
-Practical habits:
-- drop missing values before testing,
-- test both levels and differences,
-- specify whether you include a trend term (economic series often trend).
-
-#### 9) Diagnostics + robustness (minimum set)
-
-1) **Plot the level series**
-- Do you see a clear trend or structural break?
-
-2) **Plot the differenced / growth-rate series**
-- Does it look more stable? Mean-reverting?
-
-3) **ADF + KPSS on both levels and differences**
-- Do results agree? If not, explain why (trend term, breaks, sample size).
-
-4) **ACF/PACF or residual autocorrelation**
-- Persistent residuals suggest misspecification.
-
-#### 10) Interpretation + reporting
-
-When you report stationarity checks:
-- state whether you tested levels and differences,
-- state whether you included a constant/trend,
-- show at least one plot alongside test results.
-
-**What this does NOT mean**
-- A small p-value is not a proof of stationarity in “the real world.”
-- Structural breaks can fool unit-root tests (you can reject/accept for the wrong reason).
+### What this does NOT mean
+- Cointegration is not causality.
+- OLS t-stats from the cointegrating regression are not valid inference.
+- Cointegration is a *long-run* concept — says nothing about short-run dynamics without the ECM.
 
 #### Exercises
 
-- [ ] Pick one macro series and classify it as “likely I(0)” or “likely I(1)” with a plot-based argument.
-- [ ] Run ADF and KPSS on the level series and on its first difference; interpret the pair.
-- [ ] Demonstrate spurious regression by regressing one random walk on another and reporting $R^2$.
-- [ ] Choose a transformation (difference, log-difference, growth rate) and justify it in 4 sentences.
-
-### Cointegration + ECM: long-run equilibrium with short-run dynamics
-
-Cointegration is the key “exception” to the rule that nonstationary levels regressions are spurious.
-
-#### 1) Intuition (plain English)
-
-Two series can trend over time but still be meaningfully linked:
-- consumption and income,
-- prices and money aggregates,
-- wages and productivity (in some settings).
-
-The idea:
-- each series drifts,
-- but some combination of them is stable in the long run.
-
-Cointegration formalizes “move together over decades.”
-
-#### 2) Notation + setup (define symbols)
-
-Let $y_t$ and $x_t$ be time series.
-Assume each is I(1) (nonstationary in levels, stationary in first differences).
-
-They are **cointegrated** if there exists a parameter $\\beta$ such that:
-
-$$
-u_t = y_t - \\beta x_t
-\\quad \\text{is I(0) (stationary).}
-$$
-
-**What each term means**
-- $\\beta$: long-run relationship (“equilibrium” slope).
-- $u_t$: deviation from the long-run equilibrium; should mean-revert if cointegration holds.
-
-#### 3) Why cointegration matters
-
-If $y_t$ and $x_t$ are cointegrated:
-- a regression in levels can capture a real long-run relationship,
-- but you must model short-run dynamics carefully.
-
-If they are not cointegrated:
-- levels regression can be spurious,
-- differencing is usually safer.
-
-#### 4) Engle–Granger two-step procedure (mechanics)
-
-Step 1: estimate the long-run relationship in levels:
-
-$$
-y_t = a + \\beta x_t + e_t.
-$$
-
-Step 2: test whether the residuals are stationary:
-$$
-\\hat u_t = y_t - \\hat a - \\hat\\beta x_t.
-$$
-
-If $\\hat u_t$ is stationary, that supports cointegration.
-
-Important practical note:
-- residual-based cointegration tests use nonstandard critical values (packages like `statsmodels` handle this for you).
-
-#### 5) Error Correction Model (ECM): connecting short-run changes to long-run gaps
-
-If $y_t$ and $x_t$ are cointegrated, an ECM often makes sense:
-
-$$
-\\Delta y_t = c + \\alpha \\,(y_{t-1} - \\beta x_{t-1}) + \\Gamma \\Delta x_t + \\varepsilon_t.
-$$
-
-**What each term means**
-- $\\Delta y_t$: short-run change in $y$.
-- $(y_{t-1} - \\beta x_{t-1})$: last period’s equilibrium error (how far you were from long-run relationship).
-- $\\alpha$: “speed of adjustment” (typically negative if deviations are corrected).
-- $\\Gamma \\Delta x_t$: short-run effect of changes in $x$.
-
-Interpretation of $\\alpha$:
-- If $y$ is above its long-run equilibrium relative to $x$ (positive error),
-  a negative $\\alpha$ pulls $\\Delta y_t$ downward to correct.
-
-#### 6) Assumptions and practical caveats
-
-Cointegration/ECM is most appropriate when:
-- both series are integrated of the same order (often I(1)),
-- the long-run relationship is stable over the sample,
-- there are no major structural breaks (breaks can change $\\beta$).
-
-If there are breaks (policy regime shifts, measurement changes), cointegration results can be misleading.
-
-#### 7) Mapping to code (statsmodels)
-
-Useful tools:
-- `statsmodels.tsa.stattools.coint(y, x)` runs an Engle–Granger cointegration test.
-- Build the ECM manually with `statsmodels.api.OLS`:
-  - compute the lagged error term $(y_{t-1} - \\hat\\beta x_{t-1})$,
-  - regress $\\Delta y_t$ on that error and $\\Delta x_t$ (and possibly lags).
-
-#### 8) Diagnostics + robustness (minimum set)
-
-1) **Confirm integration order**
-- Test whether $x_t$ and $y_t$ are I(1) (ADF/KPSS on levels and differences).
-
-2) **Residual stationarity**
-- After Step 1, test whether $\\hat u_t$ is stationary; plot it too.
-
-3) **ECM residual checks**
-- Check autocorrelation of ECM residuals; add lags if needed.
-
-4) **Stability**
-- Re-estimate cointegration relationship on subperiods; do parameters drift?
-
-#### 9) Interpretation + reporting
-
-When reporting cointegration/ECM:
-- clearly separate long-run relationship ($\\beta$) from short-run dynamics ($\\Gamma$),
-- interpret $\\alpha$ as speed of adjustment (sign matters!),
-- include plots of levels, residual (error-correction term), and differenced series.
-
-**What this does NOT mean**
-- Cointegration does not prove causality; it describes a stable long-run relationship.
-- A significant $\\beta$ in levels is not meaningful if residuals are nonstationary.
-
-#### Exercises
-
-- [ ] Pick two trending macro series and test whether each is I(1).
-- [ ] Run a cointegration test; interpret the result and plot the residual $\\hat u_t$.
-- [ ] Fit an ECM and interpret $\\alpha$ in words (speed of adjustment).
-- [ ] Try adding one lag of $\\Delta y_t$ and $\\Delta x_t$ and see whether residual autocorrelation improves.
+- [ ] Choose two trending macro series, confirm both are I(1), and test for cointegration.
+- [ ] Estimate the ECM and interpret $\hat\alpha$ in words. Compute the half-life.
+- [ ] Create two independent random walks and confirm the test fails to reject.
 
 ### Project Code Map
 - `data/sample/panel_monthly_sample.csv`: offline macro panel
 - `src/features.py`: safe lag/diff/rolling feature helpers
-- `src/macro.py`: GDP growth + label helpers (for context)
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/data.py`: caching helpers
 
 ### Common Mistakes
-- Running levels-on-levels regressions without checking stationarity (spurious regression).
-- Interpreting Granger causality as structural causality.
-- Choosing VAR lags mechanically without sanity checks.
-- For IRFs: forgetting that orthogonalized IRFs depend on variable ordering.
+- Using standard ADF critical values for residual-based cointegration tests (too liberal).
+- Interpreting OLS t-stats from the cointegrating regression as valid inference.
+- Differencing cointegrated series — this discards the long-run equilibrium information.
+- Ignoring the sign of $\hat\alpha$: positive means divergence, not correction.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You now have a classical macro time-series toolkit that complements the ML workflow in this repo.
-Use it to avoid spurious inference and to reason about dynamics.
-
+Cointegration captures stable long-run relationships between nonstationary series. The ECM then models how the system adjusts back to equilibrium. The workflow: **confirm I(1) → test cointegration → estimate ECM → interpret $\alpha$.**
 
 Suggested readings:
-- Hamilton: Time Series Analysis (classic reference)
-- Hyndman & Athanasopoulos: Forecasting: Principles and Practice (applied)
-- Stock & Watson: Introduction to Econometrics (time-series chapters)
+- Engle & Granger (1987): "Co-Integration and Error Correction"
+- Murray (1994): "A Drunk and Her Dog" — an intuitive cointegration analogy
+- Hamilton (1994): *Time Series Analysis* — Ch. 19

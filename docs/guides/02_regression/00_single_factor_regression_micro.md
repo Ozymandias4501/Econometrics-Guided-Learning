@@ -76,23 +76,23 @@ In economics we care about two different uses:
 
 #### 2) Notation + setup (define symbols)
 
-Scalar form (observation $i=1,\\dots,n$):
+Scalar form (observation $i=1,\dots,n$):
 
 $$
-y_i = \\beta_0 + \\beta_1 x_{i1} + \\cdots + \\beta_K x_{iK} + \\varepsilon_i.
+y_i = \beta_0 + \beta_1 x_{i1} + \cdots + \beta_K x_{iK} + \varepsilon_i.
 $$
 
 Matrix form:
 
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
+\mathbf{y} = \mathbf{X}\beta + \varepsilon.
 $$
 
 **What each term means**
-- $\\mathbf{y}$: $n\\times 1$ vector of outcomes.
-- $\\mathbf{X}$: $n\\times (K+1)$ design matrix (includes an intercept column).
-- $\\beta$: $(K+1)\\times 1$ vector of coefficients.
-- $\\varepsilon$: $n\\times 1$ vector of errors (unobserved determinants).
+- $\mathbf{y}$: $n\times 1$ vector of outcomes.
+- $\mathbf{X}$: $n\times (K+1)$ design matrix (includes an intercept column).
+- $\beta$: $(K+1)\times 1$ vector of coefficients.
+- $\varepsilon$: $n\times 1$ vector of errors (unobserved determinants).
 
 #### 3) Assumptions (what you need for unbiasedness and for inference)
 
@@ -101,14 +101,14 @@ For interpretation and inference, it helps to separate:
 **(A) Assumptions for unbiased coefficients**
 
 1) **Linearity in parameters**
-- $y$ is linear in $\\beta$ (you can still include nonlinear transformations of $x$).
+- $y$ is linear in $\beta$ (you can still include nonlinear transformations of $x$).
 
 2) **No perfect multicollinearity**
 - columns of $X$ are not perfectly linearly dependent.
 
 3) **Exogeneity (key!)**
 $$
-\\mathbb{E}[\\varepsilon \\mid X] = 0.
+\mathbb{E}[\varepsilon \mid X] = 0.
 $$
 
 This rules out:
@@ -116,16 +116,18 @@ This rules out:
 - reverse causality,
 - many forms of measurement error problems.
 
+**Why this matters (concrete example):** Suppose you regress wages on years of education. The error $\varepsilon_i$ absorbs everything else that affects wages — including unobserved ability. If ability is positively correlated with education (high-ability people tend to get more schooling), then $\varepsilon_i$ is correlated with $x_i$ (education), violating $\mathbb{E}[\varepsilon \mid X] = 0$. The result: OLS attributes some of ability's effect to education, inflating $\hat\beta$. This is omitted variable bias in action — the coefficient captures a mix of the education effect *and* the ability effect. Robust standard errors do not fix this; only a better identification strategy (e.g., an instrument or a natural experiment) can.
+
 **(B) Assumptions for classical standard errors**
 
 4) **Homoskedasticity**
 $$
-\\mathrm{Var}(\\varepsilon \\mid X) = \\sigma^2 I.
+\mathrm{Var}(\varepsilon \mid X) = \sigma^2 I.
 $$
 
 5) **No autocorrelation (time series)**
 $$
-\\mathrm{Cov}(\\varepsilon_t, \\varepsilon_{t-k}) = 0 \\text{ for } k \\neq 0.
+\mathrm{Cov}(\varepsilon_t, \varepsilon_{t-k}) = 0 \text{ for } k \neq 0.
 $$
 
 When (4)–(5) fail, OLS coefficients can remain valid under (A), but naive SE are wrong → robust/HAC/clustered SE.
@@ -135,22 +137,22 @@ When (4)–(5) fail, OLS coefficients can remain valid under (A), but naive SE a
 OLS chooses coefficients to minimize the sum of squared residuals:
 
 $$
-\\hat\\beta = \\arg\\min_{\\beta} \\sum_{i=1}^{n} (y_i - x_i'\\beta)^2
-= \\arg\\min_{\\beta} (\\mathbf{y} - \\mathbf{X}\\beta)'(\\mathbf{y} - \\mathbf{X}\\beta).
+\hat\beta = \arg\min_{\beta} \sum_{i=1}^{n} (y_i - x_i'\beta)^2
+= \arg\min_{\beta} (\mathbf{y} - \mathbf{X}\beta)'(\mathbf{y} - \mathbf{X}\beta).
 $$
 
 Take derivatives (the “normal equations”):
 
 $$
-\\frac{\\partial}{\\partial \\beta} (\\mathbf{y}-\\mathbf{X}\\beta)'(\\mathbf{y}-\\mathbf{X}\\beta)
-= -2\\mathbf{X}'(\\mathbf{y}-\\mathbf{X}\\beta) = 0.
+\frac{\partial}{\partial \beta} (\mathbf{y}-\mathbf{X}\beta)'(\mathbf{y}-\mathbf{X}\beta)
+= -2\mathbf{X}'(\mathbf{y}-\mathbf{X}\beta) = 0.
 $$
 
 Solve:
 $$
-\\mathbf{X}'\\mathbf{X}\\hat\\beta = \\mathbf{X}'\\mathbf{y}
-\\quad \\Rightarrow \\quad
-\\hat\\beta = (\\mathbf{X}'\\mathbf{X})^{-1}\\mathbf{X}'\\mathbf{y}.
+\mathbf{X}'\mathbf{X}\hat\beta = \mathbf{X}'\mathbf{y}
+\quad \Rightarrow \quad
+\hat\beta = (\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}.
 $$
 
 **What each term means**
@@ -159,7 +161,7 @@ $$
 
 #### 5) Coefficient interpretation (and why “holding fixed” is tricky)
 
-In the model, $\\beta_j$ means:
+In the model, $\beta_j$ means:
 
 > the expected change in $y$ when $x_j$ increases by one unit, holding other regressors fixed (within the model).
 
@@ -174,13 +176,13 @@ That is why:
 Under classical assumptions:
 
 $$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
+\mathrm{Var}(\hat\beta \mid X) = \sigma^2 (X'X)^{-1}.
 $$
 
-In practice we estimate $\\sigma^2$ and compute standard errors:
-- $\\widehat{SE}(\\hat\\beta_j)$
-- t-stat: $t_j = \\hat\\beta_j / \\widehat{SE}(\\hat\\beta_j)$
-- 95% CI: $\\hat\\beta_j \\pm 1.96\\,\\widehat{SE}(\\hat\\beta_j)$ (approx.)
+In practice we estimate $\sigma^2$ and compute standard errors:
+- $\widehat{SE}(\hat\beta_j)$
+- t-stat: $t_j = \hat\beta_j / \widehat{SE}(\hat\beta_j)$
+- 95% CI: $\hat\beta_j \pm 1.96\,\widehat{SE}(\hat\beta_j)$ (approx.)
 
 When assumptions fail, use robust SE:
 - **HC3** for cross-section heteroskedasticity,
@@ -227,7 +229,7 @@ Log transforms are common in micro data because many variables (income, rent, po
 #### 1) Intuition (plain English)
 
 In a log–log model, coefficients are approximately **elasticities**:
-- “A 1% increase in $x$ is associated with a $\\beta$% change in $y$.”
+- “A 1% increase in $x$ is associated with a $\beta$% change in $y$.”
 
 This is often a more interpretable economic statement than “one dollar changes rent by …”
 
@@ -236,22 +238,22 @@ This is often a more interpretable economic statement than “one dollar changes
 Log–log regression:
 
 $$
-\\log(y_i) = \\alpha + \\beta \\log(x_i) + \\varepsilon_i.
+\log(y_i) = \alpha + \beta \log(x_i) + \varepsilon_i.
 $$
 
 **What each term means**
-- $\\log(\\cdot)$ compresses scale and turns multiplicative relationships into additive ones.
-- $\\beta$ is the elasticity-like coefficient.
+- $\log(\cdot)$ compresses scale and turns multiplicative relationships into additive ones.
+- $\beta$ is the elasticity-like coefficient.
 
 Why elasticity? For small changes:
 
 $$
-\\Delta \\log(x) \\approx \\frac{\\Delta x}{x}
-\\quad \\Rightarrow \\quad
-\\Delta \\log(y) \\approx \\beta \\Delta \\log(x).
+\Delta \log(x) \approx \frac{\Delta x}{x}
+\quad \Rightarrow \quad
+\Delta \log(y) \approx \beta \Delta \log(x).
 $$
 
-So a 1% change in $x$ corresponds to about a $\\beta$% change in $y$.
+So a 1% change in $x$ corresponds to about a $\beta$% change in $y$.
 
 #### 3) Assumptions (and practical caveats)
 
@@ -270,7 +272,7 @@ Workarounds (must be justified):
 
 #### 4) Estimation mechanics
 
-Once transformed, you fit OLS on $\\log(y)$ and $\\log(x)$ as usual.
+Once transformed, you fit OLS on $\log(y)$ and $\log(x)$ as usual.
 Interpretation should be in percent changes, not raw units.
 
 #### 5) Inference
@@ -297,7 +299,7 @@ Report:
 
 #### Exercises
 
-- [ ] Fit a log–log regression and interpret $\\beta$ as an elasticity in words.
+- [ ] Fit a log–log regression and interpret $\beta$ as an elasticity in words.
 - [ ] Compare to a level-level regression; explain how interpretation changes.
 - [ ] Demonstrate the “small change” approximation numerically for one observation.
 
@@ -314,65 +316,69 @@ In cross-sectional micro data, the variance of “unexplained” outcomes often 
 
 If you assume constant error variance when it is not true, your coefficient estimate may be fine, but your **standard errors** can be wrong—often too small.
 
+**Why classical SE fail under heteroskedasticity:** Classical SE compute one pooled estimate of $\sigma^2$ and apply it to every observation. If residual variance is actually larger for some observations (e.g., high-income counties have more variable rents), the pooled estimate averages over the quiet and noisy parts of the data. For coefficients driven mainly by the noisy subgroup, the averaged $\sigma^2$ understates true uncertainty, producing SE that are too small and p-values that reject too often. You get "statistical significance" that does not hold up in reality.
+
+**Why HC3 specifically:** HC0 (White's original) replaces the assumed $\sigma^2$ with each observation's own squared residual $\hat{u}_i^2$. But OLS residuals systematically underestimate the true errors at high-leverage points (observations that have outsized influence on the fitted line). HC3 corrects for this by dividing each $\hat{u}_i^2$ by $(1 - h_{ii})^2$, where $h_{ii}$ is the leverage. This inflates residuals at influential points, preventing them from hiding their own impact. In small-to-moderate samples, HC3 performs noticeably better than HC0 or HC1.
+
 #### 2) Notation + setup (define symbols)
 
 Regression model:
 
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\mathbf{u}.
+\mathbf{y} = \mathbf{X}\beta + \mathbf{u}.
 $$
 
 **What each term means**
-- $\\mathbf{y}$: $n\\times 1$ outcome vector.
-- $\\mathbf{X}$: $n\\times p$ design matrix (includes intercept).
-- $\\beta$: $p\\times 1$ coefficient vector.
-- $\\mathbf{u}$: $n\\times 1$ error vector.
+- $\mathbf{y}$: $n\times 1$ outcome vector.
+- $\mathbf{X}$: $n\times p$ design matrix (includes intercept).
+- $\beta$: $p\times 1$ coefficient vector.
+- $\mathbf{u}$: $n\times 1$ error vector.
 
 Classical OLS inference assumes homoskedasticity:
 $$
-\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\sigma^2 I_n.
+\mathrm{Var}(\mathbf{u} \mid \mathbf{X}) = \sigma^2 I_n.
 $$
 
 Heteroskedasticity means:
 $$
-\\mathrm{Var}(\\mathbf{u} \\mid \\mathbf{X}) = \\Omega,
-\\quad \\text{where } \\Omega \\text{ is not } \\sigma^2 I_n.
+\mathrm{Var}(\mathbf{u} \mid \mathbf{X}) = \Omega,
+\quad \text{where } \Omega \text{ is not } \sigma^2 I_n.
 $$
 
-Often $\\Omega$ is diagonal with unequal variances (but we don’t need to specify the exact pattern to build robust SE).
+Often $\Omega$ is diagonal with unequal variances (but we don’t need to specify the exact pattern to build robust SE).
 
 #### 3) Estimation mechanics: what changes and what does not
 
 OLS coefficients:
 $$
-\\hat\\beta = (X'X)^{-1}X'y.
+\hat\beta = (X'X)^{-1}X'y.
 $$
 
 **Key fact**
-- $\\hat\\beta$ is the same whether you use classical or robust SE.
-- What changes is the estimated variance of $\\hat\\beta$ (and therefore t-stats, p-values, and CI).
+- $\hat\beta$ is the same whether you use classical or robust SE.
+- What changes is the estimated variance of $\hat\beta$ (and therefore t-stats, p-values, and CI).
 
 #### 4) The robust “sandwich” covariance estimator
 
 A general heteroskedasticity-robust variance estimator has the form:
 
 $$
-\\widehat{\\mathrm{Var}}(\\hat\\beta)
-= (X'X)^{-1} \\left(X'\\hat\\Omega X\\right) (X'X)^{-1}.
+\widehat{\mathrm{Var}}(\hat\beta)
+= (X'X)^{-1} \left(X'\hat\Omega X\right) (X'X)^{-1}.
 $$
 
 **What each term means**
 - “Bread”: $(X'X)^{-1}$ is the usual OLS matrix.
-- “Meat”: $X'\\hat\\Omega X$ estimates the error variance structure.
+- “Meat”: $X'\hat\Omega X$ estimates the error variance structure.
 
-Different HC estimators choose different $\\hat\\Omega$.
+Different HC estimators choose different $\hat\Omega$.
 
 #### 5) Why HC3 specifically? (leverage adjustment)
 
 HC3 is designed to be more conservative in finite samples when some points have high leverage.
 
 Define:
-- residuals $\\hat u_i$,
+- residuals $\hat u_i$,
 - leverage $h_{ii}$ (diagonal of the hat matrix $H = X(X'X)^{-1}X'$):
 $$
 h_{ii} = x_i'(X'X)^{-1}x_i.
@@ -380,7 +386,7 @@ $$
 
 HC3 uses:
 $$
-\\hat\\Omega_{ii}^{HC3} = \\frac{\\hat u_i^2}{(1-h_{ii})^2}.
+\hat\Omega_{ii}^{HC3} = \frac{\hat u_i^2}{(1-h_{ii})^2}.
 $$
 
 **Interpretation**
@@ -448,17 +454,17 @@ That might mean:
 
 #### 2) Notation + setup (define symbols)
 
-We usually test a claim about a population parameter $\\theta$ (mean, regression coefficient, difference in means, …).
+We usually test a claim about a population parameter $\theta$ (mean, regression coefficient, difference in means, …).
 
 Define:
 - $H_0$: the **null hypothesis** (default claim),
 - $H_1$: the **alternative hypothesis** (what you consider if evidence contradicts $H_0$),
 - $T$: a **test statistic** computed from data,
-- $\\alpha$: a pre-chosen significance level (e.g., 0.05).
+- $\alpha$: a pre-chosen significance level (e.g., 0.05).
 
 Example in regression:
-- $H_0: \\beta_j = 0$
-- $H_1: \\beta_j \\neq 0$ (two-sided)
+- $H_0: \beta_j = 0$
+- $H_1: \beta_j \neq 0$ (two-sided)
 
 #### 3) Assumptions (why tests are conditional statements)
 
@@ -474,15 +480,15 @@ If those assumptions fail, the p-value may be meaningless.
 OLS estimates coefficients:
 
 $$
-\\hat\\beta = (X'X)^{-1}X'y.
+\hat\beta = (X'X)^{-1}X'y.
 $$
 
-For coefficient $\\beta_j$, you compute an estimated standard error $\\widehat{SE}(\\hat\\beta_j)$.
+For coefficient $\beta_j$, you compute an estimated standard error $\widehat{SE}(\hat\beta_j)$.
 
-The t-statistic for testing $H_0: \\beta_j = 0$ is:
+The t-statistic for testing $H_0: \beta_j = 0$ is:
 
 $$
-t_j = \\frac{\\hat\\beta_j - 0}{\\widehat{SE}(\\hat\\beta_j)}.
+t_j = \frac{\hat\beta_j - 0}{\widehat{SE}(\hat\beta_j)}.
 $$
 
 **What each term means**
@@ -507,7 +513,7 @@ Also: p-values do not measure effect size.
 A 95% confidence interval is approximately:
 
 $$
-\\hat\\beta_j \\pm t_{0.975} \\cdot \\widehat{SE}(\\hat\\beta_j).
+\hat\beta_j \pm t_{0.975} \cdot \widehat{SE}(\hat\beta_j).
 $$
 
 Interpretation:
@@ -524,7 +530,7 @@ Different SE estimators correspond to different assumptions about errors:
 - **HAC/Newey–West:** autocorrelation + heteroskedasticity (time series).
 - **Clustered SE:** within-cluster correlated errors (panels/DiD).
 
-**Key idea:** changing SE changes $\\widehat{SE}(\\hat\\beta_j)$ → changes t-stat and p-value, even when $\\hat\\beta_j$ is identical.
+**Key idea:** changing SE changes $\widehat{SE}(\hat\beta_j)$ → changes t-stat and p-value, even when $\hat\beta_j$ is identical.
 
 #### 8) Diagnostics: how hypothesis testing goes wrong (minimum set)
 
@@ -603,22 +609,24 @@ If two predictors contain almost the same information, the regression struggles 
 
 Prediction may still be fine, but coefficient stories become unreliable.
 
+**Core intuition:** Regression asks: "What is the effect of changing $x_j$ while holding everything else fixed?" When two predictors move together in the data, you rarely observe one changing without the other. The data provides little information about the separate effect of each. It is like trying to determine whether salt or pepper makes a dish tasty when they are always added together — any split of credit is fragile.
+
 #### 2) Notation + setup (define symbols)
 
 Regression in matrix form:
 
 $$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
+\mathbf{y} = \mathbf{X}\beta + \varepsilon.
 $$
 
 OLS estimator:
 $$
-\\hat\\beta = (X'X)^{-1}X'y.
+\hat\beta = (X'X)^{-1}X'y.
 $$
 
 Under classical assumptions:
 $$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
+\mathrm{Var}(\hat\beta \mid X) = \sigma^2 (X'X)^{-1}.
 $$
 
 **What each term means**
@@ -641,16 +649,16 @@ To compute VIF for feature $j$:
 Then:
 
 $$
-\\mathrm{VIF}_j = \\frac{1}{1 - R_j^2}.
+\mathrm{VIF}_j = \frac{1}{1 - R_j^2}.
 $$
 
 **Interpretation**
 - If $R_j^2$ is near 1, $x_j$ is almost perfectly explained by other predictors.
-- Then $\\mathrm{VIF}_j$ is large → coefficient uncertainty for $\\beta_j$ is inflated.
+- Then $\mathrm{VIF}_j$ is large → coefficient uncertainty for $\beta_j$ is inflated.
 
 Rules of thumb (not laws):
 - VIF > 5 suggests notable collinearity.
-- VIF > 10 suggests serious collinearity.
+- VIF > 10 suggests serious collinearity (it means $R_j^2 > 0.90$, i.e., more than 90% of $x_j$'s variance is explained by the other predictors — there is very little "unique" information left for the regression to use).
 
 #### 5) Estimation mechanics: “holding others fixed” becomes unrealistic
 

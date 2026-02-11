@@ -11,410 +11,203 @@
 
 This guide accompanies the notebook `notebooks/08_time_series_econ/02_var_impulse_responses.ipynb`.
 
-This module covers classical time-series econometrics: stationarity, cointegration/ECM, and VAR/IRFs.
+> **Note:** VARs and impulse response functions are primarily used in **macroeconomics**. For health economics, panel methods (FE, DiD, IV) are far more relevant. This guide provides a solid overview for econometric literacy — VARs may appear in your macro electives but are unlikely to be central to your research.
+
+**Prerequisites:** [Stationarity guide](00_stationarity_unit_roots.md) and [cointegration guide](01_cointegration_error_correction.md).
 
 ### Key Terms (defined)
-- **Stationarity**: stable statistical properties over time.
-- **Unit root**: nonstationary process where shocks accumulate (random walk-like).
-- **Cointegration**: nonstationary series with a stationary long-run relationship.
-- **VAR**: multivariate autoregression.
-- **IRF**: impulse response function (shock propagation over time).
-
-
-### How To Read This Guide
-- Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+- **VAR($p$)**: a system of $k$ equations where each variable is regressed on $p$ lags of all $k$ variables.
+- **Impulse response function (IRF)**: the time path of all variables after a one-time shock to one variable.
+- **Orthogonalized IRF**: IRF computed after transforming correlated innovations into uncorrelated shocks via Cholesky decomposition. Results depend on variable ordering.
+- **FEVD**: forecast error variance decomposition — what fraction of forecast uncertainty comes from each shock.
+- **Granger causality**: does lagged $x$ help predict $y$ beyond $y$'s own lags? A forecasting test, not a causal one.
+- **Stability**: all companion matrix eigenvalues inside the unit circle — shocks die out.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Build stationary dataset
-- Complete notebook section: Fit VAR + choose lags
-- Complete notebook section: Granger causality
-- Complete notebook section: IRFs + forecasting
-- Plot series in levels before running tests.
-- Justify each transformation (diff/logdiff) in words.
-- State what your IRF identification assumes (ordering or structure).
+- Select 3–4 macro variables, confirm stationarity (transform if needed).
+- Fit a VAR; use AIC/BIC for lag selection, then check residual autocorrelation.
+- Verify stability (all eigenvalues inside unit circle).
+- Run Granger causality tests — interpret as "predictive content," not causation.
+- Plot orthogonalized IRFs with confidence bands under two variable orderings.
+- Compute FEVDs at a meaningful horizon.
+- Write a paragraph interpreting IRFs and stating identification assumptions.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Random walk vs stationary series (ADF intuition):
 import numpy as np
-from statsmodels.tsa.stattools import adfuller
+import pandas as pd
+from statsmodels.tsa.api import VAR
 
-rng = np.random.default_rng(0)
-rw = rng.normal(size=400).cumsum()
-st = rng.normal(size=400)
+rng = np.random.default_rng(42)
+T = 200
 
-adf_rw_p = adfuller(rw)[1]
-adf_st_p = adfuller(st)[1]
-adf_rw_p, adf_st_p
+# Simulated stationary data with cross-variable dynamics
+data = pd.DataFrame({
+    'unrate_diff': rng.normal(0, 0.3, T),
+    'fedfunds_diff': rng.normal(0, 0.5, T),
+    'indpro_growth': rng.normal(0, 0.8, T),
+})
+for t in range(2, T):
+    data.loc[t, 'unrate_diff'] += 0.3 * data.loc[t-1, 'unrate_diff'] - 0.1 * data.loc[t-1, 'fedfunds_diff']
+    data.loc[t, 'indpro_growth'] += 0.2 * data.loc[t-1, 'indpro_growth'] + 0.15 * data.loc[t-1, 'fedfunds_diff']
+
+model = VAR(data)
+results = model.fit(maxlags=4, ic='aic')
+print("Stable?", results.is_stable())
+
+irf = results.irf(periods=20)
+irf.plot(orth=True)
 ```
 
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Stationarity and Unit Roots: why levels-on-levels can lie
+### Why VAR?
 
-Classical time-series econometrics starts with one question:
+Macro variables form interconnected systems with feedback loops. A VAR models all variables simultaneously, letting each depend on lags of every other variable. This avoids the single-equation problem of ignoring feedback (e.g., interest rates affect output, but output also affects interest rate policy).
 
-> **Is this series stable enough over time that our regression assumptions make sense?**
+### The VAR($p$) model
 
-#### 1) Intuition (plain English)
-
-Many macro series in **levels** trend upward over decades (GDP, price level, money supply).
-If two series both trend, they can look strongly related even when one does not cause the other.
-
-**Story example:** GDP and total credit both trend up.
-A regression “GDP on credit” in levels can produce a high $R^2$ even if the relationship is spurious.
-
-Stationarity is the formal way to ask:
-- “Do shocks die out (mean reversion)?” or
-- “Do shocks accumulate forever (random walk)?”
-
-#### 2) Notation + setup (define symbols)
-
-Let $\\{y_t\\}_{t=1}^T$ be a time series.
-
-Key population objects:
-- mean: $\\mu = \\mathbb{E}[y_t]$
-- variance: $\\gamma_0 = \\mathrm{Var}(y_t)$
-- autocovariance at lag $k$:
-$$
-\\gamma_k = \\mathrm{Cov}(y_t, y_{t-k}).
-$$
-
-**Weak (covariance) stationarity** means:
-1) $\\mathbb{E}[y_t]$ is constant over time,
-2) $\\mathrm{Var}(y_t)$ is constant over time,
-3) $\\mathrm{Cov}(y_t, y_{t-k})$ depends only on $k$, not on $t$.
-
-**Strict stationarity** is stronger (the full joint distribution is time-invariant). In practice, weak stationarity is the common working definition for linear models.
-
-#### 3) I(0) vs I(1) (integrated processes)
-
-Econometrics often classifies series by how many differences are needed to make them “stationary-ish”:
-
-- $y_t$ is **I(0)** if it is stationary (in levels).
-- $y_t$ is **I(1)** if $\\Delta y_t = y_t - y_{t-1}$ is I(0).
-
-Typical examples:
-- growth rates, inflation rates, spreads: often closer to I(0),
-- price levels, GDP levels: often closer to I(1).
-
-#### 4) Unit roots via AR(1) intuition
-
-Consider an AR(1):
+Let $y_t$ be a $k \times 1$ vector of stationary variables:
 
 $$
-y_t = \\rho y_{t-1} + \\varepsilon_t,
-\\qquad
-\\varepsilon_t \\sim (0, \\sigma^2).
+y_t = c + A_1 y_{t-1} + \cdots + A_p y_{t-p} + \varepsilon_t,
 $$
 
-**What each term means**
-- $\\rho$: persistence parameter.
-- $\\varepsilon_t$: innovation (new shock at time $t$).
+where $A_j$ are $k \times k$ coefficient matrices and $\varepsilon_t$ has covariance $\Sigma$.
 
-Cases:
-- If $|\\rho| < 1$, the process is stationary and shocks decay (mean reversion).
-- If $\\rho = 1$, you have a **unit root** (random walk-like behavior).
+**Parameter count:** $k^2 p + k$. With $k=4$, $p=4$: 68 parameters. Keep $k$ and $p$ small for short macro samples.
 
-Random walk:
-$$
-y_t = y_{t-1} + \\varepsilon_t
-\\quad \\Rightarrow \\quad
-y_t = y_0 + \\sum_{s=1}^{t} \\varepsilon_s.
-$$
+**Estimation:** OLS equation-by-equation (each equation has the same regressors).
 
-**Key implication**
-- the variance of $y_t$ grows with $t$ (shocks accumulate),
-- the series does not settle around a fixed mean in levels.
+### Lag selection
 
-Differencing removes the unit root:
-$$
-\\Delta y_t = y_t - y_{t-1} = \\varepsilon_t,
-$$
-which is stationary if innovations are stable.
-
-#### 5) Why this matters: spurious regression
-
-If $x_t$ and $y_t$ are both I(1), then a regression like:
+Use AIC/BIC as a starting point, then check residual autocorrelation:
 
 $$
-y_t = \\alpha + \\beta x_t + u_t
+\text{AIC}(p) = \log|\hat\Sigma(p)| + \frac{2k^2 p}{T},
+\qquad
+\text{BIC}(p) = \log|\hat\Sigma(p)| + \frac{k^2 p \log T}{T}.
 $$
 
-can show:
-- large t-stats,
-- high $R^2$,
-even if $x_t$ and $y_t$ are unrelated in any causal or structural sense.
+If AIC and BIC disagree, try both and check residual diagnostics. Always verify stability.
 
-The reason (intuition):
-- both series share trending behavior,
-- residuals can be highly persistent,
-- classic OLS inference assumptions break.
+### Granger causality
 
-**Practical rule:** do not treat a levels-on-levels regression as meaningful until you have checked stationarity / cointegration logic.
+$x$ "Granger-causes" $y$ if lags of $x$ help predict $y$ beyond $y$'s own lags. This is tested with an F-test on the relevant lag coefficients.
 
-#### 6) ADF test: what it is actually doing
+**What it IS:** a test of predictive content.
+**What it is NOT:** structural causality. A policy rate may "Granger-cause" output because the rate reacts to forward-looking information, not because rate changes directly cause output movements.
 
-The Augmented Dickey–Fuller test fits a regression of changes on lagged levels:
-
-$$
-\\Delta y_t = a + bt + \\gamma y_{t-1} + \\sum_{j=1}^{p} \\phi_j \\Delta y_{t-j} + e_t.
-$$
-
-**What each term means**
-- $\\Delta y_t$: change in the series.
-- $a$: intercept (allows non-zero mean).
-- $bt$: trend term (optional).
-- $y_{t-1}$: lagged level (detects unit root).
-- lagged differences: soak up serial correlation in $e_t$.
-
-Null vs alternative (common interpretation):
-- **Null:** unit root (nonstationary) → roughly $\\gamma = 0$ (equivalently $\\rho = 1$).
-- **Alternative:** stationary (mean-reverting) → $\\gamma < 0$ (equivalently $|\\rho|<1$).
-
-Important: ADF has low power in small samples; “fail to reject” does not mean “definitely a unit root.”
-
-#### 7) KPSS test: complementary null
-
-KPSS flips the null:
-- **Null:** stationary,
-- **Alternative:** unit root / nonstationary.
-
-That’s why people often run ADF and KPSS together:
-- ADF rejects + KPSS fails to reject → evidence for stationarity.
-- ADF fails to reject + KPSS rejects → evidence for nonstationarity.
-- Conflicts happen often → treat tests as diagnostics, not commandments.
-
-#### 8) Mapping to code (statsmodels)
-
-In Python:
-- `statsmodels.tsa.stattools.adfuller(x)` returns a test statistic and a p-value.
-- `statsmodels.tsa.stattools.kpss(x, regression='c' or 'ct')` does the KPSS test.
-
-Practical habits:
-- drop missing values before testing,
-- test both levels and differences,
-- specify whether you include a trend term (economic series often trend).
-
-#### 9) Diagnostics + robustness (minimum set)
-
-1) **Plot the level series**
-- Do you see a clear trend or structural break?
-
-2) **Plot the differenced / growth-rate series**
-- Does it look more stable? Mean-reverting?
-
-3) **ADF + KPSS on both levels and differences**
-- Do results agree? If not, explain why (trend term, breaks, sample size).
-
-4) **ACF/PACF or residual autocorrelation**
-- Persistent residuals suggest misspecification.
-
-#### 10) Interpretation + reporting
-
-When you report stationarity checks:
-- state whether you tested levels and differences,
-- state whether you included a constant/trend,
-- show at least one plot alongside test results.
-
-**What this does NOT mean**
-- A small p-value is not a proof of stationarity in “the real world.”
-- Structural breaks can fool unit-root tests (you can reject/accept for the wrong reason).
-
-#### Exercises
-
-- [ ] Pick one macro series and classify it as “likely I(0)” or “likely I(1)” with a plot-based argument.
-- [ ] Run ADF and KPSS on the level series and on its first difference; interpret the pair.
-- [ ] Demonstrate spurious regression by regressing one random walk on another and reporting $R^2$.
-- [ ] Choose a transformation (difference, log-difference, growth rate) and justify it in 4 sentences.
-
-### VAR + IRF: multivariate dynamics and “shock propagation”
-
-Vector autoregressions (VARs) are a core tool for macro dynamics: they model how multiple variables move together over time.
-
-#### 1) Intuition (plain English)
-
-Unemployment, production, and interest rates influence each other with lags.
-A VAR is a flexible way to model these feedback loops without imposing a full structural model.
-
-An impulse response function (IRF) then answers:
-- “If we hit the system with a one-time shock today, how do variables respond over the next few periods?”
-
-**Story example:** A policy rate shock might raise unemployment over several months and reduce production.
-
-#### 2) Notation + setup (define symbols)
-
-Let $y_t$ be a $k \\times 1$ vector of variables at time $t$:
-$$
-y_t =
-\\begin{bmatrix}
-\\text{UNRATE}_t \\\\
-\\text{FEDFUNDS}_t \\\\
-\\text{INDPRO}_t
-\\end{bmatrix}.
-$$
-
-A VAR($p$) is:
-
-$$
-y_t = c + A_1 y_{t-1} + \\cdots + A_p y_{t-p} + \\varepsilon_t,
-$$
-
-where:
-- $c$ is a $k \\times 1$ intercept vector,
-- $A_j$ are $k \\times k$ coefficient matrices,
-- $\\varepsilon_t$ is a $k \\times 1$ innovation vector with covariance matrix $\\Sigma$.
-
-**What each term means**
-- Each equation predicts one variable using lags of *all* variables.
-- $\\Sigma$ captures contemporaneous correlation among innovations (important for IRFs).
-
-#### 3) Assumptions: stationarity and stability
-
-VAR inference typically assumes the system is stable (stationary).
-Intuition: shocks should not blow up forever.
-
-Formally, stability requires eigenvalues of the companion matrix to lie inside the unit circle.
-Most software reports a stability check.
-
-If your variables are not stationary, common fixes include:
-- differencing / log-differencing,
-- modeling cointegration with a VECM (not covered deeply here),
-- restricting to stationary transformations.
-
-#### 4) Estimation mechanics: OLS equation-by-equation
-
-VAR coefficients can be estimated by OLS for each equation because the regressors are the same across equations.
-
-Define the regressor vector:
-$$
-x_t' = [1, y_{t-1}', \\dots, y_{t-p}'].
-$$
-
-Then each equation is:
-$$
-y_{m,t} = x_t' \\theta_m + e_{m,t},
-\\quad m = 1,\\dots,k,
-$$
-and OLS provides $\\hat\\theta_m$.
-
-**What this means practically**
-- Estimation is straightforward,
-- the hard part is choosing transformations and lag length responsibly.
-
-#### 5) Lag selection: why AIC/BIC are a starting point, not the finish line
-
-Common criteria:
-- AIC tends to choose more lags (better fit, higher variance),
-- BIC tends to choose fewer lags (more parsimonious).
-
-Practical approach:
-- check a range of lags (e.g., 1–8 for monthly),
-- confirm residual autocorrelation is not severe,
-- prefer interpretability and stability over maximizing in-sample fit.
-
-#### 6) Granger causality: predictive content, not structural causality
-
-Variable $x$ “Granger-causes” $y$ if lagged $x$ terms help predict $y$ beyond lagged $y$.
-
-This is a **forecasting** statement:
-- it does not establish causal structure,
-- it can be driven by omitted variables or common shocks.
-
-#### 7) IRFs: from VAR to moving-average (MA) representation
+### IRFs: the moving-average representation
 
 If the VAR is stable, it has an MA form:
 
 $$
-y_t = \\mu + \\sum_{s=0}^{\\infty} \\Psi_s \\varepsilon_{t-s}.
+y_t = \mu + \sum_{s=0}^{\infty} \Phi_s \varepsilon_{t-s}.
 $$
 
-The matrices $\\Psi_s$ map an innovation today into future outcomes.
-An IRF traces rows/columns of $\\Psi_s$ over horizons $s=0,1,2,\\dots$.
+$\Phi_s[m,n]$ = effect on variable $m$ at horizon $s$ from a unit shock to variable $n$.
 
-#### 8) Identification: orthogonalized IRFs and why ordering matters
+**Problem:** Innovations $\varepsilon_t$ are correlated across equations. A "shock to variable 1" also involves variable 2.
 
-Problem: VAR innovations $\\varepsilon_t$ are often correlated (covariance $\\Sigma$ is not diagonal).
+### Orthogonalized IRFs (Cholesky)
 
-To interpret a “one-unit shock,” you often orthogonalize innovations via a Cholesky factorization:
+Decompose $\Sigma = P P'$ (Cholesky, lower-triangular). Define uncorrelated shocks $u_t = P^{-1}\varepsilon_t$. Then:
+
 $$
-\\Sigma = P P'.
-$$
-
-Define structural shocks $u_t$ with identity covariance:
-$$
-\\varepsilon_t = P u_t,
-\\qquad \\mathrm{Var}(u_t)=I.
+\Theta_s = \Phi_s P.
 $$
 
-Now a “shock to variable 1” is a shock to $u_{1t}$, which is orthogonal to others.
+**The Cholesky ordering matters.** It imposes a recursive structure:
+- Variable 1 (first) is affected only by its own shock contemporaneously.
+- Variable 2 is affected by shocks to variables 1 and 2 contemporaneously.
+- And so on.
 
-**Key implication**
-- The Cholesky decomposition depends on the ordering of variables.
-- So orthogonalized IRFs are conditional on that identification assumption.
+Swapping the order can change IRF signs and magnitudes. **Always try at least two orderings** and check robustness.
 
-#### 9) Diagnostics + robustness (minimum set)
+### FEVD
 
-1) **Stationarity / stability**
-- Confirm transformations lead to a stable VAR (software stability check).
+The forecast error variance decomposition answers: "What fraction of forecast uncertainty at horizon $h$ comes from each shock?"
 
-2) **Residual autocorrelation**
-- If residuals remain autocorrelated, your lag length may be too short.
+$$
+\text{FEVD}_{m \leftarrow n}(h) = \frac{\sum_{s=0}^{h-1} \Theta_s[m,n]^2}{\sum_{s=0}^{h-1} \sum_{j=1}^{k} \Theta_s[m,j]^2}.
+$$
 
-3) **Ordering sensitivity (for orth IRFs)**
-- Re-order variables and see if qualitative IRF conclusions change.
+At short horizons, each variable's own shock dominates. At longer horizons, cross-variable shocks become more important.
 
-4) **Out-of-sample forecasting sanity**
-- Even if your goal is IRFs, forecasting performance can reveal misspecification.
+### Code template
 
-#### 10) Interpretation + reporting
+```python
+from statsmodels.tsa.api import VAR
+import numpy as np
 
-When reporting a VAR/IRF analysis:
-- specify transformations,
-- specify lag choice method,
-- specify identification (ordering for Cholesky orth IRFs),
-- report stability checks and diagnostics.
+data = df[['var1', 'var2', 'var3']].dropna()
+model = VAR(data)
 
-**What this does NOT mean**
+# Lag selection
+print(model.select_order(maxlags=12).summary())
+
+# Fit
+results = model.fit(maxlags=4, ic='aic')
+print("Stable?", results.is_stable())
+
+# Granger causality
+gc = results.test_causality('var1', ['var2'], kind='f')
+print(gc.summary())
+
+# IRFs with confidence bands
+irf = results.irf(periods=24)
+irf.plot(orth=True)
+
+# FEVD
+fevd = results.fevd(periods=24)
+fevd.plot()
+```
+
+### Diagnostics checklist
+
+1. **All variables must be stationary** — non-stationary variables produce unreliable IRFs.
+2. **Stability** — all companion matrix eigenvalues must have modulus < 1.
+3. **Residual autocorrelation** — if present, add lags.
+4. **Ordering sensitivity** — try multiple orderings; if conclusions flip, identification is fragile.
+5. **Confidence bands** — always report; a response not significantly different from zero is not reliable.
+
+### What this does NOT mean
+- VAR coefficients are forecasting relationships, not causal effects.
 - Granger causality ≠ structural causality.
-- Orthogonalized IRFs ≠ “true policy shocks” unless the identification is defensible.
+- Orthogonalized IRFs are conditional on the ordering assumption.
+- An insignificant IRF may reflect insufficient data, not "no effect."
 
 #### Exercises
 
-- [ ] Fit a VAR on stationary transformations and report the selected lag length.
-- [ ] Run a Granger causality test and interpret it as “predictive content,” not causality.
-- [ ] Plot IRFs under two different variable orderings; compare and explain differences.
-- [ ] Check residual autocorrelation; increase lags and see whether diagnostics improve.
+- [ ] Fit a 3-variable VAR, report lag selection and stability.
+- [ ] Run Granger causality tests; interpret one carefully as "predictive content."
+- [ ] Plot IRFs under two orderings; identify one robust and one sensitive response.
+- [ ] Compute FEVDs at horizons 1, 6, and 24.
 
 ### Project Code Map
 - `data/sample/panel_monthly_sample.csv`: offline macro panel
 - `src/features.py`: safe lag/diff/rolling feature helpers
-- `src/macro.py`: GDP growth + label helpers (for context)
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/data.py`: caching helpers
 
 ### Common Mistakes
-- Running levels-on-levels regressions without checking stationarity (spurious regression).
-- Interpreting Granger causality as structural causality.
-- Choosing VAR lags mechanically without sanity checks.
-- For IRFs: forgetting that orthogonalized IRFs depend on variable ordering.
+- Fitting a VAR on I(1) levels without testing stationarity/cointegration.
+- Interpreting Granger causality as economic causality.
+- Not checking ordering sensitivity for Cholesky IRFs.
+- Including too many variables in short samples (overparameterization).
+- Ignoring confidence bands on IRFs.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-You now have a classical macro time-series toolkit that complements the ML workflow in this repo.
-Use it to avoid spurious inference and to reason about dynamics.
-
+VARs model multivariate dynamics; IRFs trace shock propagation; FEVDs attribute forecast uncertainty. The key caveat: everything depends on identification (variable ordering for Cholesky). Always check robustness.
 
 Suggested readings:
-- Hamilton: Time Series Analysis (classic reference)
-- Hyndman & Athanasopoulos: Forecasting: Principles and Practice (applied)
-- Stock & Watson: Introduction to Econometrics (time-series chapters)
+- Stock & Watson (2001): "Vector Autoregressions" — accessible survey
+- Lütkepohl (2005): *New Introduction to Multiple Time Series Analysis*
+- Hamilton (1994): *Time Series Analysis* — Ch. 11–12

@@ -11,213 +11,96 @@
 
 This guide accompanies the notebook `notebooks/02_regression/05_regularization_ridge_lasso.ipynb`.
 
-This regression module covers both prediction and inference, with a strong emphasis on interpretation.
+When you have many predictors -- especially correlated ones -- OLS coefficients become unstable and out-of-sample performance degrades. Regularization adds a penalty to the objective function that shrinks coefficients toward zero, trading a small amount of bias for a large reduction in variance. This guide covers the two most common penalized regression methods (ridge and lasso), how to choose the penalty strength, and when regularization is the right tool.
 
 ### Key Terms (defined)
-- **OLS (Ordinary Least Squares)**: chooses coefficients that minimize squared prediction errors.
-- **Coefficient**: expected change in the target per unit change in a feature (holding others fixed).
-- **Standard error (SE)**: uncertainty estimate for a coefficient.
-- **p-value**: probability of observing an effect at least as extreme if the true effect were zero (under assumptions).
-- **Confidence interval (CI)**: a range of plausible coefficient values under assumptions.
-- **Heteroskedasticity**: non-constant error variance; common in cross-section.
-- **Autocorrelation**: errors correlated over time; common in time series.
-- **HAC/Newey-West**: robust SE for time-series autocorrelation/heteroskedasticity.
-
+- **Ridge regression (L2)**: penalizes the sum of squared coefficients; shrinks all coefficients but never sets them exactly to zero.
+- **Lasso regression (L1)**: penalizes the sum of absolute coefficients; can set some coefficients exactly to zero (feature selection).
+- **Elastic net**: combines L1 and L2 penalties; a compromise between ridge and lasso.
+- **Lambda ($\lambda$)**: the penalty strength parameter; larger $\lambda$ means more shrinkage.
+- **Shrinkage**: the process of pulling coefficients toward zero to reduce variance.
+- **Feature selection**: identifying which predictors matter by setting irrelevant coefficients to zero.
+- **Cross-validation (CV)**: a resampling method used to choose $\lambda$ by estimating out-of-sample performance.
+- **Coefficient paths**: plots showing how each coefficient changes as $\lambda$ increases from 0 to large values.
+- **Standardization**: rescaling features to have mean 0 and variance 1, required before regularization so the penalty treats all features equally.
 
 ### How To Read This Guide
 - Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
+- Use **Technical Explanations** to learn the math behind ridge and lasso penalties.
 - Then return to the notebook and write a short interpretation note after each section.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Build feature matrix
-- Complete notebook section: Fit ridge/lasso
-- Complete notebook section: Coefficient paths
-- Fit at least one plain OLS model and one robust-SE variant (HC3 or HAC).
-- Interpret coefficients in units (or standardized units) and explain what they do *not* mean.
-- Run at least one diagnostic: residual plot, VIF table, or rolling coefficient stability plot.
+- Standardize all features before fitting regularized models (do NOT standardize the target).
+- Fit both ridge and lasso regression across a grid of $\lambda$ values.
+- Plot coefficient paths (coefficients vs $\log(\lambda)$) for both ridge and lasso; note which lasso coefficients hit zero first.
+- Use cross-validation (e.g., `RidgeCV`, `LassoCV`, or manual time-aware CV) to select the optimal $\lambda$.
+- Compare out-of-sample performance: plain OLS vs ridge vs lasso at the CV-optimal $\lambda$.
+- Report which features lasso selects (nonzero coefficients) and check whether the selection is stable across CV folds.
 
 ### Alternative Example (Not the Notebook Solution)
+
+This example fits ridge and lasso on a dataset with many correlated features, showing how coefficient paths evolve as $\lambda$ increases.
+
 ```python
-# Toy OLS with robust SE (not the notebook data):
+# Ridge and lasso on correlated features with coefficient path plots
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
+from sklearn.linear_model import Ridge, Lasso, RidgeCV, LassoCV
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
 
-rng = np.random.default_rng(0)
-x = rng.normal(size=200)
-y = 2.0 + 0.5*x + rng.normal(scale=1 + 0.5*np.abs(x), size=200)  # heteroskedastic errors
-X = sm.add_constant(pd.DataFrame({'x': x}))
-res = sm.OLS(y, X).fit()
-res_hc3 = res.get_robustcov_results(cov_type='HC3')
+rng = np.random.default_rng(42)
+n, p = 200, 15
+
+# Correlated features: 3 groups of 5 correlated variables
+Z = rng.normal(size=(n, 3))
+X = np.hstack([
+    Z[:, [0]] + rng.normal(0, 0.3, (n, 5)),   # group 1: correlated
+    Z[:, [1]] + rng.normal(0, 0.3, (n, 5)),   # group 2: correlated
+    Z[:, [2]] + rng.normal(0, 0.3, (n, 5)),   # group 3: correlated
+])
+# True model: only first variable in each group matters
+beta_true = np.array([1, 0, 0, 0, 0,  -0.5, 0, 0, 0, 0,  0.8, 0, 0, 0, 0])
+y = X @ beta_true + rng.normal(0, 1, n)
+
+scaler = StandardScaler()
+X_std = scaler.fit_transform(X)
+
+# Coefficient paths for lasso
+alphas_lasso = np.logspace(-3, 1, 100)
+coefs_lasso = []
+for a in alphas_lasso:
+    model = Lasso(alpha=a, max_iter=10000)
+    model.fit(X_std, y)
+    coefs_lasso.append(model.coef_.copy())
+coefs_lasso = np.array(coefs_lasso)
+
+plt.figure(figsize=(8, 5))
+for j in range(p):
+    plt.plot(np.log10(alphas_lasso), coefs_lasso[:, j], label=f'x{j}')
+plt.xlabel('log10(lambda)')
+plt.ylabel('Coefficient')
+plt.title('Lasso coefficient paths')
+plt.axhline(0, color='grey', linewidth=0.5)
+plt.show()
+
+# Cross-validate lambda
+lasso_cv = LassoCV(alphas=alphas_lasso, cv=5).fit(X_std, y)
+print(f"Best lambda: {lasso_cv.alpha_:.4f}")
+print(f"Nonzero coefficients: {np.sum(lasso_cv.coef_ != 0)} / {p}")
 ```
 
+**What to notice:** The correlated features within each group get similar coefficients under ridge (all shrunk but nonzero), while lasso tends to pick one representative from each group and zero out the rest. The coefficient paths show this divergence clearly.
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Regression: mechanics, assumptions, and interpretation (OLS as the baseline)
+### Prerequisites: OLS Foundations (Guide 00)
 
-Linear regression is the baseline model for both econometrics and ML. Even when you use nonlinear models, the regression mindset (assumptions → estimation → inference → diagnostics) remains essential.
-
-#### 1) Intuition (plain English)
-
-Regression answers questions like:
-- “How does $Y$ vary with $X$ on average?”
-- “Holding other observed controls fixed, what is the association between one feature and the outcome?”
-
-In economics we care about two different uses:
-- **prediction:** does a model forecast well out-of-sample?
-- **inference:** what is the estimated relationship and its uncertainty?
-
-#### 2) Notation + setup (define symbols)
-
-Scalar form (observation $i=1,\\dots,n$):
-
-$$
-y_i = \\beta_0 + \\beta_1 x_{i1} + \\cdots + \\beta_K x_{iK} + \\varepsilon_i.
-$$
-
-Matrix form:
-
-$$
-\\mathbf{y} = \\mathbf{X}\\beta + \\varepsilon.
-$$
-
-**What each term means**
-- $\\mathbf{y}$: $n\\times 1$ vector of outcomes.
-- $\\mathbf{X}$: $n\\times (K+1)$ design matrix (includes an intercept column).
-- $\\beta$: $(K+1)\\times 1$ vector of coefficients.
-- $\\varepsilon$: $n\\times 1$ vector of errors (unobserved determinants).
-
-#### 3) Assumptions (what you need for unbiasedness and for inference)
-
-For interpretation and inference, it helps to separate:
-
-**(A) Assumptions for unbiased coefficients**
-
-1) **Linearity in parameters**
-- $y$ is linear in $\\beta$ (you can still include nonlinear transformations of $x$).
-
-2) **No perfect multicollinearity**
-- columns of $X$ are not perfectly linearly dependent.
-
-3) **Exogeneity (key!)**
-$$
-\\mathbb{E}[\\varepsilon \\mid X] = 0.
-$$
-
-This rules out:
-- omitted variable bias,
-- reverse causality,
-- many forms of measurement error problems.
-
-**(B) Assumptions for classical standard errors**
-
-4) **Homoskedasticity**
-$$
-\\mathrm{Var}(\\varepsilon \\mid X) = \\sigma^2 I.
-$$
-
-5) **No autocorrelation (time series)**
-$$
-\\mathrm{Cov}(\\varepsilon_t, \\varepsilon_{t-k}) = 0 \\text{ for } k \\neq 0.
-$$
-
-When (4)–(5) fail, OLS coefficients can remain valid under (A), but naive SE are wrong → robust/HAC/clustered SE.
-
-#### 4) Estimation mechanics: deriving OLS
-
-OLS chooses coefficients to minimize the sum of squared residuals:
-
-$$
-\\hat\\beta = \\arg\\min_{\\beta} \\sum_{i=1}^{n} (y_i - x_i'\\beta)^2
-= \\arg\\min_{\\beta} (\\mathbf{y} - \\mathbf{X}\\beta)'(\\mathbf{y} - \\mathbf{X}\\beta).
-$$
-
-Take derivatives (the “normal equations”):
-
-$$
-\\frac{\\partial}{\\partial \\beta} (\\mathbf{y}-\\mathbf{X}\\beta)'(\\mathbf{y}-\\mathbf{X}\\beta)
-= -2\\mathbf{X}'(\\mathbf{y}-\\mathbf{X}\\beta) = 0.
-$$
-
-Solve:
-$$
-\\mathbf{X}'\\mathbf{X}\\hat\\beta = \\mathbf{X}'\\mathbf{y}
-\\quad \\Rightarrow \\quad
-\\hat\\beta = (\\mathbf{X}'\\mathbf{X})^{-1}\\mathbf{X}'\\mathbf{y}.
-$$
-
-**What each term means**
-- $(X'X)^{-1}$ exists only if there is no perfect multicollinearity.
-- OLS is a projection of $y$ onto the column space of $X$.
-
-#### 5) Coefficient interpretation (and why “holding fixed” is tricky)
-
-In the model, $\\beta_j$ means:
-
-> the expected change in $y$ when $x_j$ increases by one unit, holding other regressors fixed (within the model).
-
-In economics, “holding fixed” can be unrealistic if regressors move together (multicollinearity).
-That is why:
-- coefficient signs can flip,
-- SE can inflate,
-- interpretation must be cautious.
-
-#### 6) Inference: standard errors, t-stats, confidence intervals
-
-Under classical assumptions:
-
-$$
-\\mathrm{Var}(\\hat\\beta \\mid X) = \\sigma^2 (X'X)^{-1}.
-$$
-
-In practice we estimate $\\sigma^2$ and compute standard errors:
-- $\\widehat{SE}(\\hat\\beta_j)$
-- t-stat: $t_j = \\hat\\beta_j / \\widehat{SE}(\\hat\\beta_j)$
-- 95% CI: $\\hat\\beta_j \\pm 1.96\\,\\widehat{SE}(\\hat\\beta_j)$ (approx.)
-
-When assumptions fail, use robust SE:
-- **HC3** for cross-section heteroskedasticity,
-- **HAC/Newey–West** for time-series autocorrelation + heteroskedasticity,
-- **clustered SE** for grouped dependence (panels/DiD).
-
-#### 7) Diagnostics + robustness (minimum set)
-
-1) **Residual checks**
-- plot residuals vs fitted values; look for heteroskedasticity/nonlinearity.
-
-2) **Multicollinearity**
-- compute VIF; large VIF → unstable coefficients.
-
-3) **Time-series dependence**
-- check residual autocorrelation; use HAC when needed.
-
-4) **Stability**
-- rolling regressions or sub-sample splits; do coefficients drift?
-
-#### 8) Interpretation + reporting
-
-Always report:
-- coefficient in units (or standardized units),
-- robust SE appropriate to data structure,
-- a short causal warning unless you have a causal design.
-
-**What this does NOT mean**
-- Regression does not “control away” all confounding automatically.
-- A small p-value does not imply economic importance.
-- A high $R^2$ does not imply good forecasting out-of-sample.
-
-#### Exercises
-
-- [ ] Derive the normal equations and explain each step in words.
-- [ ] Fit OLS and HC3 (or HAC) and compare SE; explain why they differ.
-- [ ] Create two correlated regressors and show how multicollinearity affects coefficient stability.
-- [ ] Write a 6-sentence interpretation of one regression output, including what you can and cannot claim.
+This guide builds on the OLS foundations covered in [Guide 00](00_single_factor_regression_micro.md). That guide covers the core regression framework: the OLS objective and normal equations, assumptions for unbiasedness and inference, coefficient interpretation, robust standard errors, and multicollinearity diagnostics (VIF). Read it first if you have not already. Regularization modifies the OLS objective by adding a penalty term -- everything else (matrix notation, interpretation caveats, diagnostics mindset) carries over.
 
 ### Deep Dive: Ridge vs lasso — stabilizing models when features are many/correlated
 
@@ -238,24 +121,26 @@ Regularization trades a bit of bias for much lower variance.
 OLS objective:
 
 $$
-\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2.
+\min_{\beta} \; \|y - X\beta\|_2^2.
 $$
 
 Ridge (L2) objective:
 
 $$
-\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2 + \\lambda \\|\\beta\\|_2^2.
+\min_{\beta} \; \|y - X\beta\|_2^2 + \lambda \|\beta\|_2^2.
 $$
 
 Lasso (L1) objective:
 
 $$
-\\min_{\\beta} \\; \\|y - X\\beta\\|_2^2 + \\lambda \\|\\beta\\|_1.
+\min_{\beta} \; \|y - X\beta\|_2^2 + \lambda \|\beta\|_1.
 $$
 
 **What each term means**
-- $\\lambda \\ge 0$ controls penalty strength.
-- L2 shrinks coefficients smoothly; L1 can set some coefficients exactly to 0 (feature selection).
+- $\lambda \ge 0$ controls penalty strength.
+- L2 shrinks coefficients smoothly toward zero but never reaches it; L1 can set some coefficients exactly to 0 (feature selection).
+
+**Why L1 gives exact zeros (geometric intuition):** Picture the constraint region in coefficient space. For L2 (ridge), it is a circle (or hypersphere); for L1 (lasso), it is a diamond with corners on the axes. The OLS solution's contours are ellipses. The regularized solution is where the ellipses first touch the constraint region. Because the L1 diamond has sharp corners sitting on the axes, the first contact point is likely at a corner — which means one or more coefficients are exactly zero. The L2 circle has no corners, so contact typically occurs at a point where all coefficients are nonzero but shrunken. This is why lasso performs feature selection and ridge does not.
 
 #### 3) Assumptions and practical requirements
 
@@ -271,7 +156,7 @@ Regularization changes the estimand:
 Ridge has a closed-form solution:
 
 $$
-\\hat\\beta_{ridge} = (X'X + \\lambda I)^{-1} X'y.
+\hat\beta_{ridge} = (X'X + \lambda I)^{-1} X'y.
 $$
 
 Lasso does not have a simple closed form; software uses optimization (coordinate descent).
@@ -287,11 +172,11 @@ Treat inference (p-values) after lasso with caution; selection changes distribut
 
 #### 6) Diagnostics + robustness (minimum set)
 
-1) **Cross-validation for $\\lambda$**
+1) **Cross-validation for $\lambda$**
 - use time-aware CV for forecasting tasks.
 
 2) **Coefficient paths**
-- inspect how coefficients shrink as $\\lambda$ increases.
+- inspect how coefficients shrink as $\lambda$ increases.
 
 3) **Stability across folds**
 - do selected features change dramatically across time folds? That suggests instability.
@@ -299,39 +184,110 @@ Treat inference (p-values) after lasso with caution; selection changes distribut
 #### 7) Interpretation + reporting
 
 Report:
-- how $\\lambda$ was chosen,
+- how $\lambda$ was chosen,
 - whether features were standardized,
 - out-of-sample metrics and stability.
 
 #### Exercises
 
 - [ ] Fit ridge and lasso with standardized features; compare out-of-sample performance.
-- [ ] Plot coefficient paths vs $\\lambda$ and interpret shrinkage.
+- [ ] Plot coefficient paths vs $\lambda$ and interpret shrinkage.
 - [ ] Compare OLS vs ridge coefficients when features are collinear; explain why ridge is more stable.
+
+### When to Use Regularization in Practice
+
+Regularization is not always the right tool. This section clarifies when it helps, when it does not, and what tradeoffs you accept.
+
+#### Many predictors relative to observations ($p$ approaching $n$)
+
+When the number of features $p$ is large relative to the sample size $n$, OLS becomes unreliable:
+- If $p > n$, OLS cannot be computed at all (the system is underdetermined).
+- If $p$ is close to $n$, OLS overfits badly -- it can fit the training data perfectly while performing terribly out of sample.
+
+Regularization constrains the solution, making estimation feasible even when $p > n$ (lasso and ridge both work in this regime). In health economics, this arises frequently: predicting patient outcomes from hundreds of diagnosis codes, lab values, and demographic variables when the study sample is only a few thousand patients.
+
+#### High multicollinearity
+
+When predictors are highly correlated, OLS coefficients are individually unstable (high VIF). You have two options:
+1. **Drop variables** -- simple, but you lose information and must choose which to drop.
+2. **Regularize** -- ridge automatically downweights redundant predictors without discarding any, preserving all available signal for prediction.
+
+Ridge is especially useful here because it handles groups of correlated features gracefully by distributing weight among them. Lasso tends to pick one representative and zero out the rest, which can be unstable (which variable it picks may change with small data perturbations).
+
+#### Prediction vs inference tradeoff
+
+This is the most important conceptual point:
+
+- **Regularized coefficients are biased by construction.** The penalty deliberately pushes coefficients away from the OLS estimate toward zero. This bias improves prediction (lower variance more than compensates), but it means the coefficients no longer have the "unbiased estimate of the true effect" property that OLS has under exogeneity.
+
+- **Do not use regularized coefficients for causal inference or treatment effect estimation.** If your goal is "what is the effect of $x$ on $y$?", use OLS (with appropriate SE) or a causal identification strategy. If your goal is "predict $y$ as accurately as possible," regularization is often the right choice.
+
+- In practice, you might use lasso for variable *screening* (which variables seem predictive?) and then refit OLS on the selected variables for inference. But be aware that post-selection inference requires specialized methods (e.g., the "post-lasso OLS" approach of Belloni and Chernozhukov, or debiased lasso).
+
+#### Elastic net as a compromise
+
+Elastic net combines L1 and L2 penalties:
+
+$$
+\min_{\beta} \; \|y - X\beta\|_2^2 + \lambda \left[\alpha \|\beta\|_1 + (1-\alpha) \|\beta\|_2^2\right],
+$$
+
+where $\alpha \in [0,1]$ controls the mix ($\alpha=1$ is lasso, $\alpha=0$ is ridge). Elastic net is useful when:
+- you want feature selection (like lasso) but have groups of correlated features (where lasso is unstable),
+- you want the "grouping effect" of ridge (correlated features get similar coefficients) combined with sparsity.
+
+In `scikit-learn`, use `ElasticNetCV` with a grid over both $\lambda$ and $\alpha$.
+
+#### Health economics example: predicting hospital readmissions
+
+Suppose you want to predict 30-day hospital readmission from patient and hospital characteristics. You have:
+- 50+ patient features: age, sex, BMI, 20+ comorbidity indicators, lab values, medication counts, prior utilization.
+- 10+ hospital features: bed count, teaching status, nurse-to-patient ratio, region dummies.
+- $n = 3{,}000$ patients.
+
+With 60+ features and only 3,000 observations, OLS is likely to overfit. Many comorbidity indicators are correlated (e.g., diabetes and hypertension frequently co-occur). The right approach:
+
+1. Standardize all features.
+2. Fit lasso with CV to identify which features are most predictive (expect many zeros).
+3. Fit ridge with CV as a benchmark (often similar or better prediction, but no feature selection).
+4. Compare AUC or Brier score across OLS, ridge, and lasso on a held-out test set.
+5. If interpretability matters (e.g., explaining to clinicians which risk factors to target), report the lasso-selected features, but caveat that the specific selection may be unstable.
+
+**What you should NOT do:** Use the regularized coefficients to claim "diabetes increases readmission risk by X%." The coefficients are shrunken and biased. For causal claims about individual risk factors, you need a different study design.
+
+#### Exercises
+
+- [ ] Fit elastic net with a grid over $\alpha$ and $\lambda$; compare to pure ridge and lasso.
+- [ ] Take a dataset with $p > n/2$ and show that OLS fails while ridge/lasso produce reasonable predictions.
+- [ ] Discuss: why would a clinician prefer lasso over ridge for a readmission risk score? What would they lose?
 
 ### Project Code Map
 - `src/econometrics.py`: OLS + robust SE (`fit_ols`, `fit_ols_hc3`, `fit_ols_hac`) + multicollinearity (`vif_table`)
-- `src/macro.py`: GDP + labels (`gdp_growth_*`, `technical_recession_label`)
-- `src/evaluation.py`: regression metrics helpers
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
+- `src/evaluation.py`: regression metrics helpers (`regression_metrics`, `classification_metrics`)
+- `src/evaluation.py`: splits (`time_train_test_split_index`, `walk_forward_splits`)
 - `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
 
 ### Common Mistakes
-- Interpreting a coefficient as causal without a causal design.
-- Ignoring multicollinearity (high VIF) and over-trusting coefficient signs.
-- Using naive SE on time series and over-trusting p-values.
+- Fitting ridge or lasso without standardizing features first; the penalty unfairly penalizes large-scale features.
+- Interpreting regularized coefficients as unbiased estimates of causal effects.
+- Using lasso for feature selection and then reporting the lasso coefficients (instead of refitting OLS on selected features for inference).
+- Choosing $\lambda$ by training-set performance instead of cross-validation (guarantees overfitting for small $\lambda$).
+- Forgetting to use time-aware CV splits for time-series or panel data (standard k-fold leaks future information).
+- Ignoring coefficient path stability: if lasso selects different features in different CV folds, the selection is fragile.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-Regression is the core bridge between statistics and ML. You should now be able to:
-- fit interpretable linear models,
-- quantify uncertainty (robust SE), and
-- diagnose when coefficients are unstable.
-
+After working through this guide you should be able to:
+- explain the bias-variance tradeoff that motivates regularization,
+- fit ridge and lasso, plot coefficient paths, and cross-validate $\lambda$,
+- use the geometric intuition to explain why lasso gives exact zeros and ridge does not,
+- compare OLS vs regularized predictions on held-out data, and
+- recognize when regularization helps (prediction with many features) vs when it hurts (causal inference).
 
 Suggested readings:
-- Wooldridge: Introductory Econometrics (OLS, robust SE, interpretation)
-- Angrist & Pischke: Mostly Harmless Econometrics (causal thinking)
-- statsmodels docs: robust covariance (HCx, HAC)
+- Hastie, Tibshirani & Friedman: *Elements of Statistical Learning*, Ch. 3 (ridge, lasso, elastic net)
+- James, Witten, Hastie & Tibshirani: *Introduction to Statistical Learning*, Ch. 6 (regularization with R/Python labs)
+- Belloni & Chernozhukov: "High-Dimensional Methods and Inference on Structural and Treatment Effects" (2014) -- post-lasso inference
+- scikit-learn docs: `Ridge`, `Lasso`, `ElasticNet`, `RidgeCV`, `LassoCV`

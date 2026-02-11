@@ -11,237 +11,110 @@
 
 This guide accompanies the notebook `notebooks/04_unsupervised/03_anomaly_detection.ipynb`.
 
-This unsupervised module explores macro structure: factors, regimes, and anomalies.
+> **Note:** Anomaly detection is a useful general-purpose tool for flagging unusual observations in any dataset — health outcomes, financial data, survey responses. In health economics, it can help identify outlier patients, suspicious billing patterns, or unusual geographic variation. The macro-specific examples below are illustrative; the methods are domain-agnostic.
 
 ### Key Terms (defined)
-- **Unsupervised learning**: learning patterns without a labeled target.
-- **PCA**: rotates correlated features into uncorrelated components (factors).
-- **Loadings**: how strongly each original variable contributes to a component.
-- **Clustering**: grouping similar periods into regimes.
-- **Anomaly detection**: flagging unusual points (often crisis periods).
-
-
-### How To Read This Guide
-- Use **Step-by-Step** to understand what you must implement in the notebook.
-- Use **Technical Explanations** to learn the math/assumptions (open any `<details>` blocks for optional depth).
-- Then return to the notebook and write a short interpretation note after each section.
+- **Anomaly / outlier**: an observation that is substantially different from the typical pattern in the data.
+- **Anomaly score**: a numerical measure of how "unusual" an observation is — higher (or lower, depending on convention) = more anomalous.
+- **Mahalanobis distance**: multivariate distance from the mean, scaled by the covariance matrix — accounts for correlation between features.
+- **Isolation forest**: a tree-based method that identifies anomalies as observations that are "easy to isolate" (few random splits needed).
+- **PCA reconstruction error**: fit PCA, reconstruct each observation from the top components, and measure the reconstruction error. Anomalies have high error.
 
 <a id="step-by-step"></a>
 ## Step-by-Step and Alternative Examples
 
 ### What You Should Implement (Checklist)
-- Complete notebook section: Fit detector
-- Complete notebook section: Inspect anomalies
-- Complete notebook section: Compare to recessions
-- Standardize features before PCA/clustering (units matter).
-- Interpret components/clusters economically (give them names).
-- Compare regimes/anomalies to your recession labels (do they align?).
+- Standardize features before applying any anomaly detection method.
+- Fit at least two methods (e.g., Mahalanobis + Isolation Forest).
+- List the top 10 anomalous periods; inspect what makes them unusual.
+- Compare flagged anomalies to known crisis dates (2008, 2020).
+- Vary the anomaly threshold and report how the number of flagged periods changes.
 
 ### Alternative Example (Not the Notebook Solution)
 ```python
-# Toy PCA (not the notebook data):
 import numpy as np
-from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+from scipy.spatial.distance import mahalanobis
 
-X = np.random.randn(200, 5)
-X = StandardScaler().fit_transform(X)
-pca = PCA(n_components=2).fit(X)
+rng = np.random.default_rng(42)
+X = rng.normal(size=(200, 4))
+X[10] = [5, -4, 6, -3]  # inject an obvious outlier
+X[100] = [4, 5, -5, 4]
+
+X_scaled = StandardScaler().fit_transform(X)
+
+# Isolation Forest
+iso = IsolationForest(contamination=0.05, random_state=0).fit(X_scaled)
+scores = iso.decision_function(X_scaled)
+print("Top 5 anomalous indices:", np.argsort(scores)[:5])
+
+# Mahalanobis distance
+cov = np.cov(X_scaled, rowvar=False)
+cov_inv = np.linalg.inv(cov)
+mean = X_scaled.mean(axis=0)
+mah_dists = [mahalanobis(x, mean, cov_inv) for x in X_scaled]
+print("Top 5 Mahalanobis:", np.argsort(mah_dists)[-5:])
 ```
 
 
 <a id="technical"></a>
 ## Technical Explanations (Code + Math + Interpretation)
 
-### Core Unsupervised Learning: describe structure before predicting
+### What anomaly detection does
 
-Unsupervised methods are tools for *description* rather than *prediction*:
-they help you understand structure in the indicators without a target label.
+Anomaly detection assigns a score to each observation measuring how "unusual" it is relative to the bulk of the data. It is unsupervised — no labels required — and produces a ranking rather than a binary classification.
 
-#### 1) Intuition (plain English)
+### Method comparison
 
-In macro and finance, variables move together for many reasons:
-- common shocks,
-- regimes (expansions vs recessions),
-- measurement changes.
+| Method | Idea | Strengths | Weaknesses |
+|---|---|---|---|
+| **Mahalanobis distance** | Distance from multivariate mean, scaled by covariance | Fast, interpretable, principled for Gaussian data | Assumes elliptical distribution; sensitive to outliers in the covariance estimate |
+| **Isolation forest** | Anomalies are "easy to isolate" with random splits | Handles nonlinear patterns; no distributional assumptions | Less interpretable — hard to explain *why* a point is anomalous |
+| **PCA reconstruction error** | Fit PCA, measure $\|x - \hat{x}\|$ | Good when anomalies deviate from the main factor structure | Sensitive to number of components; misses anomalies along main PCs |
 
-Unsupervised methods help answer:
-- “Are there a few latent factors driving many series?” (PCA)
-- “Do observations cluster into regimes?” (clustering)
-- “Which periods look unusual?” (anomaly detection)
+### Mahalanobis distance
 
-These outputs are best treated as hypotheses you can investigate, not as causal explanations.
-
-#### 2) Notation + setup (define symbols)
-
-Let $X$ be an $n \\times p$ feature matrix:
-- rows: time periods or entities,
-- columns: standardized indicators.
-
-Standardization is often essential:
+For observation $x$ with sample mean $\bar{x}$ and covariance matrix $S$:
 
 $$
-\\tilde x_{ij} = \\frac{x_{ij} - \\bar x_j}{s_j}
+d_M(x) = \sqrt{(x - \bar{x})' S^{-1} (x - \bar{x})}.
 $$
 
-**What each term means**
-- $\\bar x_j$: mean of feature $j$,
-- $s_j$: standard deviation of feature $j$,
-- standardization prevents high-variance features from dominating.
+Under multivariate normality, $d_M^2$ is approximately $\chi^2_p$ (where $p$ is the number of features), giving a natural threshold for flagging anomalies.
 
-#### 3) Assumptions (and what can go wrong)
+### Diagnostics checklist
 
-Unsupervised methods assume:
-- features are comparable after scaling,
-- distance/variance summaries reflect meaningful structure.
+1. **Known-event sanity** — do major crisis periods appear as anomalies?
+2. **Feature contribution** — which features drive the anomaly score? Inspect the deviations.
+3. **Threshold sensitivity** — how many anomalies do you flag at different thresholds?
+4. **Method agreement** — do different methods flag the same observations?
 
-Common failure modes:
-- forgetting to standardize,
-- including strong trends (nonstationarity) so “clusters” become time periods,
-- over-interpreting factors as “the economy’s true drivers.”
-
-#### 4) Estimation mechanics (high level)
-
-- **PCA:** finds orthogonal directions that explain maximal variance.
-- **Clustering (k-means):** partitions observations to minimize within-cluster distances.
-- **Anomaly detection:** flags observations far from the “typical” pattern.
-
-#### 5) Diagnostics + robustness (minimum set)
-
-1) **Standardization check**
-- confirm features have mean ~0 and std ~1 after scaling.
-
-2) **Stability**
-- do PCA loadings or cluster assignments change a lot if you change the sample period?
-
-3) **Interpretability**
-- can you label factors/clusters with economic meaning using external context?
-
-4) **Sensitivity**
-- try different numbers of components/clusters; do conclusions persist?
-
-#### 6) Interpretation + reporting
-
-Report:
-- preprocessing (standardization, transformations),
-- chosen hyperparameters (k, number of PCs),
-- stability checks.
-
-**What this does NOT mean**
-- Clusters are not proof of causal regimes.
-- PCA components are not “true” economic factors; they are variance summaries.
+### What this does NOT mean
+- Anomalies are flags, not causal explanations.
+- A point can be anomalous in one feature space and normal in another.
+- Structural breaks can shift what is "normal," so fixed thresholds may not work across regimes.
 
 #### Exercises
 
-- [ ] Standardize a feature matrix and verify means/stds.
-- [ ] Fit PCA and interpret the top component using loadings.
-- [ ] Cluster the dataset and compare cluster periods to known recessions.
-- [ ] Try two different k values and explain how clustering changes.
-
-### Deep Dive: Anomaly detection — finding “unusual” macro periods
-
-Anomaly detection flags observations that look unusual relative to typical patterns.
-
-#### 1) Intuition (plain English)
-
-Crises (2008, 2020) look different in multivariate indicator space.
-Anomaly detection can highlight these periods without a recession label.
-
-Use it to:
-- detect outliers,
-- generate hypotheses,
-- build monitoring dashboards.
-
-#### 2) Notation + setup (define symbols)
-
-Let $x_t$ be the feature vector at time $t$.
-An anomaly detector produces a score:
-$$
-s_t = s(x_t),
-$$
-where larger (or smaller, depending on convention) means “more anomalous.”
-
-Simple baseline: z-score on one feature:
-$$
-z_t = \\frac{x_t - \\bar x}{s}.
-$$
-
-Multivariate baselines:
-- distance from mean (Mahalanobis distance),
-- isolation forest score,
-- reconstruction error from PCA.
-
-#### 3) Assumptions
-
-Anomaly detection assumes:
-- features are scaled comparably,
-- “typical” behavior exists and is represented in the data.
-
-Structural breaks can shift what is “normal,” so anomaly thresholds should be treated as time-varying in real monitoring.
-
-#### 4) Estimation mechanics (high level)
-
-Common approaches:
-- **PCA reconstruction:** anomalies have large reconstruction error using a few PCs.
-- **Isolation forest:** anomalies are easier to isolate with random splits.
-- **Distance-based:** far from center in standardized space.
-
-#### 5) Inference: focus on false positives/negatives
-
-Anomaly detection is not hypothesis testing; it is a scoring/ranking tool.
-Validate by:
-- checking whether known crises score high,
-- inspecting the top anomalies qualitatively.
-
-#### 6) Diagnostics + robustness (minimum set)
-
-1) **Known-event sanity**
-- do 2008/2020 periods appear as anomalies?
-
-2) **Feature contribution**
-- which features drive the anomaly score? (inspect deviations)
-
-3) **Threshold sensitivity**
-- how many anomalies do you flag under different thresholds?
-
-4) **Stability**
-- do top anomalies persist if you change feature set or standardization window?
-
-#### 7) Interpretation + reporting
-
-Report:
-- anomaly method and preprocessing,
-- how threshold was chosen,
-- examples of top anomalies and what indicators drove them.
-
-**What this does NOT mean**
-- anomalies are not causal explanations; they are flags.
-
-#### Exercises
-
-- [ ] Fit an anomaly detector and list the top 10 anomalous dates; interpret at least 3.
-- [ ] Compare two methods (PCA reconstruction vs isolation forest) and discuss differences.
-- [ ] Vary the anomaly threshold and report how many periods are flagged.
+- [ ] Fit two anomaly detectors and list the top 10 anomalous dates from each; compare overlap.
+- [ ] For the top 3 anomalies, identify which features drive the high score.
+- [ ] Vary the contamination/threshold parameter and plot the number of flagged periods.
 
 ### Project Code Map
-- `src/features.py`: feature engineering helpers (standardization happens in notebooks)
-- `data/sample/panel_monthly_sample.csv`: offline dataset for experimentation
-- `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
-- `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
-- `src/evaluation.py`: splits + metrics (`time_train_test_split_index`, `walk_forward_splits`, `regression_metrics`, `classification_metrics`)
+- `src/features.py`: feature engineering helpers
+- `data/sample/panel_monthly_sample.csv`: offline dataset
 
 ### Common Mistakes
-- Forgetting to standardize (PCA will just pick the biggest-unit variable).
-- Interpreting a cluster label as a causal regime without validation.
-- Using too many components/clusters and overfitting noise.
+- Forgetting to standardize before computing distances.
+- Using a single method without cross-checking with another.
+- Over-interpreting anomalies as "something is wrong" — they are simply unusual observations.
 
 <a id="summary"></a>
 ## Summary + Suggested Readings
 
-Unsupervised tools help you understand macro data structure even before prediction.
-They are especially useful for detecting regime shifts and crisis periods.
-
+Anomaly detection flags unusual observations in multivariate data. Use multiple methods, validate against known events, and treat results as hypotheses.
 
 Suggested readings:
-- Jolliffe: Principal Component Analysis
-- scikit-learn docs: PCA, clustering, anomaly detection
+- scikit-learn docs: IsolationForest, outlier detection
+- Aggarwal (2017): *Outlier Analysis*
