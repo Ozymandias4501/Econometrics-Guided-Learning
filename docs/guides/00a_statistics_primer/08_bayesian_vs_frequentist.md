@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/08_bayesian_vs_frequentist.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/08_bayesian_vs_frequentist.ipynb`.
 
 The frequentist and Bayesian paradigms represent two philosophies of probability and statistical inference. This project primarily uses frequentist methods (OLS, p-values, confidence intervals), but understanding the Bayesian perspective enriches your thinking about uncertainty, prior knowledge, and regularization.
 

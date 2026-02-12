@@ -20,6 +20,6 @@ If you are new to pandas time series, go slowly and copy small snippets into a s
 - After finishing, write 3-5 sentences summarizing what you learned and what could go wrong in a real project.
 
 ## Chapters
-- [00_setup](00_setup.md) — Notebook: [00_setup.ipynb](../../../notebooks/00_foundations/00_setup.ipynb)
-- [01_time_series_basics](01_time_series_basics.md) — Notebook: [01_time_series_basics.ipynb](../../../notebooks/00_foundations/01_time_series_basics.ipynb)
-- [02_stats_basics_for_ml](02_stats_basics_for_ml.md) — Notebook: [02_stats_basics_for_ml.ipynb](../../../notebooks/00_foundations/02_stats_basics_for_ml.ipynb)
+- [00_setup](00_setup.md) — Notebook: [00_setup.ipynb](../../../notebooks/00b_foundations/00_setup.ipynb)
+- [01_time_series_basics](01_time_series_basics.md) — Notebook: [01_time_series_basics.ipynb](../../../notebooks/00b_foundations/01_time_series_basics.ipynb)
+- [02_stats_basics_for_ml](02_stats_basics_for_ml.md) — Notebook: [02_stats_basics_for_ml.ipynb](../../../notebooks/00b_foundations/02_stats_basics_for_ml.ipynb)

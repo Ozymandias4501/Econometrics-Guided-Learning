@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/05_hypothesis_testing_foundations.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/05_hypothesis_testing_foundations.ipynb`.
 
 Hypothesis testing is the formal framework for deciding whether observed patterns in data are "real" or could have arisen by chance. Every p-value and every significance star in a regression table is the output of a hypothesis test. This guide covers the logic, the error types, and the most common misinterpretations.
 

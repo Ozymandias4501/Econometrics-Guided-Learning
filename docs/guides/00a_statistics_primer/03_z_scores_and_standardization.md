@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/03_z_scores_and_standardization.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/03_z_scores_and_standardization.ipynb`.
 
 A z-score tells you how many standard deviations a value is from the mean. This simple transformation is the basis of every t-statistic in regression output: $t_j = \hat\beta_j / SE(\hat\beta_j)$ is a z-score for the coefficient. Understanding standardization here makes all of regression inference more intuitive.
 

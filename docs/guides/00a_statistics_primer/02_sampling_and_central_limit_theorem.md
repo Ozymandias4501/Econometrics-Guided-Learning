@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/02_sampling_and_central_limit_theorem.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/02_sampling_and_central_limit_theorem.ipynb`.
 
 The Central Limit Theorem (CLT) is arguably the most important result in applied statistics. It explains why inference works: regardless of the shape of the underlying data, sample means become approximately normally distributed as sample size grows. This justifies t-tests, confidence intervals, and regression inference even when the raw data is skewed or non-normal.
 

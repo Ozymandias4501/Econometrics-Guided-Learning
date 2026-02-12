@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/00_descriptive_statistics.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/00_descriptive_statistics.ipynb`.
 
 Descriptive statistics are the first tool you reach for with any new dataset. They summarize the central tendency (where is the data centered?), spread (how variable is it?), and shape (is it symmetric? heavy-tailed?) of your variables. These summaries inform every modeling decision downstream — from choosing transformations to detecting data quality issues.
 

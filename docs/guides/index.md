@@ -4,27 +4,27 @@ Guides are grouped to mirror `notebooks/` folders.
 
 Use `docs/index.md` for the recommended learning path.
 
-## 00_statistics_primer
+## 00a_statistics_primer
 
-- [Part overview](00_statistics_primer/index.md)
+- [Part overview](00a_statistics_primer/index.md)
 
-- [00_descriptive_statistics](00_statistics_primer/00_descriptive_statistics.md)
-- [01_probability_distributions](00_statistics_primer/01_probability_distributions.md)
-- [02_sampling_and_central_limit_theorem](00_statistics_primer/02_sampling_and_central_limit_theorem.md)
-- [03_z_scores_and_standardization](00_statistics_primer/03_z_scores_and_standardization.md)
-- [04_confidence_intervals](00_statistics_primer/04_confidence_intervals.md)
-- [05_hypothesis_testing_foundations](00_statistics_primer/05_hypothesis_testing_foundations.md)
-- [06_common_statistical_tests](00_statistics_primer/06_common_statistical_tests.md)
-- [07_correlation_and_covariance](00_statistics_primer/07_correlation_and_covariance.md)
-- [08_bayesian_vs_frequentist](00_statistics_primer/08_bayesian_vs_frequentist.md)
+- [00_descriptive_statistics](00a_statistics_primer/00_descriptive_statistics.md)
+- [01_probability_distributions](00a_statistics_primer/01_probability_distributions.md)
+- [02_sampling_and_central_limit_theorem](00a_statistics_primer/02_sampling_and_central_limit_theorem.md)
+- [03_z_scores_and_standardization](00a_statistics_primer/03_z_scores_and_standardization.md)
+- [04_confidence_intervals](00a_statistics_primer/04_confidence_intervals.md)
+- [05_hypothesis_testing_foundations](00a_statistics_primer/05_hypothesis_testing_foundations.md)
+- [06_common_statistical_tests](00a_statistics_primer/06_common_statistical_tests.md)
+- [07_correlation_and_covariance](00a_statistics_primer/07_correlation_and_covariance.md)
+- [08_bayesian_vs_frequentist](00a_statistics_primer/08_bayesian_vs_frequentist.md)
 
-## 00_foundations
+## 00b_foundations
 
-- [Part overview](00_foundations/index.md)
+- [Part overview](00b_foundations/index.md)
 
-- [00_setup](00_foundations/00_setup.md)
-- [01_time_series_basics](00_foundations/01_time_series_basics.md)
-- [02_stats_basics_for_ml](00_foundations/02_stats_basics_for_ml.md)
+- [00_setup](00b_foundations/00_setup.md)
+- [01_time_series_basics](00b_foundations/01_time_series_basics.md)
+- [02_stats_basics_for_ml](00b_foundations/02_stats_basics_for_ml.md)
 
 ## 01_data
 

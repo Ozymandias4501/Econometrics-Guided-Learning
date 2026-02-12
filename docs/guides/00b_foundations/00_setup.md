@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_foundations/00_setup.ipynb`.
+This guide accompanies the notebook `notebooks/00b_foundations/00_setup.ipynb`.
 
 This notebook configures your environment, verifies API keys, loads sample data, and introduces the validation patterns you will use in every subsequent notebook. No modeling happens here — the goal is to make sure everything runs and you understand the project layout before moving on.
 
@@ -64,7 +64,7 @@ print(f"Missing values:\n{df.isna().sum().sort_values(ascending=False).head(5)}"
 ```
 stats_learning/
 ├── notebooks/          ← where you work (Jupyter, section by section)
-│   ├── 00_foundations/
+│   ├── 00b_foundations/
 │   ├── 01_data/
 │   ├── 02_regression/
 │   └── ...

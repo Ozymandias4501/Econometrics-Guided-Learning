@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/07_correlation_and_covariance.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/07_correlation_and_covariance.ipynb`.
 
 Correlation analysis is the gateway to regression. Before fitting any model, you should understand how your variables relate to each other. But correlation is also one of the most misused statistics — especially in economics, where trending time series produce spurious correlations and confounding variables create misleading associations.
 
