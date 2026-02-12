@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_foundations/02_stats_basics_for_ml.ipynb`.
+This guide accompanies the notebook `notebooks/00b_foundations/02_stats_basics_for_ml.ipynb`.
 
 This guide covers the statistical foundations that every applied analysis rests on: hypothesis testing, confidence intervals, the distinction between correlation and causation, the law of large numbers and CLT, multicollinearity, and the bias-variance tradeoff. These are not abstract topics -- they determine whether your regression output is trustworthy or misleading.
 

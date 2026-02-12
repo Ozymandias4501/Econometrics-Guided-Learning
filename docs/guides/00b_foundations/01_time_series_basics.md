@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_foundations/01_time_series_basics.ipynb`.
+This guide accompanies the notebook `notebooks/00b_foundations/01_time_series_basics.ipynb`.
 
 Time-series data is the backbone of health economics research: quarterly national health expenditure accounts, monthly hospital admission counts, weekly flu surveillance reports, daily ICU census data. The defining feature is that **observations are ordered in time and neighboring observations are correlated**. This single fact breaks the i.i.d. assumption that underlies most introductory statistics and many ML defaults.
 

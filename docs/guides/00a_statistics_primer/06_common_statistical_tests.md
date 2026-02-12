@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/06_common_statistical_tests.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/06_common_statistical_tests.ipynb`.
 
 This guide covers the practical application of hypothesis testing through specific statistical tests. Each test answers a different question about your data: Is a mean different from a target? Do two groups differ? Are categorical variables independent? Are regression coefficients jointly significant? Choosing the right test is as important as running it correctly.
 

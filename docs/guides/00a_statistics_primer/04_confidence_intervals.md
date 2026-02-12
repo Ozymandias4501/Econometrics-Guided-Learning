@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/04_confidence_intervals.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/04_confidence_intervals.ipynb`.
 
 Confidence intervals quantify uncertainty about estimated parameters. They appear in every regression table (the [0.025, 0.975] columns in statsmodels), every policy report, and every empirical paper. Yet they are among the most commonly misinterpreted statistics. This guide provides the mathematical construction and, more importantly, the correct interpretation.
 

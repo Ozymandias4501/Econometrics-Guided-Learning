@@ -9,7 +9,7 @@
 <a id="intro"></a>
 ## Intro of Concept Explained
 
-This guide accompanies the notebook `notebooks/00_statistics_primer/01_probability_distributions.ipynb`.
+This guide accompanies the notebook `notebooks/00a_statistics_primer/01_probability_distributions.ipynb`.
 
 Probability distributions are the mathematical models that describe randomness. Every hypothesis test, every confidence interval, and every p-value in this project assumes some underlying distribution. This guide provides the mathematical details behind the distributions you will encounter: Normal, t, chi-squared, F, binomial, and Poisson.
 
