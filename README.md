@@ -12,6 +12,27 @@ Hands-on, notebook-first curriculum that teaches statistics, econometrics, and M
 
 The full recommended sequence is in [`docs/index.md`](docs/index.md).
 
+## How It Works
+
+### Notebooks are the primary workspace
+
+Each `.ipynb` is markdown-heavy: it explains the concept, then gives you incomplete code cells marked with `TODO`. You fill in the code, run the cell, and interpret the output. Every notebook ends with a collapsed **Solutions (Reference)** section you can expand to self-check.
+
+### Docs mirror notebooks 1:1
+
+Every notebook has a matching guide in `docs/guides/` with the **same name** (`.ipynb` → `.md`):
+
+```
+notebooks/02_regression/05_regularization_ridge_lasso.ipynb   ← hands-on work
+docs/guides/02_regression/05_regularization_ridge_lasso.md    ← math, assumptions, deeper context
+```
+
+The notebooks keep you moving; the guides are the reference when you want the *why* behind a method. You don't need to read guides front-to-back — open them when a notebook concept needs more depth.
+
+### Offline-first data pattern
+
+Notebooks try to load from `data/processed/` (real pipeline output) and fall back to `data/sample/` (bundled small datasets). This means you can work through the entire curriculum without an internet connection or API keys — live data just makes it richer.
+
 ## Setup
 
 ```bash
