@@ -17,15 +17,9 @@ install-dev: install ## Install runtime + dev dependencies
 test: ## Run test suite
 	$(PYTHON) -m pytest tests/ -v
 
-test-quick: ## Run tests without optional-dependency tests
-	$(PYTHON) -m pytest tests/ -v -k "not linearmodels"
-
 # ── Data ─────────────────────────────────────────────────────────────────
 fetch-fred: ## Fetch FRED series (requires FRED_API_KEY env var)
-	$(PYTHON) scripts/fetch_fred.py
-
-fetch-cms: ## Fetch CMS health data (no API key needed)
-	$(PYTHON) -c "from src.health_data import fetch_cms_dataset; print('CMS fetch ready')"
+	$(PYTHON) scripts/fetch_fred.py --config configs/fred.yaml
 
 # ── Housekeeping ─────────────────────────────────────────────────────────
 clean: ## Remove cached data and Python artifacts

@@ -1,0 +1,11 @@
+fred:
+  start_date: "1980-01-01"
+  end_date: null
+  gdp_series: "GDPC1"  # real GDP (quarterly)
+  series:
+    - "UNRATE"     # unemployment rate (monthly)
+    - "FEDFUNDS"   # fed funds rate (monthly)
+    - "CPIAUCSL"   # CPI (monthly)
+    - "INDPRO"     # industrial production (monthly)
+    - "RSAFS"      # retail sales (monthly)
+    - "T10Y2Y"     # 10y-2y treasury spread (daily)

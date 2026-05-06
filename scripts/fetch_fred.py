@@ -1,7 +1,7 @@
 """Fetch and cache FRED series JSON.
 
 Usage:
-  python scripts/fetch_fred.py --config configs/recession.yaml
+  python scripts/fetch_fred.py --config configs/fred.yaml
 
 Writes:
   data/raw/fred/<SERIES_ID>.json
