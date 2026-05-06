@@ -88,8 +88,6 @@ configs/            YAML configs for the CLI pipeline
 data/sample/        Small offline datasets (always available)
 data/raw/           Raw API downloads (gitignored)
 data/processed/     Pipeline output (gitignored)
-apps/               Capstone Streamlit dashboard
-reports/            Capstone report template
 ```
 
 ## Running Tests
@@ -97,10 +95,4 @@ reports/            Capstone report template
 ```bash
 pip install -r requirements-dev.txt
 pytest
-```
-
-## Capstone Dashboard
-
-```bash
-streamlit run apps/streamlit_app.py
 ```

@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint fetch-fred train dashboard clean help
+.PHONY: install install-dev test lint fetch-fred clean help
 
 PYTHON ?= python
 
@@ -26,14 +26,6 @@ fetch-fred: ## Fetch FRED series (requires FRED_API_KEY env var)
 
 fetch-cms: ## Fetch CMS health data (no API key needed)
 	$(PYTHON) -c "from src.health_data import fetch_cms_dataset; print('CMS fetch ready')"
-
-# ── Train ────────────────────────────────────────────────────────────────
-train: ## Train recession classifier
-	$(PYTHON) scripts/train_recession_classifier.py
-
-# ── Apps ─────────────────────────────────────────────────────────────────
-dashboard: ## Launch Streamlit dashboard
-	streamlit run apps/recession_dashboard.py
 
 # ── Housekeeping ─────────────────────────────────────────────────────────
 clean: ## Remove cached data and Python artifacts
