@@ -313,10 +313,18 @@ Typical findings from the literature and from SHAP analysis:
 - **Using training-set permutation importance.** This reflects what the model memorized, not what generalizes. Always permute on held-out data.
 - **Over-tuning on a single validation fold.** Use walk-forward or repeated time splits for hyperparameter tuning.
 
+### Using XGBoost specifically
+
+The notebook fits both `RandomForestClassifier` and `XGBClassifier` on the same train/test split. A few `XGBClassifier`-specific tips:
+
+- Set `tree_method='hist'` — the histogram-based splitter is much faster than the default and matches LightGBM's strategy. It is the right default for tabular data.
+- Provide `eval_metric` explicitly (e.g., `'logloss'` for binary classification) so XGBoost does not warn about the default.
+- For early stopping, pass an `eval_set` and set `early_stopping_rounds=50`. XGBoost will stop adding trees when the validation log-loss has not improved for that many rounds, picking the best `n_estimators` automatically.
+- Tune `learning_rate` and `n_estimators` together: halving the learning rate roughly doubles the trees you need. A common starting point is `learning_rate=0.05` with `n_estimators=300–1000` and early stopping.
+- For small imbalanced datasets (the recession task is one), use `scale_pos_weight = (#negatives / #positives)` to up-weight the positive class.
+
 ### Project Code Map
 - `src/evaluation.py`: classification metrics (ROC-AUC, PR-AUC, Brier, precision/recall) and splits (`time_train_test_split_index`, `walk_forward_splits`)
-- `scripts/train_recession.py`: training script that writes artifacts
-- `scripts/predict_recession.py`: prediction script that loads artifacts
 - `src/data.py`: caching helpers (`load_or_fetch_json`, `load_json`, `save_json`)
 - `src/features.py`: feature helpers (`to_monthly`, `add_lag_features`, `add_pct_change_features`, `add_rolling_features`)
 

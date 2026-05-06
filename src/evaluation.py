@@ -16,6 +16,7 @@ from sklearn.metrics import (
     precision_score,
     r2_score,
     recall_score,
+    root_mean_squared_error,
     roc_auc_score,
 )
 
@@ -69,7 +70,7 @@ def walk_forward_splits(
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     return {
         "mae": float(mean_absolute_error(y_true, y_pred)),
-        "rmse": float(mean_squared_error(y_true, y_pred, squared=False)),
+        "rmse": float(root_mean_squared_error(y_true, y_pred)),
         "r2": float(r2_score(y_true, y_pred)),
     }
 

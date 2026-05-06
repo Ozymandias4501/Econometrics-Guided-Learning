@@ -9,7 +9,7 @@ This part builds the statistical vocabulary and intuition that every later modul
 - The logic of hypothesis testing, p-values, and statistical power
 - How to choose and apply the right statistical test
 - The difference between correlation and causation
-- Bayesian vs frequentist perspectives on probability
+- How to read every metric in a regression or ML output table
 
 ## Prerequisites
 - Basic Python (variables, functions, loops)
@@ -32,4 +32,4 @@ This part builds the statistical vocabulary and intuition that every later modul
 - [05_hypothesis_testing_foundations](05_hypothesis_testing_foundations.md) — Notebook: [05_hypothesis_testing_foundations.ipynb](../../../notebooks/00a_statistics_primer/05_hypothesis_testing_foundations.ipynb)
 - [06_common_statistical_tests](06_common_statistical_tests.md) — Notebook: [06_common_statistical_tests.ipynb](../../../notebooks/00a_statistics_primer/06_common_statistical_tests.ipynb)
 - [07_correlation_and_covariance](07_correlation_and_covariance.md) — Notebook: [07_correlation_and_covariance.ipynb](../../../notebooks/00a_statistics_primer/07_correlation_and_covariance.ipynb)
-- [08_bayesian_vs_frequentist](08_bayesian_vs_frequentist.md) — Notebook: [08_bayesian_vs_frequentist.ipynb](../../../notebooks/00a_statistics_primer/08_bayesian_vs_frequentist.ipynb)
+- [08_metrics_and_accuracy_vs_precision](08_metrics_and_accuracy_vs_precision.md) — Notebook: [08_metrics_and_accuracy_vs_precision.ipynb](../../../notebooks/00a_statistics_primer/08_metrics_and_accuracy_vs_precision.ipynb)

@@ -1,16 +1,28 @@
 # Econometrics Guided Learning
 
-Hands-on, notebook-first curriculum that teaches statistics, econometrics, and ML using real data from the **FRED** and **US Census** APIs. Notebooks are markdown-heavy with intentional TODOs — you write the code, then check against collapsed solutions.
+Hands-on, notebook-first curriculum that takes a rusty econ major from first-principles statistics to OLS regression with HAC robust inference and tree-based ML (Random Forest + XGBoost) on real macro data from the **FRED** API. Notebooks are markdown-heavy with intentional TODOs — you write the code, then check against collapsed solutions.
 
 ## Pick Your Starting Point
 
 | Your background | Start at | Path |
 |---|---|---|
-| **Rusty on stats** — need a refresher on distributions, hypothesis testing, confidence intervals | **00a Statistics Primer** | `notebooks/00a_statistics_primer/` (9 notebooks) |
-| **Comfortable with stats** — ready for applied econometrics and ML | **00b Foundations** | `notebooks/00b_foundations/` then `01_data/` onward |
-| **Experienced** — want causal inference, time-series econ, or the capstone | **Jump ahead** | `notebooks/06_causal/`, `07_time_series_econ/`, or `08_capstone/` |
+| **Rusty on stats** — need a refresher on distributions, hypothesis testing, confidence intervals, RMSE/R²/F-stats | **00a Statistics Primer** | `notebooks/00a_statistics_primer/` (9 notebooks) |
+| **Comfortable with stats** — ready for applied econometrics + ML | **00b Foundations → 01 Data → 02 Regression → 02b ML Regression → 03 Classification** | start at `notebooks/00b_foundations/` |
 
-The full recommended sequence is in [`docs/index.md`](docs/index.md).
+The full sequence is in [`docs/index.md`](docs/index.md).
+
+## Curriculum Map
+
+Six sections, ~32 notebooks:
+
+| # | Section | What you learn |
+|---|---|---|
+| 1 | **00a Statistics Primer** | Descriptive stats, distributions, sampling/CLT, CIs, hypothesis testing, correlation, and a metrics primer that maps RMSE / R² / F-stat / accuracy / precision / recall / F1 / AUC to where they appear in OLS, sklearn, and xgboost output. |
+| 2 | **00b Foundations** | Project setup and time-series indexing patterns. |
+| 3 | **01 Data** | FRED API + caching; building a quarterly macro panel; recession label. |
+| 4 | **02 Regression** | OLS single- and multi-factor (micro and macro); functional forms and interactions; residual diagnostics; HAC (Newey–West) robust inference; Ridge/Lasso regularization; rolling-window stability. |
+| 5 | **02b ML Regression** *(new)* | Same target as section 4 (next-quarter GDP growth) with `RandomForestRegressor` and `XGBRegressor`. Walk-forward CV, hyperparameter tuning, permutation importance, and a final OLS-vs-RF-vs-XGBoost comparison table. |
+| 6 | **03 Classification** | Recession prediction with logistic regression and tree/XGBoost classifiers. Confusion matrix, accuracy, precision, recall, F1, ROC-AUC, calibration, walk-forward validation. |
 
 ## How It Works
 
@@ -27,11 +39,11 @@ notebooks/02_regression/05_regularization_ridge_lasso.ipynb   ← hands-on work
 docs/guides/02_regression/05_regularization_ridge_lasso.md    ← math, assumptions, deeper context
 ```
 
-The notebooks keep you moving; the guides are the reference when you want the *why* behind a method. You don't need to read guides front-to-back — open them when a notebook concept needs more depth.
+The notebooks keep you moving; the guides are the reference when you want the *why* behind a method.
 
 ### Offline-first data pattern
 
-Notebooks try to load from `data/processed/` (real pipeline output) and fall back to `data/sample/` (bundled small datasets). This means you can work through the entire curriculum without an internet connection or API keys — live data just makes it richer.
+Notebooks try to load from `data/processed/` (real pipeline output) and fall back to `data/sample/` (bundled small datasets). You can work through the entire curriculum without an internet connection or API key — live FRED data just makes it richer.
 
 ## Setup
 
@@ -40,41 +52,30 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### API Keys
-
-Two free API keys power the live-data notebooks:
+### API Key (optional)
 
 | API | Env var | Where to get it |
 |---|---|---|
 | **FRED** (macro time series) | `FRED_API_KEY` | [fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html) |
-| **US Census ACS** (county demographics) | `CENSUS_API_KEY` | [api.census.gov/data/key_signup.html](https://api.census.gov/data/key_signup.html) |
 
-FRED is required for live data fetches; Census is optional. You can still work through every notebook offline using the bundled `data/sample/` datasets.
+FRED is free. With a key you can fetch live data via `make fetch-fred`. Without one, every notebook still runs against the bundled `data/sample/macro_quarterly_sample.csv`.
 
-### Providing Your Keys
+### Providing your key
 
 **Option A — Export in your shell** (quick, ephemeral)
 ```bash
 export FRED_API_KEY="your-key"
-export CENSUS_API_KEY="your-key"   # optional
 ```
-Pros: nothing to manage, nothing to accidentally commit.
-Cons: you re-type it every new terminal session (unless you add it to `~/.bashrc`).
 
-**Option B — `.env` file** (persistent, project-scoped)
-
-Create a `.env` file in the repo root (it is already gitignored):
+**Option B — `.env` file** (persistent, project-scoped; already gitignored)
 ```
 FRED_API_KEY=your-key
-CENSUS_API_KEY=your-key
 ```
-Then load it in Python with `python-dotenv`, or source it before launching Jupyter:
+Source it before launching Jupyter:
 ```bash
 set -a && source .env && set +a
 jupyter notebook
 ```
-Pros: keys persist across sessions and stay scoped to this project.
-Cons: one more file to protect — never commit it or share it.
 
 ## Repo Layout
 
@@ -82,14 +83,12 @@ Cons: one more file to protect — never commit it or share it.
 notebooks/          Curriculum notebooks grouped by topic
 docs/index.md       Navigation hub and recommended learning path
 docs/guides/        One deep-dive guide per notebook
-src/                Reusable utilities (API clients, feature engineering, econ helpers)
-scripts/            CLI pipeline (fetch / build / train / predict) → outputs/
-configs/            YAML configs for the CLI pipeline
+docs/cheatsheets/   One-page references (regression diagnostics, metrics, etc.)
+src/                Reusable utilities (FRED API, feature engineering, econ helpers)
+scripts/            FRED fetch CLI
 data/sample/        Small offline datasets (always available)
 data/raw/           Raw API downloads (gitignored)
 data/processed/     Pipeline output (gitignored)
-apps/               Capstone Streamlit dashboard
-reports/            Capstone report template
 ```
 
 ## Running Tests
@@ -97,10 +96,4 @@ reports/            Capstone report template
 ```bash
 pip install -r requirements-dev.txt
 pytest
-```
-
-## Capstone Dashboard
-
-```bash
-streamlit run apps/streamlit_app.py
 ```
