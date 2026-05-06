@@ -2,6 +2,7 @@ numpy
 pandas
 requests
 scikit-learn
+xgboost
 matplotlib
 seaborn
 joblib
