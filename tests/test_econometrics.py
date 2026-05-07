@@ -117,3 +117,75 @@ def test_vif_collinear_high():
     vif = econometrics.vif_table(df, ["x1", "x2"])
     for _, row in vif.iterrows():
         assert row["vif"] > 10.0  # highly collinear
+
+
+# ── adf_test ────────────────────────────────────────────────────────────
+
+def test_adf_rejects_unit_root_on_white_noise():
+    rng = np.random.default_rng(0)
+    s = pd.Series(rng.normal(size=500))
+    res = econometrics.adf_test(s)
+    assert res.reject_at_5pct is True
+    assert res.test == "ADF"
+
+
+def test_adf_does_not_reject_unit_root_on_random_walk():
+    rng = np.random.default_rng(1)
+    s = pd.Series(rng.normal(size=500).cumsum())
+    res = econometrics.adf_test(s)
+    assert res.reject_at_5pct is False
+
+
+# ── kpss_test ───────────────────────────────────────────────────────────
+
+def test_kpss_does_not_reject_stationarity_on_white_noise():
+    rng = np.random.default_rng(2)
+    s = pd.Series(rng.normal(size=500))
+    res = econometrics.kpss_test(s)
+    assert res.reject_at_5pct is False
+    assert res.test == "KPSS"
+
+
+def test_kpss_rejects_stationarity_on_random_walk():
+    rng = np.random.default_rng(3)
+    s = pd.Series(rng.normal(size=500).cumsum())
+    res = econometrics.kpss_test(s)
+    assert res.reject_at_5pct is True
+
+
+# ── stationarity_table ──────────────────────────────────────────────────
+
+def test_stationarity_table_labels_match():
+    rng = np.random.default_rng(4)
+    df = pd.DataFrame({
+        "noise": rng.normal(size=500),
+        "walk": rng.normal(size=500).cumsum(),
+    })
+    table = econometrics.stationarity_table(df, ["noise", "walk"])
+    verdict = dict(zip(table["series"], table["verdict"]))
+    assert verdict["noise"] == "stationary"
+    assert verdict["walk"] == "non-stationary (unit root)"
+
+
+# ── chow_test ───────────────────────────────────────────────────────────
+
+def test_chow_detects_clean_coefficient_break():
+    rng = np.random.default_rng(5)
+    n = 200
+    x = rng.normal(size=n)
+    y = np.empty(n)
+    y[: n // 2] = 1.0 + 0.5 * x[: n // 2] + rng.normal(scale=0.5, size=n // 2)
+    y[n // 2 :] = 1.0 + 3.0 * x[n // 2 :] + rng.normal(scale=0.5, size=n // 2)
+    df = pd.DataFrame({"y": y, "x": x})
+    res = econometrics.chow_test(df, y_col="y", x_cols=["x"], break_index=n // 2)
+    assert res.pvalue < 0.01
+
+
+def test_chow_does_not_flag_stable_coefficients():
+    rng = np.random.default_rng(6)
+    n = 200
+    x = rng.normal(size=n)
+    y = 1.0 + 2.0 * x + rng.normal(scale=0.5, size=n)
+    df = pd.DataFrame({"y": y, "x": x})
+    res = econometrics.chow_test(df, y_col="y", x_cols=["x"], break_index=n // 2)
+    assert res.pvalue > 0.05

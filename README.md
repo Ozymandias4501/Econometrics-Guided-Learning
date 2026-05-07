@@ -1,28 +1,31 @@
 # Econometrics Guided Learning
 
-Hands-on, notebook-first curriculum that takes a rusty econ major from first-principles statistics to OLS regression with HAC robust inference and tree-based ML (Random Forest + XGBoost) on real macro data from the **FRED** API. Notebooks are markdown-heavy with intentional TODOs — you write the code, then check against collapsed solutions.
+Hands-on, notebook-first curriculum that takes a rusty econ major from first-principles statistics to OLS regression with HAC robust inference, tree-based ML (Random Forest + XGBoost), structural-break-aware forecasting, and modern causal inference (DAGs + DiD) on real macro data from the **FRED** API. Notebooks are markdown-heavy with intentional TODOs — you write the code, then check against collapsed solutions.
 
 ## Pick Your Starting Point
 
 | Your background | Start at | Path |
 |---|---|---|
 | **Rusty on stats** — need a refresher on distributions, hypothesis testing, confidence intervals, RMSE/R²/F-stats | **00a Statistics Primer** | `notebooks/00a_statistics_primer/` (9 notebooks) |
-| **Comfortable with stats** — ready for applied econometrics + ML | **00b Foundations → 01 Data → 02 Regression → 02b ML Regression → 03 Classification** | start at `notebooks/00b_foundations/` |
+| **Comfortable with stats** — ready for applied econometrics + ML | **00b Foundations → 01 Data → 01b Diagnostics → 02 Regression → 02b ML → 03 Classification → 04 Forecasting → 05 Causal** | start at `notebooks/00b_foundations/` |
 
 The full sequence is in [`docs/index.md`](docs/index.md).
 
 ## Curriculum Map
 
-Six sections, ~32 notebooks:
+Nine sections, ~37 notebooks:
 
 | # | Section | What you learn |
 |---|---|---|
 | 1 | **00a Statistics Primer** | Descriptive stats, distributions, sampling/CLT, CIs, hypothesis testing, correlation, and a metrics primer that maps RMSE / R² / F-stat / accuracy / precision / recall / F1 / AUC to where they appear in OLS, sklearn, and xgboost output. |
 | 2 | **00b Foundations** | Project setup and time-series indexing patterns. |
 | 3 | **01 Data** | FRED API + caching; building a quarterly macro panel; recession label. |
-| 4 | **02 Regression** | OLS single- and multi-factor (micro and macro); functional forms and interactions; residual diagnostics; HAC (Newey–West) robust inference; Ridge/Lasso regularization; rolling-window stability. |
-| 5 | **02b ML Regression** *(new)* | Same target as section 4 (next-quarter GDP growth) with `RandomForestRegressor` and `XGBRegressor`. Walk-forward CV, hyperparameter tuning, permutation importance, and a final OLS-vs-RF-vs-XGBoost comparison table. |
-| 6 | **03 Classification** | Recession prediction with logistic regression and tree/XGBoost classifiers. Confusion matrix, accuracy, precision, recall, F1, ROC-AUC, calibration, walk-forward validation. |
+| 4 | **01b Time Series Diagnostics** | Stationarity intuition, the spurious-regression trap, ADF and KPSS tests, the differencing decision, cointegration in one paragraph. |
+| 5 | **02 Regression** | OLS single- and multi-factor (micro and macro); functional forms and interactions; residual diagnostics; HAC (Newey–West) robust inference; Ridge/Lasso regularization; rolling-window stability. |
+| 6 | **02b ML Regression** | Same target as section 5 (next-quarter GDP growth) with `RandomForestRegressor` and `XGBRegressor`. Walk-forward CV, hyperparameter tuning, permutation importance, and a final OLS-vs-RF-vs-XGBoost comparison table. |
+| 7 | **03 Classification** | Recession prediction with logistic regression and tree/XGBoost classifiers. Confusion matrix, accuracy, precision, recall, F1, ROC-AUC, calibration, walk-forward validation. |
+| 8 | **04 Honest Forecasting** | Pseudo-out-of-sample walk-forward backtests across OLS / RF / XGBoost on the same target; rolling error plots; mean ensembles; structural-break detection (Chow); the COVID problem and three mitigation strategies. |
+| 9 | **05 Causal Inference** | Predictive vs causal estimands; DAGs (chain, fork, collider); omitted-variable bias by simulation; the collider trap and a control taxonomy; difference-in-differences with parallel-trends checks and clustered standard errors. |
 
 ## How It Works
 
