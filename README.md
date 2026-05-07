@@ -47,10 +47,14 @@ Notebooks try to load from `data/processed/` (real pipeline output) and fall bac
 
 ## Setup
 
+This project uses [**uv**](https://docs.astral.sh/uv/) to manage the Python toolchain and dependencies. Install uv once (`brew install uv` on macOS, or see the docs for other platforms), then:
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+uv sync                  # creates .venv and installs runtime + dev deps from uv.lock
+uv run jupyter notebook  # or: make notebook
 ```
+
+`uv run <cmd>` executes any command inside the project's locked environment without you having to `activate` anything.
 
 ### API Key (optional)
 
@@ -62,20 +66,13 @@ FRED is free. With a key you can fetch live data via `make fetch-fred`. Without 
 
 ### Providing your key
 
-**Option A — Export in your shell** (quick, ephemeral)
+Export the key from your **shell profile** so every shell, Jupyter kernel, and editor picks it up automatically. Add to `~/.zshrc` (macOS default) or `~/.bashrc` (Linux):
+
 ```bash
 export FRED_API_KEY="your-key"
 ```
 
-**Option B — `.env` file** (persistent, project-scoped; already gitignored)
-```
-FRED_API_KEY=your-key
-```
-Source it before launching Jupyter:
-```bash
-set -a && source .env && set +a
-jupyter notebook
-```
+Then `source ~/.zshrc` (or open a fresh terminal) and confirm with `echo $FRED_API_KEY`. Python reads it via `os.getenv("FRED_API_KEY")`. No `.env` file, no per-project secret config — one canonical place for credentials.
 
 ## Repo Layout
 
@@ -94,6 +91,7 @@ data/processed/     Pipeline output (gitignored)
 ## Running Tests
 
 ```bash
-pip install -r requirements-dev.txt
-pytest
+uv run pytest        # or: make test
 ```
+
+`uv sync` already installs the `dev` dependency group (which includes pytest); no separate install step is needed.
