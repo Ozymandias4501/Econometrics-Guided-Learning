@@ -102,13 +102,14 @@ This project uses two external APIs:
 
 **How to set them:**
 
+Add to your shell profile — `~/.zshrc` on macOS (default since Catalina) or `~/.bashrc` on most Linux setups:
+
 ```bash
-# In your shell profile (~/.bashrc, ~/.zshrc, etc.):
 export FRED_API_KEY="your-key-here"
 export CENSUS_API_KEY="your-key-here"
 ```
 
-After setting a key, restart your Jupyter kernel so Python sees it. In a notebook:
+Then `source ~/.zshrc` (or open a new terminal) so the variable is exported. After setting a key, restart your Jupyter kernel so Python sees it. In a notebook:
 
 ```python
 import os
@@ -119,7 +120,7 @@ if fred_key:
     print("Starts with:", fred_key[:4])
 ```
 
-**Security rule:** Never print full API keys or commit them to version control. Use `.env` files (gitignored) or shell environment variables.
+**Security rule:** Never print full API keys or commit them to version control. Keep all credentials in `~/.zshrc` (or `~/.bashrc`) — one canonical location, never per-project `.env` files that can leak into git or backups.
 
 ### Sample vs processed data: the offline-first pattern
 

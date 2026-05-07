@@ -1,0 +1,27 @@
+[project]
+name = "econometrics-guided-learning"
+version = "0.1.0"
+description = "Notebook-first curriculum: stats primer, OLS with HAC, ML regression (RF/XGBoost), and recession classification on FRED macro data."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "requests",
+    "scikit-learn",
+    "xgboost",
+    "matplotlib",
+    "seaborn",
+    "joblib",
+    "statsmodels",
+    "scipy",
+    "pyyaml",
+    "jupyter",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.uv]
+package = false

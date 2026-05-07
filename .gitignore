@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# uv
+.uv-cache/
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -11,5 +14,5 @@ outputs/
 data/raw/
 data/processed/
 
-# Local config
+# Local config — secrets belong in ~/.zshrc, but ignore .env as a safety net.
 .env
