@@ -10,7 +10,7 @@ This is the navigation hub for the curriculum.
 
 ## Recommended Learning Path
 
-The curriculum is six sections, ~32 notebooks, end-to-end on real (or bundled) FRED macro data.
+The curriculum is nine sections, ~37 notebooks, end-to-end on real (or bundled) FRED macro data plus a small Census panel for the causal-inference work.
 
 ### 1. Statistics Primer (Start Here)
 Build the vocabulary for everything that follows. Distributions, sampling, hypothesis testing, and how to read every metric in a regression / ML output table.
@@ -38,6 +38,11 @@ Pull macro data from FRED, cache it, and build the panel everything else uses.
 2. [01_build_macro_monthly_panel](../notebooks/01_data/01_build_macro_monthly_panel.ipynb) — guide: [01](guides/01_data/01_build_macro_monthly_panel.md)
 3. [02_gdp_growth_and_recession_label](../notebooks/01_data/02_gdp_growth_and_recession_label.ipynb) — guide: [02](guides/01_data/02_gdp_growth_and_recession_label.md)
 4. [03_build_macro_quarterly_features](../notebooks/01_data/03_build_macro_quarterly_features.ipynb) — guide: [03](guides/01_data/03_build_macro_quarterly_features.md)
+
+### 3b. Time Series Diagnostics
+Stationarity, the spurious-regression trap, ADF and KPSS tests, the differencing decision. Run before §4 Regression on macro data.
+
+1. [00_stationarity_and_unit_roots](../notebooks/01b_time_series_diagnostics/00_stationarity_and_unit_roots.ipynb) — guide: [00](guides/01b_time_series_diagnostics/00_stationarity_and_unit_roots.md)
 
 ### 4. Regression (OLS Core)
 Single- and multi-factor OLS, functional forms, residual diagnostics, HAC robust inference, regularization, rolling stability.
@@ -67,6 +72,18 @@ Logistic regression and tree/XGBoost classifiers. Confusion matrix, accuracy, pr
 3. [02_calibration_and_costs](../notebooks/03_classification/02_calibration_and_costs.ipynb) — guide: [02](guides/03_classification/02_calibration_and_costs.md)
 4. [03_tree_models_and_importance](../notebooks/03_classification/03_tree_models_and_importance.ipynb) — guide: [03](guides/03_classification/03_tree_models_and_importance.md)
 5. [04_walk_forward_validation](../notebooks/03_classification/04_walk_forward_validation.ipynb) — guide: [04](guides/03_classification/04_walk_forward_validation.md)
+
+### 7. Honest Forecasting
+A pseudo-OOS walk-forward backtest across OLS / RF / XGBoost on the same target; structural-break detection and the COVID problem.
+
+1. [00_walk_forward_backtest](../notebooks/04_honest_forecasting/00_walk_forward_backtest.ipynb) — guide: [00](guides/04_honest_forecasting/00_walk_forward_backtest.md)
+2. [01_structural_breaks_and_covid](../notebooks/04_honest_forecasting/01_structural_breaks_and_covid.ipynb) — guide: [01](guides/04_honest_forecasting/01_structural_breaks_and_covid.md)
+
+### 8. Causal Inference
+Predictive vs causal estimands, DAGs, omitted-variable bias and the collider trap, difference-in-differences.
+
+1. [00_predictive_vs_causal_dags](../notebooks/05_causal_inference/00_predictive_vs_causal_dags.ipynb) — guide: [00](guides/05_causal_inference/00_predictive_vs_causal_dags.md)
+2. [01_difference_in_differences](../notebooks/05_causal_inference/01_difference_in_differences.ipynb) — guide: [01](guides/05_causal_inference/01_difference_in_differences.md)
 
 ## Extra References
 - [Guides Index](guides/index.md)

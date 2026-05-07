@@ -34,6 +34,12 @@ Use `docs/index.md` for the recommended learning path.
 - [02_gdp_growth_and_recession_label](01_data/02_gdp_growth_and_recession_label.md)
 - [03_build_macro_quarterly_features](01_data/03_build_macro_quarterly_features.md)
 
+## 01b_time_series_diagnostics
+
+- [Part overview](01b_time_series_diagnostics/index.md)
+
+- [00_stationarity_and_unit_roots](01b_time_series_diagnostics/00_stationarity_and_unit_roots.md)
+
 ## 02_regression
 
 - [Part overview](02_regression/index.md)
@@ -63,3 +69,17 @@ Use `docs/index.md` for the recommended learning path.
 - [02_calibration_and_costs](03_classification/02_calibration_and_costs.md)
 - [03_tree_models_and_importance](03_classification/03_tree_models_and_importance.md)
 - [04_walk_forward_validation](03_classification/04_walk_forward_validation.md)
+
+## 04_honest_forecasting
+
+- [Part overview](04_honest_forecasting/index.md)
+
+- [00_walk_forward_backtest](04_honest_forecasting/00_walk_forward_backtest.md)
+- [01_structural_breaks_and_covid](04_honest_forecasting/01_structural_breaks_and_covid.md)
+
+## 05_causal_inference
+
+- [Part overview](05_causal_inference/index.md)
+
+- [00_predictive_vs_causal_dags](05_causal_inference/00_predictive_vs_causal_dags.md)
+- [01_difference_in_differences](05_causal_inference/01_difference_in_differences.md)
